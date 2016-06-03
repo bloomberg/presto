@@ -28,6 +28,7 @@ public enum OperatorType
     GREATER_THAN(">"),
     GREATER_THAN_OR_EQUAL(">="),
     BETWEEN("BETWEEN"),
+    ANY("ANY"),
     CAST("CAST"),
     SUBSCRIPT("[]"),
     HASH_CODE("HASH CODE"),

@@ -375,7 +375,14 @@ public class ExpressionAnalyzer
         @Override
         protected Type visitComparisonExpression(ComparisonExpression node, StackableAstVisitorContext<Void> context)
         {
-            OperatorType operatorType = OperatorType.valueOf(node.getType().name());
+            OperatorType operatorType;
+            if (node.getType() == ComparisonExpression.Type.ANY) {
+                operatorType = OperatorType.ANY;
+            }
+            else {
+                operatorType = OperatorType.valueOf(node.getType().name());
+            }
+
             return getOperator(context, node, operatorType, node.getLeft(), node.getRight());
         }
 

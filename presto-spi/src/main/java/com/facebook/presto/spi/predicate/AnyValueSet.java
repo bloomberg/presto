@@ -39,7 +39,7 @@ import static java.util.stream.Collectors.toSet;
  * Assumes an infinite number of possible values. The values may be collectively included (aka whitelist)
  * or collectively excluded (aka !whitelist).
  */
-public class EquatableValueSet
+public class AnyValueSet
         implements ValueSet
 {
     private final Type type;
@@ -47,7 +47,7 @@ public class EquatableValueSet
     private final Set<ValueEntry> entries;
 
     @JsonCreator
-    public EquatableValueSet(
+    public AnyValueSet(
             @JsonProperty("type") Type type,
             @JsonProperty("whiteList") boolean whiteList,
             @JsonProperty("entries") Set<ValueEntry> entries)
@@ -58,37 +58,35 @@ public class EquatableValueSet
         if (!type.isComparable()) {
             throw new IllegalArgumentException("Type is not comparable: " + type);
         }
-        if (type.isOrderable()) {
-            throw new IllegalArgumentException("Use SortedRangeSet instead");
-        }
+
         this.type = type;
         this.whiteList = whiteList;
         this.entries = Collections.unmodifiableSet(new HashSet<>(entries));
     }
 
-    static EquatableValueSet none(Type type)
+    static AnyValueSet none(Type type)
     {
-        return new EquatableValueSet(type, true, Collections.emptySet());
+        return new AnyValueSet(type, true, Collections.emptySet());
     }
 
-    static EquatableValueSet all(Type type)
+    static AnyValueSet all(Type type)
     {
-        return new EquatableValueSet(type, false, Collections.emptySet());
+        return new AnyValueSet(type, false, Collections.emptySet());
     }
 
-    static EquatableValueSet of(Type type, Object first, Object... rest)
+    static AnyValueSet of(Type type, Object first, Object... rest)
     {
         HashSet<ValueEntry> set = new HashSet<>(rest.length + 1);
         set.add(ValueEntry.create(type, first));
         for (Object value : rest) {
             set.add(ValueEntry.create(type, value));
         }
-        return new EquatableValueSet(type, true, set);
+        return new AnyValueSet(type, true, set);
     }
 
-    static EquatableValueSet copyOf(Type type, Collection<Object> values)
+    static AnyValueSet copyOf(Type type, Collection<Object> values)
     {
-        return new EquatableValueSet(type, true, values.stream()
+        return new AnyValueSet(type, true, values.stream()
                 .map(value -> ValueEntry.create(type, value))
                 .collect(toSet()));
     }
@@ -128,7 +126,7 @@ public class EquatableValueSet
     @Override
     public boolean isAny()
     {
-        return false;
+        return true;
     }
 
     @Override
@@ -147,7 +145,7 @@ public class EquatableValueSet
     public Object getSingleValue()
     {
         if (!isSingleValue()) {
-            throw new IllegalStateException("EquatableValueSet does not have just a single value");
+            throw new IllegalStateException("AnyValueSet does not have just a single value");
         }
         return entries.iterator().next().getValue();
     }
@@ -166,13 +164,13 @@ public class EquatableValueSet
             @Override
             public boolean isWhiteList()
             {
-                return EquatableValueSet.this.isWhiteList();
+                return AnyValueSet.this.isWhiteList();
             }
 
             @Override
             public Collection<Object> getValues()
             {
-                return EquatableValueSet.this.getValues();
+                return AnyValueSet.this.getValues();
             }
         };
     }
@@ -197,47 +195,47 @@ public class EquatableValueSet
     }
 
     @Override
-    public EquatableValueSet intersect(ValueSet other)
+    public AnyValueSet intersect(ValueSet other)
     {
-        EquatableValueSet otherValueSet = checkCompatibility(other);
+        AnyValueSet otherValueSet = checkCompatibility(other);
 
         if (whiteList && otherValueSet.isWhiteList()) {
-            return new EquatableValueSet(type, true, intersect(entries, otherValueSet.entries));
+            return new AnyValueSet(type, true, intersect(entries, otherValueSet.entries));
         }
         else if (whiteList) {
-            return new EquatableValueSet(type, true, subtract(entries, otherValueSet.entries));
+            return new AnyValueSet(type, true, subtract(entries, otherValueSet.entries));
         }
         else if (otherValueSet.isWhiteList()) {
-            return new EquatableValueSet(type, true, subtract(otherValueSet.entries, entries));
+            return new AnyValueSet(type, true, subtract(otherValueSet.entries, entries));
         }
         else {
-            return new EquatableValueSet(type, false, union(otherValueSet.entries, entries));
+            return new AnyValueSet(type, false, union(otherValueSet.entries, entries));
         }
     }
 
     @Override
-    public EquatableValueSet union(ValueSet other)
+    public AnyValueSet union(ValueSet other)
     {
-        EquatableValueSet otherValueSet = checkCompatibility(other);
+        AnyValueSet otherValueSet = checkCompatibility(other);
 
         if (whiteList && otherValueSet.isWhiteList()) {
-            return new EquatableValueSet(type, true, union(entries, otherValueSet.entries));
+            return new AnyValueSet(type, true, union(entries, otherValueSet.entries));
         }
         else if (whiteList) {
-            return new EquatableValueSet(type, false, subtract(otherValueSet.entries, entries));
+            return new AnyValueSet(type, false, subtract(otherValueSet.entries, entries));
         }
         else if (otherValueSet.isWhiteList()) {
-            return new EquatableValueSet(type, false, subtract(entries, otherValueSet.entries));
+            return new AnyValueSet(type, false, subtract(entries, otherValueSet.entries));
         }
         else {
-            return new EquatableValueSet(type, false, intersect(otherValueSet.entries, entries));
+            return new AnyValueSet(type, false, intersect(otherValueSet.entries, entries));
         }
     }
 
     @Override
-    public EquatableValueSet complement()
+    public AnyValueSet complement()
     {
-        return new EquatableValueSet(type, !whiteList, entries);
+        return new AnyValueSet(type, !whiteList, entries);
     }
 
     @Override
@@ -268,15 +266,15 @@ public class EquatableValueSet
                 .collect(toSet());
     }
 
-    private EquatableValueSet checkCompatibility(ValueSet other)
+    private AnyValueSet checkCompatibility(ValueSet other)
     {
         if (!getType().equals(other.getType())) {
             throw new IllegalStateException(String.format("Mismatched types: %s vs %s", getType(), other.getType()));
         }
-        if (!(other instanceof EquatableValueSet)) {
-            throw new IllegalStateException(String.format("ValueSet is not a EquatableValueSet: %s", other.getClass()));
+        if (!(other instanceof AnyValueSet)) {
+            throw new IllegalStateException(String.format("ValueSet is not a AnyValueSet: %s", other.getClass()));
         }
-        return (EquatableValueSet) other;
+        return (AnyValueSet) other;
     }
 
     @Override
@@ -294,7 +292,7 @@ public class EquatableValueSet
         if (obj == null || getClass() != obj.getClass()) {
             return false;
         }
-        final EquatableValueSet other = (EquatableValueSet) obj;
+        final AnyValueSet other = (AnyValueSet) obj;
         return Objects.equals(this.type, other.type)
                 && this.whiteList == other.whiteList
                 && Objects.equals(this.entries, other.entries);
