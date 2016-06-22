@@ -400,7 +400,6 @@ public class ColumnCardinalityCache
             }
 
             Map<Range, CacheKey> rangeToKey = stream(keys).collect(Collectors.toMap(CacheKey::getRange, Function.identity()));
-            LOG.debug("rangeToKey size is %s", rangeToKey.size());
 
             // Get metrics table name and the column family for the scanner
             String metricsTable = getMetricsTableName(anyKey.getSchema(), anyKey.getTable());
@@ -417,15 +416,14 @@ public class ColumnCardinalityCache
                 stream(keys).forEach(key -> rangeValues.put(key, 0L));
 
                 for (Entry<Key, Value> entry : scanner) {
-                    rangeValues.put(rangeToKey.get(Range.exact(entry.getKey().getRow())), parseLong(entry.getValue().toString()));
+                    CacheKey cacheKey = rangeToKey.get(Range.exact(entry.getKey().getRow()));
+                    rangeValues.put(cacheKey, parseLong(entry.getValue().toString()) + rangeValues.getOrDefault(cacheKey, 0L));
                 }
 
                 return rangeValues;
             }
             finally {
-                if (scanner != null) {
-                    scanner.close();
-                }
+                scanner.close();
             }
         }
     }
