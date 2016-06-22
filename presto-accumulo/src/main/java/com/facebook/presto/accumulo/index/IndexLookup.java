@@ -14,6 +14,7 @@
 package com.facebook.presto.accumulo.index;
 
 import com.facebook.presto.accumulo.conf.AccumuloSessionProperties;
+import com.facebook.presto.accumulo.iterators.ValueSummingIterator;
 import com.facebook.presto.accumulo.model.AccumuloColumnConstraint;
 import com.facebook.presto.accumulo.model.TabletSplitMetadata;
 import com.facebook.presto.accumulo.serializers.AccumuloRowSerializer;
@@ -30,6 +31,7 @@ import org.apache.accumulo.core.client.AccumuloException;
 import org.apache.accumulo.core.client.AccumuloSecurityException;
 import org.apache.accumulo.core.client.BatchScanner;
 import org.apache.accumulo.core.client.Connector;
+import org.apache.accumulo.core.client.IteratorSetting;
 import org.apache.accumulo.core.client.Scanner;
 import org.apache.accumulo.core.client.TableNotFoundException;
 import org.apache.accumulo.core.data.Key;
@@ -68,7 +70,6 @@ import static com.facebook.presto.accumulo.index.Indexer.METRICS_TABLE_ROWID_AS_
 import static com.facebook.presto.accumulo.index.Indexer.METRICS_TABLE_ROWS_CF_AS_TEXT;
 import static com.facebook.presto.accumulo.index.Indexer.getIndexTableName;
 import static com.facebook.presto.accumulo.index.Indexer.getMetricsTableName;
-import static com.facebook.presto.spi.StandardErrorCode.FUNCTION_IMPLEMENTATION_ERROR;
 import static com.google.common.base.Preconditions.checkArgument;
 import static io.airlift.concurrent.Threads.daemonThreadsNamed;
 import static java.util.Objects.requireNonNull;
@@ -318,13 +319,14 @@ public class IndexLookup
         scanner.setRange(METRICS_TABLE_ROWID_RANGE);
         scanner.fetchColumn(METRICS_TABLE_ROWS_CF_AS_TEXT, CARDINALITY_CQ_AS_TEXT);
 
+        IteratorSetting setting = new IteratorSetting(Integer.MAX_VALUE, "valuesummingiterator", ValueSummingIterator.class);
+        ValueSummingIterator.setEncodingType(setting, Indexer.ENCODER_TYPE);
+        scanner.addScanIterator(setting);
+
         // Scan the entry and get the number of rows
-        long numRows = -1;
+        long numRows = 0;
         for (Entry<Key, Value> entry : scanner) {
-            if (numRows > 0) {
-                throw new PrestoException(FUNCTION_IMPLEMENTATION_ERROR, "Should have received only one entry when scanning for number of rows in metrics table");
-            }
-            numRows = Long.parseLong(entry.getValue().toString());
+            numRows += Long.parseLong(entry.getValue().toString());
         }
         scanner.close();
 
@@ -414,7 +416,7 @@ public class IndexLookup
      */
     private static boolean inRange(Text text, Collection<Range> ranges)
     {
-        Key kCq = new Key(text);
-        return ranges.stream().anyMatch(r -> !r.beforeStartKey(kCq) && !r.afterEndKey(kCq));
+        Key qualifier = new Key(text);
+        return ranges.stream().anyMatch(r -> !r.beforeStartKey(qualifier) && !r.afterEndKey(qualifier));
     }
 }

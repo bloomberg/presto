@@ -487,8 +487,8 @@ public class TestColumnCardinalityCache
         List<ColumnMetadata> columns = ImmutableList.of(
                 new ColumnMetadata("a", VARCHAR),
                 new ColumnMetadata("b", VARCHAR),
-                new ColumnMetadata("c", VARCHAR)
-        );
+                new ColumnMetadata("c", VARCHAR));
+
         Map<String, Object> properties = new HashMap<>();
         new AccumuloTableProperties().getTableProperties().forEach(meta -> properties.put(meta.getName(), meta.getDefaultValue()));
         properties.put("index_columns", "b,c");

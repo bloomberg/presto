@@ -197,24 +197,24 @@ public class ColumnCardinalityCache
      *
      * @param schema Table schema
      * @param table Table name
-     * @param auths Scan authorizations
+     * @param auths Scan-time authorizations for loading any cardinalities from Accumulo
      * @param family Accumulo column family
      * @param qualifier Accumulo column qualifier
-     * @param colValues All range values to summarize for the cardinality
+     * @param columnRanges All range values to summarize for the cardinality
      * @return The cardinality of the column
      */
-    private long getColumnCardinality(String schema, String table, Authorizations auths, String family, String qualifier, Collection<Range> colValues)
+    private long getColumnCardinality(String schema, String table, Authorizations auths, String family, String qualifier, Collection<Range> columnRanges)
             throws ExecutionException
     {
         LOG.debug("Getting cardinality for %s:%s", family, qualifier);
 
         // Collect all exact Accumulo Ranges, i.e. single value entries vs. a full scan
-        Collection<CacheKey> exactRanges = colValues.stream()
+        Collection<CacheKey> exactRanges = columnRanges.stream()
                 .filter(ColumnCardinalityCache::isExact)
                 .map(range -> new CacheKey(schema, table, family, qualifier, range, auths))
                 .collect(Collectors.toList());
 
-        LOG.debug("Column values contain %s exact ranges of %s", exactRanges.size(), colValues.size());
+        LOG.debug("Column values contain %s exact ranges of %s", exactRanges.size(), columnRanges.size());
 
         // Sum the cardinalities for the exact-value Ranges
         // This is where the reach-out to Accumulo occurs for all Ranges that have not
@@ -223,9 +223,9 @@ public class ColumnCardinalityCache
 
         // If these collection sizes are not equal,
         // then there is at least one non-exact range
-        if (exactRanges.size() != colValues.size()) {
+        if (exactRanges.size() != columnRanges.size()) {
             // for each range in the column value
-            for (Range range : colValues) {
+            for (Range range : columnRanges) {
                 // if this range is not exact
                 if (!isExact(range)) {
                     // Then get the value for this range using the single-value cache lookup
