@@ -14,7 +14,8 @@
 package com.facebook.presto.accumulo.index;
 
 import com.facebook.presto.accumulo.conf.AccumuloSessionProperties;
-import com.facebook.presto.accumulo.iterators.ValueSummingIterator;
+import com.facebook.presto.accumulo.index.metrics.MetricsReader;
+import com.facebook.presto.accumulo.index.metrics.MetricsStorage;
 import com.facebook.presto.accumulo.model.AccumuloColumnConstraint;
 import com.facebook.presto.accumulo.model.TabletSplitMetadata;
 import com.facebook.presto.accumulo.serializers.AccumuloRowSerializer;
@@ -31,8 +32,6 @@ import org.apache.accumulo.core.client.AccumuloException;
 import org.apache.accumulo.core.client.AccumuloSecurityException;
 import org.apache.accumulo.core.client.BatchScanner;
 import org.apache.accumulo.core.client.Connector;
-import org.apache.accumulo.core.client.IteratorSetting;
-import org.apache.accumulo.core.client.Scanner;
 import org.apache.accumulo.core.client.TableNotFoundException;
 import org.apache.accumulo.core.data.Key;
 import org.apache.accumulo.core.data.Range;
@@ -55,25 +54,21 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorCompletionService;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
 
 import static com.facebook.presto.accumulo.AccumuloClient.getRangesFromDomain;
 import static com.facebook.presto.accumulo.AccumuloErrorCode.UNEXPECTED_ACCUMULO_ERROR;
-import static com.facebook.presto.accumulo.conf.AccumuloSessionProperties.getIndexCardinalityCachePollingDuration;
+import static com.facebook.presto.accumulo.conf.AccumuloSessionProperties.getIndexSmallCardRowThreshold;
+import static com.facebook.presto.accumulo.conf.AccumuloSessionProperties.getIndexSmallCardThreshold;
 import static com.facebook.presto.accumulo.conf.AccumuloSessionProperties.getIndexThreshold;
 import static com.facebook.presto.accumulo.conf.AccumuloSessionProperties.getNumIndexRowsPerSplit;
 import static com.facebook.presto.accumulo.conf.AccumuloSessionProperties.isIndexMetricsEnabled;
-import static com.facebook.presto.accumulo.conf.AccumuloSessionProperties.isIndexShortCircuitEnabled;
 import static com.facebook.presto.accumulo.conf.AccumuloSessionProperties.isOptimizeIndexEnabled;
-import static com.facebook.presto.accumulo.index.Indexer.CARDINALITY_CQ_AS_TEXT;
-import static com.facebook.presto.accumulo.index.Indexer.METRICS_TABLE_ROWID_AS_TEXT;
-import static com.facebook.presto.accumulo.index.Indexer.METRICS_TABLE_ROWS_CF_AS_TEXT;
 import static com.facebook.presto.accumulo.index.Indexer.getIndexTableName;
-import static com.facebook.presto.accumulo.index.Indexer.getMetricsTableName;
 import static com.google.common.base.Preconditions.checkArgument;
 import static io.airlift.concurrent.Threads.daemonThreadsNamed;
 import static java.util.Objects.requireNonNull;
 import static java.util.concurrent.Executors.newCachedThreadPool;
+import static java.util.concurrent.TimeUnit.MILLISECONDS;
 
 /**
  * Class to assist the Presto connector, and maybe external applications,
@@ -83,9 +78,7 @@ import static java.util.concurrent.Executors.newCachedThreadPool;
  */
 public class IndexLookup
 {
-    private static final Authorizations EMPTY_AUTHS = new Authorizations();
     private static final Logger LOG = Logger.get(IndexLookup.class);
-    private static final Range METRICS_TABLE_ROWID_RANGE = new Range(METRICS_TABLE_ROWID_AS_TEXT);
     private final ColumnCardinalityCache cardinalityCache;
     private final Connector connector;
     private final ExecutorService coreExecutor;
@@ -126,7 +119,9 @@ public class IndexLookup
      * @param rowIdRanges Collection of Accumulo ranges based on any predicate against a record key
      * @param tabletSplits Output parameter containing the bundles of row IDs determined by the use of the index.
      * @param serializer Instance of a row serializer
-     * @param auths Scan-time authorizations
+     * @param auths Scan authorizations
+     * @param metricsStorage Metrics storage for looking up the cardinality
+     * @param truncateTimestamps True if timestamp type metrics are truncated
      * @return True if the tablet splits are valid and should be used, false otherwise
      * @throws Exception If something bad happens. What are the odds?
      */
@@ -138,7 +133,9 @@ public class IndexLookup
             Collection<Range> rowIdRanges,
             List<TabletSplitMetadata> tabletSplits,
             AccumuloRowSerializer serializer,
-            Authorizations auths)
+            Authorizations auths,
+            MetricsStorage metricsStorage,
+            boolean truncateTimestamps)
             throws Exception
     {
         // Early out if index is disabled
@@ -178,7 +175,7 @@ public class IndexLookup
         else {
             LOG.debug("Use of index metrics is enabled");
             // Get ranges using the metrics
-            return getRangesWithMetrics(session, schema, table, constraintRanges, rowIdRanges, tabletSplits, auths);
+            return getRangesWithMetrics(session, schema, table, constraintRanges, rowIdRanges, tabletSplits, auths, metricsStorage, truncateTimestamps);
         }
     }
 
@@ -206,26 +203,38 @@ public class IndexLookup
             Multimap<AccumuloColumnConstraint, Range> constraintRanges,
             Collection<Range> rowIdRanges,
             List<TabletSplitMetadata> tabletSplits,
-            Authorizations auths)
+            Authorizations auths,
+            MetricsStorage metricsStorage,
+            boolean truncateTimestamps)
             throws Exception
     {
-        String metricsTable = getMetricsTableName(schema, table);
-        long numRows = getNumRowsInTable(metricsTable, auths);
+        MetricsReader reader = metricsStorage.newReader();
+        long numRows = reader.getNumRowsInTable(schema, table);
 
         // Get the cardinalities from the metrics table
         Multimap<Long, AccumuloColumnConstraint> cardinalities;
-        if (isIndexShortCircuitEnabled(session)) {
+        if (AccumuloSessionProperties.isIndexShortCircuitEnabled(session)) {
             cardinalities = cardinalityCache.getCardinalities(
                     schema,
                     table,
                     auths,
                     constraintRanges,
                     getSmallestCardinalityThreshold(session, numRows),
-                    getIndexCardinalityCachePollingDuration(session));
+                    AccumuloSessionProperties.getIndexCardinalityCachePollingDuration(session),
+                    metricsStorage,
+                    truncateTimestamps);
         }
         else {
             // disable short circuit using 0
-            cardinalities = cardinalityCache.getCardinalities(schema, table, auths, constraintRanges, 0, new Duration(0, TimeUnit.MILLISECONDS));
+            cardinalities = cardinalityCache.getCardinalities(
+                    schema,
+                    table,
+                    auths,
+                    constraintRanges,
+                    0,
+                    new Duration(0, MILLISECONDS),
+                    metricsStorage,
+                    truncateTimestamps);
         }
 
         Optional<Entry<Long, AccumuloColumnConstraint>> entry = cardinalities.entries().stream().findFirst();
@@ -259,7 +268,7 @@ public class IndexLookup
         else {
             // Else, we don't need to intersect the columns and we can just use the column with the lowest cardinality,
             // so get all those row IDs in a set of ranges.
-            LOG.debug("Not intersecting columns, using column with lowest cardinality ");
+            LOG.debug("Not intersecting columns, using column with lowest cardinality");
             ImmutableMultimap.Builder<AccumuloColumnConstraint, Range> lcBldr = ImmutableMultimap.builder();
             lcBldr.putAll(lowestCardinality.getValue(), constraintRanges.get(lowestCardinality.getValue()));
             indexRanges = getIndexRanges(indexTable, lcBldr.build(), rowIdRanges, auths);
@@ -308,31 +317,9 @@ public class IndexLookup
      */
     private static long getSmallestCardinalityThreshold(ConnectorSession session, long numRows)
     {
-        return Math.min((long) (numRows * AccumuloSessionProperties.getIndexSmallCardThreshold(session)),
-                AccumuloSessionProperties.getIndexSmallCardRowThreshold(session));
-    }
-
-    private long getNumRowsInTable(String metricsTable, Authorizations auths)
-            throws TableNotFoundException
-    {
-        // Create scanner against the metrics table, pulling the special column and the rows column
-        Scanner scanner = connector.createScanner(metricsTable, EMPTY_AUTHS);
-        scanner.setRange(METRICS_TABLE_ROWID_RANGE);
-        scanner.fetchColumn(METRICS_TABLE_ROWS_CF_AS_TEXT, CARDINALITY_CQ_AS_TEXT);
-
-        IteratorSetting setting = new IteratorSetting(Integer.MAX_VALUE, "valuesummingiterator", ValueSummingIterator.class);
-        ValueSummingIterator.setEncodingType(setting, Indexer.ENCODER_TYPE);
-        scanner.addScanIterator(setting);
-
-        // Scan the entry and get the number of rows
-        long numRows = 0;
-        for (Entry<Key, Value> entry : scanner) {
-            numRows += Long.parseLong(entry.getValue().toString());
-        }
-        scanner.close();
-
-        LOG.debug("Number of rows in table is %d", numRows);
-        return numRows;
+        return Math.min(
+                (long) (numRows * getIndexSmallCardThreshold(session)),
+                getIndexSmallCardRowThreshold(session));
     }
 
     private List<Range> getIndexRanges(String indexTable, Multimap<AccumuloColumnConstraint, Range> constraintRanges, Collection<Range> rowIDRanges, Authorizations auths)
@@ -344,30 +331,40 @@ public class IndexLookup
         CompletionService<Set<Range>> executor = new ExecutorCompletionService<>(executorService);
         for (Entry<AccumuloColumnConstraint, Collection<Range>> constraintEntry : constraintRanges.asMap().entrySet()) {
             tasks.add(executor.submit(() -> {
-                // Create a batch scanner against the index table, setting the ranges
-                BatchScanner scan = connector.createBatchScanner(indexTable, auths, 10);
-                scan.setRanges(constraintEntry.getValue());
+                BatchScanner scanner = null;
+                try {
+                    // Create a batch scanner against the index table, setting the ranges
+                    scanner = connector.createBatchScanner(indexTable, auths, 10);
+                    scanner.setRanges(constraintEntry.getValue());
 
-                // Fetch the column family for this specific column
-                scan.fetchColumnFamily(new Text(Indexer.getIndexColumnFamily(constraintEntry.getKey().getFamily().getBytes(), constraintEntry.getKey().getQualifier().getBytes()).array()));
+                    // Fetch the column family for this specific column
+                    Text cf = new Text(Indexer.getIndexColumnFamily(constraintEntry.getKey().getFamily().getBytes(), constraintEntry.getKey().getQualifier().getBytes()).array());
+                    scanner.fetchColumnFamily(cf);
 
-                // For each entry in the scanner
-                Text tmpQualifier = new Text();
-                Set<Range> columnRanges = new HashSet<>();
-                for (Entry<Key, Value> entry : scan) {
-                    entry.getKey().getColumnQualifier(tmpQualifier);
+                    // For each entry in the scanner
+                    Text tmpQualifier = new Text();
+                    Set<Range> columnRanges = new HashSet<>();
+                    for (Entry<Key, Value> entry : scanner) {
+                        entry.getKey().getColumnQualifier(tmpQualifier);
 
-                    // Add to our column ranges if it is in one of the row ID ranges
-                    if (inRange(tmpQualifier, rowIDRanges)) {
-                        columnRanges.add(new Range(tmpQualifier));
+                        // Add to our column ranges if it is in one of the row ID ranges
+                        if (inRange(tmpQualifier, rowIDRanges)) {
+                            columnRanges.add(new Range(tmpQualifier));
+                        }
+                    }
+
+                    LOG.info("Retrieved %d ranges for index column %s", columnRanges.size(), constraintEntry.getKey().getName());
+                    scanner.close();
+                    return columnRanges;
+                }
+                finally {
+                    if (scanner != null) {
+                        scanner.close();
                     }
                 }
-
-                LOG.debug("Retrieved %d ranges for index column %s", columnRanges.size(), constraintEntry.getKey().getName());
-                scan.close();
-                return columnRanges;
             }));
         }
+
         tasks.forEach(future ->
         {
             try {

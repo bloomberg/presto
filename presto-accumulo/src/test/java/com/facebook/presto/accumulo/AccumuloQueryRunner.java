@@ -161,7 +161,7 @@ public final class AccumuloQueryRunner
      *
      * @return Accumulo connector
      */
-    public static Connector getAccumuloConnector()
+    public static synchronized Connector getAccumuloConnector()
     {
         if (connector != null) {
             return connector;
