@@ -94,7 +94,9 @@ public class AccumuloMetadata
                 table.getRowId(),
                 table.isExternal(),
                 table.getSerializerClassName(),
-                table.getScanAuthorizations());
+                table.getScanAuthorizations(),
+                table.getMetricsStorageClass(),
+                table.isTruncateTimestamps());
 
         setRollback(() -> rollbackCreateTable(table));
 
@@ -250,7 +252,9 @@ public class AccumuloMetadata
                     table.getRowId(),
                     table.isExternal(),
                     table.getSerializerClassName(),
-                    table.getScanAuthorizations());
+                    table.getScanAuthorizations(),
+                    table.getMetricsStorageClass(),
+                    table.isTruncateTimestamps());
         }
 
         return null;

@@ -14,61 +14,44 @@
 package com.facebook.presto.accumulo.index;
 
 import com.facebook.presto.accumulo.conf.AccumuloConfig;
-import com.facebook.presto.accumulo.iterators.ValueSummingIterator;
+import com.facebook.presto.accumulo.index.metrics.MetricCacheKey;
+import com.facebook.presto.accumulo.index.metrics.MetricsStorage;
 import com.facebook.presto.accumulo.model.AccumuloColumnConstraint;
 import com.facebook.presto.spi.PrestoException;
+import com.facebook.presto.spi.type.TimestampType;
 import com.google.common.cache.CacheBuilder;
 import com.google.common.cache.CacheLoader;
 import com.google.common.cache.LoadingCache;
-import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableMultimap;
-import com.google.common.collect.Iterables;
 import com.google.common.collect.ListMultimap;
 import com.google.common.collect.Multimap;
 import com.google.common.collect.MultimapBuilder;
 import io.airlift.concurrent.BoundedExecutor;
 import io.airlift.log.Logger;
 import io.airlift.units.Duration;
-import org.apache.accumulo.core.client.BatchScanner;
-import org.apache.accumulo.core.client.Connector;
-import org.apache.accumulo.core.client.IteratorSetting;
 import org.apache.accumulo.core.client.TableNotFoundException;
-import org.apache.accumulo.core.data.Key;
 import org.apache.accumulo.core.data.PartialKey;
 import org.apache.accumulo.core.data.Range;
-import org.apache.accumulo.core.data.Value;
 import org.apache.accumulo.core.security.Authorizations;
 import org.apache.commons.lang3.tuple.Pair;
-import org.apache.hadoop.io.Text;
 
 import javax.annotation.Nonnull;
 import javax.annotation.PreDestroy;
 import javax.inject.Inject;
 
 import java.util.Collection;
-import java.util.HashMap;
 import java.util.Map;
 import java.util.Map.Entry;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.CompletionService;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorCompletionService;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
-import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import static com.facebook.presto.accumulo.AccumuloErrorCode.UNEXPECTED_ACCUMULO_ERROR;
-import static com.facebook.presto.accumulo.index.Indexer.CARDINALITY_CQ_AS_TEXT;
-import static com.facebook.presto.accumulo.index.Indexer.getIndexColumnFamily;
-import static com.facebook.presto.accumulo.index.Indexer.getMetricsTableName;
-import static com.facebook.presto.spi.StandardErrorCode.FUNCTION_IMPLEMENTATION_ERROR;
-import static com.google.common.base.MoreObjects.toStringHelper;
-import static com.google.common.collect.Streams.stream;
 import static io.airlift.concurrent.Threads.daemonThreadsNamed;
-import static java.lang.Long.parseLong;
-import static java.nio.charset.StandardCharsets.UTF_8;
 import static java.util.Objects.requireNonNull;
 import static java.util.concurrent.Executors.newCachedThreadPool;
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
@@ -83,15 +66,14 @@ import static java.util.concurrent.TimeUnit.MILLISECONDS;
 public class ColumnCardinalityCache
 {
     private static final Logger LOG = Logger.get(ColumnCardinalityCache.class);
-    private final Connector connector;
     private final ExecutorService coreExecutor;
     private final BoundedExecutor executorService;
-    private final LoadingCache<CacheKey, Long> cache;
+    private final CardinalityCacheLoader cacheLoader;
+    private final LoadingCache<MetricCacheKey, Long> cache;
 
     @Inject
-    public ColumnCardinalityCache(Connector connector, AccumuloConfig config)
+    public ColumnCardinalityCache(AccumuloConfig config)
     {
-        this.connector = requireNonNull(connector, "connector is null");
         int size = requireNonNull(config, "config is null").getCardinalityCacheSize();
         Duration expireDuration = config.getCardinalityCacheExpiration();
 
@@ -99,11 +81,9 @@ public class ColumnCardinalityCache
         this.coreExecutor = newCachedThreadPool(daemonThreadsNamed("cardinality-lookup-%s"));
         this.executorService = new BoundedExecutor(coreExecutor, 4 * Runtime.getRuntime().availableProcessors());
 
+        this.cacheLoader = new CardinalityCacheLoader();
         LOG.debug("Created new cache size %d expiry %s", size, expireDuration);
-        cache = CacheBuilder.newBuilder()
-                .maximumSize(size)
-                .expireAfterWrite(expireDuration.toMillis(), MILLISECONDS)
-                .build(new CardinalityCacheLoader());
+        this.cache = CacheBuilder.newBuilder().maximumSize(size).expireAfterWrite(expireDuration.toMillis(), MILLISECONDS).build(cacheLoader);
     }
 
     @PreDestroy
@@ -122,11 +102,21 @@ public class ColumnCardinalityCache
      * @param idxConstraintRangePairs Mapping of all ranges for a given constraint
      * @param earlyReturnThreshold Smallest acceptable cardinality to return early while other tasks complete. Use a negative value to disable early return.
      * @param pollingDuration Duration for polling the cardinality completion service. Use a Duration of zero to disable polling.
+     * @param metricsStorage Metrics storage for looking up the cardinality
+     * @param truncateTimestamps True if timestamp type metrics are truncated
      * @return An immutable multimap of cardinality to column constraint, sorted by cardinality from smallest to largest
      * @throws TableNotFoundException If the metrics table does not exist
      * @throws ExecutionException If another error occurs; I really don't even know anymore.
      */
-    public Multimap<Long, AccumuloColumnConstraint> getCardinalities(String schema, String table, Authorizations auths, Multimap<AccumuloColumnConstraint, Range> idxConstraintRangePairs, long earlyReturnThreshold, Duration pollingDuration)
+    public Multimap<Long, AccumuloColumnConstraint> getCardinalities(
+            String schema,
+            String table,
+            Authorizations auths,
+            Multimap<AccumuloColumnConstraint, Range> idxConstraintRangePairs,
+            long earlyReturnThreshold,
+            Duration pollingDuration,
+            MetricsStorage metricsStorage,
+            boolean truncateTimestamps)
             throws ExecutionException, TableNotFoundException
     {
         requireNonNull(schema, "schema is null");
@@ -134,15 +124,18 @@ public class ColumnCardinalityCache
         requireNonNull(idxConstraintRangePairs, "idxConstraintRangePairs is null");
         requireNonNull(auths, "auths is null");
         requireNonNull(pollingDuration, "pollingDuration is null");
+        requireNonNull(metricsStorage, "metricsStorage is null");
 
         if (idxConstraintRangePairs.isEmpty()) {
             return ImmutableMultimap.of();
         }
 
+        cacheLoader.setMetricsStorage(metricsStorage);
+
         // Submit tasks to the executor to fetch column cardinality, adding it to the Guava cache if necessary
         CompletionService<Pair<Long, AccumuloColumnConstraint>> executor = new ExecutorCompletionService<>(executorService);
         idxConstraintRangePairs.asMap().forEach((key, value) -> executor.submit(() -> {
-                    long cardinality = getColumnCardinality(schema, table, auths, key.getFamily(), key.getQualifier(), value);
+                    long cardinality = getColumnCardinality(schema, table, auths, key.getFamily(), key.getQualifier(), truncateTimestamps && key.getType() == TimestampType.TIMESTAMP, value);
                     LOG.debug("Cardinality for column %s is %s", key.getName(), cardinality);
                     return Pair.of(cardinality, key);
                 }
@@ -201,18 +194,19 @@ public class ColumnCardinalityCache
      * @param auths Scan-time authorizations for loading any cardinalities from Accumulo
      * @param family Accumulo column family
      * @param qualifier Accumulo column qualifier
+     * @param timestampsTruncated True if timestamps are truncated AND this is a Timestamp type, false otherwise
      * @param columnRanges All range values to summarize for the cardinality
      * @return The cardinality of the column
      */
-    private long getColumnCardinality(String schema, String table, Authorizations auths, String family, String qualifier, Collection<Range> columnRanges)
+    private long getColumnCardinality(String schema, String table, Authorizations auths, String family, String qualifier, boolean timestampsTruncated, Collection<Range> columnRanges)
             throws ExecutionException
     {
         LOG.debug("Getting cardinality for %s:%s", family, qualifier);
 
         // Collect all exact Accumulo Ranges, i.e. single value entries vs. a full scan
-        Collection<CacheKey> exactRanges = columnRanges.stream()
+        Collection<MetricCacheKey> exactRanges = columnRanges.stream()
                 .filter(ColumnCardinalityCache::isExact)
-                .map(range -> new CacheKey(schema, table, family, qualifier, range, auths))
+                .map(range -> new MetricCacheKey(schema, table, family, qualifier, timestampsTruncated, auths, range))
                 .collect(Collectors.toList());
 
         LOG.debug("Column values contain %s exact ranges of %s", exactRanges.size(), columnRanges.size());
@@ -230,7 +224,7 @@ public class ColumnCardinalityCache
                 // if this range is not exact
                 if (!isExact(range)) {
                     // Then get the value for this range using the single-value cache lookup
-                    sum += cache.get(new CacheKey(schema, table, family, qualifier, range, auths));
+                    sum += cache.get(new MetricCacheKey(schema, table, family, qualifier, timestampsTruncated, auths, range));
                 }
             }
         }
@@ -244,107 +238,16 @@ public class ColumnCardinalityCache
                 range.getStartKey().followingKey(PartialKey.ROW).equals(range.getEndKey());
     }
 
-    /**
-     * Complex key for the CacheLoader
-     */
-    private static class CacheKey
-    {
-        private final String schema;
-        private final String table;
-        private final String family;
-        private final String qualifier;
-        private final Range range;
-        private final Authorizations auths;
-
-        public CacheKey(
-                String schema,
-                String table,
-                String family,
-                String qualifier,
-                Range range,
-                Authorizations auths)
-        {
-            this.schema = requireNonNull(schema, "schema is null");
-            this.table = requireNonNull(table, "table is null");
-            this.family = requireNonNull(family, "family is null");
-            this.qualifier = requireNonNull(qualifier, "qualifier is null");
-            this.range = requireNonNull(range, "range is null");
-            this.auths = requireNonNull(auths, "auths is null");
-        }
-
-        public String getSchema()
-        {
-            return schema;
-        }
-
-        public String getTable()
-        {
-            return table;
-        }
-
-        public String getFamily()
-        {
-            return family;
-        }
-
-        public String getQualifier()
-        {
-            return qualifier;
-        }
-
-        public Range getRange()
-        {
-            return range;
-        }
-
-        public Authorizations getAuths()
-        {
-            return auths;
-        }
-
-        @Override
-        public int hashCode()
-        {
-            return Objects.hash(schema, table, family, qualifier, range);
-        }
-
-        @Override
-        public boolean equals(Object obj)
-        {
-            if (this == obj) {
-                return true;
-            }
-
-            if ((obj == null) || (getClass() != obj.getClass())) {
-                return false;
-            }
-
-            CacheKey other = (CacheKey) obj;
-            return Objects.equals(this.schema, other.schema)
-                    && Objects.equals(this.table, other.table)
-                    && Objects.equals(this.family, other.family)
-                    && Objects.equals(this.qualifier, other.qualifier)
-                    && Objects.equals(this.range, other.range);
-        }
-
-        @Override
-        public String toString()
-        {
-            return toStringHelper(this)
-                    .add("schema", schema)
-                    .add("table", table)
-                    .add("family", family)
-                    .add("qualifier", qualifier)
-                    .add("range", range).toString();
-        }
-    }
-
-    /**
-     * Internal class for loading the cardinality from Accumulo
-     */
     private class CardinalityCacheLoader
-            extends CacheLoader<CacheKey, Long>
+            extends CacheLoader<MetricCacheKey, Long>
     {
+        private MetricsStorage metricsStorage;
+
+        public void setMetricsStorage(MetricsStorage metricsStorage)
+        {
+            this.metricsStorage = metricsStorage;
+        }
+
         /**
          * Loads the cardinality for the given Range. Uses a BatchScanner and sums the cardinality for all values that encapsulate the Range.
          *
@@ -352,80 +255,19 @@ public class ColumnCardinalityCache
          * @return The cardinality of the column, which would be zero if the value does not exist
          */
         @Override
-        public Long load(@Nonnull CacheKey key)
+        public Long load(@Nonnull MetricCacheKey key)
                 throws Exception
         {
-            LOG.debug("Loading a non-exact range from Accumulo: %s", key);
-            // Get metrics table name and the column family for the scanner
-            String metricsTable = getMetricsTableName(key.getSchema(), key.getTable());
-            Text columnFamily = new Text(getIndexColumnFamily(key.getFamily().getBytes(UTF_8), key.getQualifier().getBytes(UTF_8)).array());
-
-            // Create scanner for querying the range
-            BatchScanner scanner = connector.createBatchScanner(metricsTable, key.auths, 10);
-            scanner.setRanges(connector.tableOperations().splitRangeByTablets(metricsTable, key.range, Integer.MAX_VALUE));
-            scanner.fetchColumn(columnFamily, CARDINALITY_CQ_AS_TEXT);
-
-            IteratorSetting setting = new IteratorSetting(Integer.MAX_VALUE, "valuesummingcombiner", ValueSummingIterator.class);
-            ValueSummingIterator.setEncodingType(setting, Indexer.ENCODER_TYPE);
-            scanner.addScanIterator(setting);
-
-            try {
-                return stream(scanner)
-                        .map(Entry::getValue)
-                        .map(Value::toString)
-                        .mapToLong(Long::parseLong)
-                        .sum();
-            }
-            finally {
-                scanner.close();
-            }
+            return metricsStorage.newReader().getCardinality(key);
         }
 
         @Override
-        public Map<CacheKey, Long> loadAll(@Nonnull Iterable<? extends CacheKey> keys)
+        public Map<MetricCacheKey, Long> loadAll(@Nonnull Iterable<? extends MetricCacheKey> keys)
                 throws Exception
         {
-            int size = Iterables.size(keys);
-            if (size == 0) {
-                return ImmutableMap.of();
-            }
-
-            LOG.debug("Loading %s exact ranges from Accumulo", size);
-
-            // In order to simplify the implementation, we are making a (safe) assumption
-            // that the CacheKeys will all contain the same combination of schema/table/family/qualifier
-            // This is asserted with the below implementation error just to make sure
-            CacheKey anyKey = stream(keys).findAny().get();
-            if (stream(keys).anyMatch(k -> !k.getSchema().equals(anyKey.getSchema()) || !k.getTable().equals(anyKey.getTable()) || !k.getFamily().equals(anyKey.getFamily()) || !k.getQualifier().equals(anyKey.getQualifier()))) {
-                throw new PrestoException(FUNCTION_IMPLEMENTATION_ERROR, "loadAll called with a non-homogeneous collection of cache keys");
-            }
-
-            Map<Range, CacheKey> rangeToKey = stream(keys).collect(Collectors.toMap(CacheKey::getRange, Function.identity()));
-
-            // Get metrics table name and the column family for the scanner
-            String metricsTable = getMetricsTableName(anyKey.getSchema(), anyKey.getTable());
-            Text columnFamily = new Text(getIndexColumnFamily(anyKey.getFamily().getBytes(UTF_8), anyKey.getQualifier().getBytes(UTF_8)).array());
-
-            BatchScanner scanner = connector.createBatchScanner(metricsTable, anyKey.getAuths(), 10);
-            try {
-                scanner.setRanges(stream(keys).map(CacheKey::getRange).collect(Collectors.toList()));
-                scanner.fetchColumn(columnFamily, CARDINALITY_CQ_AS_TEXT);
-
-                // Create a new map to hold our cardinalities for each range, returning a default of
-                // Zero for each non-existent Key
-                Map<CacheKey, Long> rangeValues = new HashMap<>();
-                stream(keys).forEach(key -> rangeValues.put(key, 0L));
-
-                for (Entry<Key, Value> entry : scanner) {
-                    CacheKey cacheKey = rangeToKey.get(Range.exact(entry.getKey().getRow()));
-                    rangeValues.put(cacheKey, parseLong(entry.getValue().toString()) + rangeValues.getOrDefault(cacheKey, 0L));
-                }
-
-                return rangeValues;
-            }
-            finally {
-                scanner.close();
-            }
+            @SuppressWarnings("unchecked")
+            Collection<MetricCacheKey> cacheKeys = (Collection<MetricCacheKey>) keys;
+            return metricsStorage.newReader().getCardinalities(cacheKeys);
         }
     }
 }
