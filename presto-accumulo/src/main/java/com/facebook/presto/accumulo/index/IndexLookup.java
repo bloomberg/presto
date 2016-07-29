@@ -83,6 +83,7 @@ import static java.util.concurrent.Executors.newCachedThreadPool;
  */
 public class IndexLookup
 {
+    private static final Authorizations EMPTY_AUTHS = new Authorizations();
     private static final Logger LOG = Logger.get(IndexLookup.class);
     private static final Range METRICS_TABLE_ROWID_RANGE = new Range(METRICS_TABLE_ROWID_AS_TEXT);
     private final ColumnCardinalityCache cardinalityCache;
@@ -315,7 +316,7 @@ public class IndexLookup
             throws TableNotFoundException
     {
         // Create scanner against the metrics table, pulling the special column and the rows column
-        Scanner scanner = connector.createScanner(metricsTable, auths);
+        Scanner scanner = connector.createScanner(metricsTable, EMPTY_AUTHS);
         scanner.setRange(METRICS_TABLE_ROWID_RANGE);
         scanner.fetchColumn(METRICS_TABLE_ROWS_CF_AS_TEXT, CARDINALITY_CQ_AS_TEXT);
 
