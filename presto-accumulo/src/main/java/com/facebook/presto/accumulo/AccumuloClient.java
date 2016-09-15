@@ -19,7 +19,6 @@ import com.facebook.presto.accumulo.conf.AccumuloTableProperties;
 import com.facebook.presto.accumulo.index.IndexLookup;
 import com.facebook.presto.accumulo.index.Indexer;
 import com.facebook.presto.accumulo.index.metrics.MetricsStorage;
-import com.facebook.presto.accumulo.io.AccumuloPageSink;
 import com.facebook.presto.accumulo.metadata.AccumuloTable;
 import com.facebook.presto.accumulo.metadata.AccumuloView;
 import com.facebook.presto.accumulo.metadata.ZooKeeperMetadataManager;
@@ -71,6 +70,7 @@ import java.util.stream.Collectors;
 import static com.facebook.presto.accumulo.AccumuloErrorCode.ACCUMULO_TABLE_DNE;
 import static com.facebook.presto.accumulo.AccumuloErrorCode.ACCUMULO_TABLE_EXISTS;
 import static com.facebook.presto.accumulo.AccumuloErrorCode.UNEXPECTED_ACCUMULO_ERROR;
+import static com.facebook.presto.accumulo.io.PrestoBatchWriter.ROW_ID_COLUMN;
 import static com.facebook.presto.spi.StandardErrorCode.ALREADY_EXISTS;
 import static com.facebook.presto.spi.StandardErrorCode.FUNCTION_IMPLEMENTATION_ERROR;
 import static com.facebook.presto.spi.StandardErrorCode.INVALID_TABLE_PROPERTY;
@@ -203,11 +203,11 @@ public class AccumuloClient
             }
 
             // Validate no column is mapped to the reserved entry
-            String reservedRowIdColumn = AccumuloPageSink.ROW_ID_COLUMN.toString();
+            String reservedRowIdColumn = ROW_ID_COLUMN.toString();
             if (columnMapping.get().values().stream()
                     .filter(pair -> pair.getKey().equals(reservedRowIdColumn) && pair.getValue().equals(reservedRowIdColumn))
                     .count() > 0) {
-                throw new PrestoException(INVALID_TABLE_PROPERTY, format("Column familiy/qualifier mapping of %s:%s is reserved", reservedRowIdColumn, reservedRowIdColumn));
+                throw new PrestoException(INVALID_TABLE_PROPERTY, format("Column family/qualifier mapping of %s:%s is reserved", reservedRowIdColumn, reservedRowIdColumn));
             }
         }
         else if (table.isExternal()) {
@@ -723,8 +723,7 @@ public class AccumuloClient
      * @throws AccumuloException If a generic Accumulo error occurs
      * @throws AccumuloSecurityException If a security exception occurs
      */
-    private Authorizations getScanAuthorizations(ConnectorSession session, String schema,
-            String table)
+    private Authorizations getScanAuthorizations(ConnectorSession session, String schema, String table)
             throws AccumuloException, AccumuloSecurityException
     {
         String sessionScanUser = AccumuloSessionProperties.getScanUsername(session);
