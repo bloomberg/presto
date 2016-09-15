@@ -20,12 +20,16 @@ import com.facebook.presto.spi.ConnectorInsertTableHandle;
 import com.facebook.presto.spi.ConnectorOutputTableHandle;
 import com.facebook.presto.spi.ConnectorPageSink;
 import com.facebook.presto.spi.ConnectorSession;
+import com.facebook.presto.spi.PrestoException;
 import com.facebook.presto.spi.connector.ConnectorPageSinkProvider;
 import com.facebook.presto.spi.connector.ConnectorTransactionHandle;
+import org.apache.accumulo.core.client.AccumuloException;
+import org.apache.accumulo.core.client.AccumuloSecurityException;
 import org.apache.accumulo.core.client.Connector;
 
 import javax.inject.Inject;
 
+import static com.facebook.presto.accumulo.AccumuloErrorCode.UNEXPECTED_ACCUMULO_ERROR;
 import static java.util.Objects.requireNonNull;
 
 /**
@@ -53,9 +57,15 @@ public class AccumuloPageSinkProvider
 
     @Override
     public ConnectorPageSink createPageSink(ConnectorTransactionHandle transactionHandle, ConnectorSession session, ConnectorOutputTableHandle outputTableHandle)
+            throws PrestoException
     {
-        AccumuloTableHandle tableHandle = (AccumuloTableHandle) outputTableHandle;
-        return new AccumuloPageSink(connector, client.getTable(tableHandle.toSchemaTableName()), username);
+        try {
+            AccumuloTableHandle tableHandle = (AccumuloTableHandle) outputTableHandle;
+            return new AccumuloPageSink(connector, client.getTable(tableHandle.toSchemaTableName()), connector.securityOperations().getUserAuthorizations(username));
+        }
+        catch (AccumuloException | AccumuloSecurityException e) {
+            throw new PrestoException(UNEXPECTED_ACCUMULO_ERROR, "Failed to get user authorizations for writing data. Configured Accumulo user must have super-user privileges", e);
+        }
     }
 
     @Override
