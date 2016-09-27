@@ -137,8 +137,9 @@ public class ColumnCardinalityCache
         CompletionService<Pair<Long, AccumuloColumnConstraint>> executor = new ExecutorCompletionService<>(executorService);
         idxConstraintRangePairs.asMap().entrySet().forEach(e ->
                 executor.submit(() -> {
+                            long start = System.currentTimeMillis();
                             long cardinality = getColumnCardinality(schema, table, e.getKey().getFamily(), e.getKey().getQualifier(), truncateTimestamps && e.getKey().getType() == TimestampType.TIMESTAMP, auths, e.getValue());
-                            LOG.debug("Cardinality for column %s is %s", e.getKey().getName(), cardinality);
+                            LOG.debug("Cardinality for column %s is %s, took %s ms", e.getKey().getName(), cardinality, System.currentTimeMillis() - start);
                             return Pair.of(cardinality, e.getKey());
                         }
                 ));
@@ -217,8 +218,13 @@ public class ColumnCardinalityCache
         // This is where the reach-out to Accumulo occurs for all Ranges that have not
         // previously been fetched
         long sum = 0;
-        for (Long value : cache.getAll(exactRanges).values()) {
-            sum += value;
+        if (exactRanges.size() == 1) {
+            sum = cache.get(exactRanges.stream().findAny().get());
+        }
+        else {
+            for (Long value : cache.getAll(exactRanges).values()) {
+                sum += value;
+            }
         }
 
         // If these collection sizes are not equal,
