@@ -135,8 +135,9 @@ public class ColumnCardinalityCache
         // Submit tasks to the executor to fetch column cardinality, adding it to the Guava cache if necessary
         CompletionService<Pair<Long, AccumuloColumnConstraint>> executor = new ExecutorCompletionService<>(executorService);
         idxConstraintRangePairs.asMap().forEach((key, value) -> executor.submit(() -> {
+                    long start = System.currentTimeMillis();
                     long cardinality = getColumnCardinality(schema, table, auths, key.getFamily(), key.getQualifier(), truncateTimestamps && key.getType() == TimestampType.TIMESTAMP, value);
-                    LOG.debug("Cardinality for column %s is %s", key.getName(), cardinality);
+                    LOG.debug("Cardinality for column %s is %s, took %s ms", key.getName(), cardinality, System.currentTimeMillis() - start);
                     return Pair.of(cardinality, key);
                 }
         ));
@@ -214,7 +215,13 @@ public class ColumnCardinalityCache
         // Sum the cardinalities for the exact-value Ranges
         // This is where the reach-out to Accumulo occurs for all Ranges that have not
         // previously been fetched
-        long sum = cache.getAll(exactRanges).values().stream().mapToLong(Long::longValue).sum();
+        long sum = 0;
+        if (exactRanges.size() == 1) {
+            sum = cache.get(exactRanges.stream().findAny().get());
+        }
+        else {
+            sum = cache.getAll(exactRanges).values().stream().mapToLong(Long::longValue).sum();
+        }
 
         // If these collection sizes are not equal,
         // then there is at least one non-exact range
