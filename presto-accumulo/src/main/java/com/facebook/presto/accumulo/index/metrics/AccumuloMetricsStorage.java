@@ -14,7 +14,6 @@
 package com.facebook.presto.accumulo.index.metrics;
 
 import com.facebook.presto.accumulo.AccumuloTableManager;
-import com.facebook.presto.accumulo.conf.AccumuloConfig;
 import com.facebook.presto.accumulo.index.Indexer;
 import com.facebook.presto.accumulo.iterators.ValueSummingIterator;
 import com.facebook.presto.accumulo.metadata.AccumuloTable;
@@ -82,9 +81,9 @@ public class AccumuloMetricsStorage
 
     private final AccumuloTableManager tableManager;
 
-    public AccumuloMetricsStorage(Connector connector, AccumuloConfig config)
+    public AccumuloMetricsStorage(Connector connector)
     {
-        super(connector, config);
+        super(connector);
         tableManager = new AccumuloTableManager(connector);
     }
 
@@ -156,13 +155,13 @@ public class AccumuloMetricsStorage
     @Override
     public MetricsWriter newWriter(AccumuloTable table)
     {
-        return new AccumuloMetricsWriter(config, connector, table);
+        return new AccumuloMetricsWriter(connector, table);
     }
 
     @Override
     public MetricsReader newReader()
     {
-        return new AccumuloMetricsReader(config, connector);
+        return new AccumuloMetricsReader(connector);
     }
 
     /**
@@ -214,9 +213,9 @@ public class AccumuloMetricsStorage
         private final BatchWriterConfig writerConfig;
         private final Connector connector;
 
-        public AccumuloMetricsWriter(AccumuloConfig config, Connector connector, AccumuloTable table)
+        public AccumuloMetricsWriter(Connector connector, AccumuloTable table)
         {
-            super(config, table);
+            super(table);
             this.connector = requireNonNull(connector, "connector is null");
             this.writerConfig = new BatchWriterConfig();
         }
@@ -297,9 +296,8 @@ public class AccumuloMetricsStorage
         private final Connector connector;
         private final ExecutorService executorService;
 
-        public AccumuloMetricsReader(AccumuloConfig config, Connector connector)
+        public AccumuloMetricsReader(Connector connector)
         {
-            super(config);
             this.connector = requireNonNull(connector, "connector is null");
             this.executorService = MoreExecutors.getExitingExecutorService(new ThreadPoolExecutor(0, 5, 60L, TimeUnit.SECONDS, new SynchronousQueue<>()));
         }

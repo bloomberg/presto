@@ -13,7 +13,6 @@
  */
 package com.facebook.presto.accumulo.index.metrics;
 
-import com.facebook.presto.accumulo.conf.AccumuloConfig;
 import com.facebook.presto.accumulo.index.Indexer;
 import com.facebook.presto.spi.PrestoException;
 import org.apache.accumulo.core.data.Range;
@@ -27,7 +26,6 @@ import static com.facebook.presto.accumulo.index.metrics.MetricsStorage.METRICS_
 import static com.facebook.presto.accumulo.index.metrics.MetricsStorage.METRICS_TABLE_ROW_ID;
 import static com.facebook.presto.spi.StandardErrorCode.FUNCTION_IMPLEMENTATION_ERROR;
 import static java.nio.charset.StandardCharsets.UTF_8;
-import static java.util.Objects.requireNonNull;
 
 /**
  * Abstract class used to read metrics regarding the table index.
@@ -38,18 +36,6 @@ public abstract class MetricsReader
     private static final Range METRICS_TABLE_ROWID_RANGE = new Range(new Text(METRICS_TABLE_ROW_ID.array()));
     private static final String METRICS_TABLE_ROWS_COLUMN_STRING = new String(METRICS_TABLE_ROWS_COLUMN.array(), UTF_8);
     private static final Authorizations EMPTY_AUTHS = new Authorizations();
-
-    protected final AccumuloConfig config;
-
-    /**
-     * Creates a new instance of {@link MetricsReader}
-     *
-     * @param config Connector configuration
-     */
-    public MetricsReader(AccumuloConfig config)
-    {
-        this.config = requireNonNull(config, "config is null");
-    }
 
     /**
      * Gets the number of rows for the given table based on the user authorizations
