@@ -175,17 +175,17 @@ public class TestColumnCardinalityCache
     }
 
     @Test(expectedExceptions = NullPointerException.class)
-    public void testNullConfig()
+    public void testNullDuration()
             throws Exception
     {
-        new ColumnCardinalityCache(null);
+        new ColumnCardinalityCache(0, null);
     }
 
     @Test(expectedExceptions = NullPointerException.class)
     public void testNullSchema()
             throws Exception
     {
-        ColumnCardinalityCache cache = new ColumnCardinalityCache(CONFIG);
+        ColumnCardinalityCache cache = new ColumnCardinalityCache(CONFIG.getCardinalityCacheSize(), CONFIG.getCardinalityCacheExpiration());
         cache.getCardinalities(null, TABLE, EMPTY_CONSTRAINTS, AUTHS, EARLY_RETURN_THRESHOLD, POLLING_DURATION, storage, false);
     }
 
@@ -193,7 +193,7 @@ public class TestColumnCardinalityCache
     public void testNullTable()
             throws Exception
     {
-        ColumnCardinalityCache cache = new ColumnCardinalityCache(CONFIG);
+        ColumnCardinalityCache cache = new ColumnCardinalityCache(CONFIG.getCardinalityCacheSize(), CONFIG.getCardinalityCacheExpiration());
         cache.getCardinalities(SCHEMA, null, EMPTY_CONSTRAINTS, AUTHS, EARLY_RETURN_THRESHOLD, POLLING_DURATION, storage, false);
     }
 
@@ -201,7 +201,7 @@ public class TestColumnCardinalityCache
     public void testNullConstraints()
             throws Exception
     {
-        ColumnCardinalityCache cache = new ColumnCardinalityCache(CONFIG);
+        ColumnCardinalityCache cache = new ColumnCardinalityCache(CONFIG.getCardinalityCacheSize(), CONFIG.getCardinalityCacheExpiration());
         cache.getCardinalities(SCHEMA, TABLE, null, AUTHS, EARLY_RETURN_THRESHOLD, POLLING_DURATION, storage, false);
     }
 
@@ -209,7 +209,7 @@ public class TestColumnCardinalityCache
     public void testEmptyConstraints()
             throws Exception
     {
-        ColumnCardinalityCache cache = new ColumnCardinalityCache(CONFIG);
+        ColumnCardinalityCache cache = new ColumnCardinalityCache(CONFIG.getCardinalityCacheSize(), CONFIG.getCardinalityCacheExpiration());
 
         Multimap<Long, AccumuloColumnConstraint> cardinalities =
                 cache.getCardinalities(SCHEMA, TABLE, ImmutableMultimap.of(), AUTHS, EARLY_RETURN_THRESHOLD, POLLING_DURATION, storage, false);
@@ -220,15 +220,15 @@ public class TestColumnCardinalityCache
     public void testNullAuths()
             throws Exception
     {
-        ColumnCardinalityCache cache = new ColumnCardinalityCache(CONFIG);
+        ColumnCardinalityCache cache = new ColumnCardinalityCache(CONFIG.getCardinalityCacheSize(), CONFIG.getCardinalityCacheExpiration());
         cache.getCardinalities(SCHEMA, TABLE, EMPTY_CONSTRAINTS, null, EARLY_RETURN_THRESHOLD, POLLING_DURATION, storage, false);
     }
 
     @Test(expectedExceptions = NullPointerException.class)
-    public void testNullDuration()
+    public void testNullPollingDuration()
             throws Exception
     {
-        ColumnCardinalityCache cache = new ColumnCardinalityCache(CONFIG);
+        ColumnCardinalityCache cache = new ColumnCardinalityCache(CONFIG.getCardinalityCacheSize(), CONFIG.getCardinalityCacheExpiration());
         cache.getCardinalities(SCHEMA, TABLE, EMPTY_CONSTRAINTS, AUTHS, EARLY_RETURN_THRESHOLD, null, storage, false);
     }
 
@@ -236,7 +236,7 @@ public class TestColumnCardinalityCache
     public void testNullStorage()
             throws Exception
     {
-        ColumnCardinalityCache cache = new ColumnCardinalityCache(CONFIG);
+        ColumnCardinalityCache cache = new ColumnCardinalityCache(CONFIG.getCardinalityCacheSize(), CONFIG.getCardinalityCacheExpiration());
         cache.getCardinalities(SCHEMA, TABLE, EMPTY_CONSTRAINTS, AUTHS, EARLY_RETURN_THRESHOLD, POLLING_DURATION, null, false);
     }
 
@@ -244,7 +244,7 @@ public class TestColumnCardinalityCache
     public void testExactRange()
             throws Exception
     {
-        ColumnCardinalityCache cache = new ColumnCardinalityCache(CONFIG);
+        ColumnCardinalityCache cache = new ColumnCardinalityCache(CONFIG.getCardinalityCacheSize(), CONFIG.getCardinalityCacheExpiration());
         Range range = Range.equal(DATE, tld("1998-01-01"));
         AccumuloColumnConstraint constraint = acc("l_receiptdate", DATE, Domain.create(ValueSet.ofRanges(range), false));
         Multimap<AccumuloColumnConstraint, org.apache.accumulo.core.data.Range> constraints =
@@ -264,7 +264,7 @@ public class TestColumnCardinalityCache
     public void testMultipleExactRanges()
             throws Exception
     {
-        ColumnCardinalityCache cache = new ColumnCardinalityCache(CONFIG);
+        ColumnCardinalityCache cache = new ColumnCardinalityCache(CONFIG.getCardinalityCacheSize(), CONFIG.getCardinalityCacheExpiration());
         Range range1 = Range.equal(DATE, tld("1998-01-01"));
         Range range2 = Range.equal(DATE, tld("1998-01-02"));
         AccumuloColumnConstraint constraint = acc("l_receiptdate", DATE, Domain.create(ValueSet.ofRanges(range1, range2), false));
@@ -286,7 +286,7 @@ public class TestColumnCardinalityCache
     public void testRange()
             throws Exception
     {
-        ColumnCardinalityCache cache = new ColumnCardinalityCache(CONFIG);
+        ColumnCardinalityCache cache = new ColumnCardinalityCache(CONFIG.getCardinalityCacheSize(), CONFIG.getCardinalityCacheExpiration());
         Range range = Range.range(DATE, tld("1998-01-01"), false, tld("1998-01-03"), false);
         AccumuloColumnConstraint constraint = acc("l_receiptdate", DATE, Domain.create(ValueSet.ofRanges(range), false));
         Multimap<AccumuloColumnConstraint, org.apache.accumulo.core.data.Range> constraints =
@@ -306,7 +306,7 @@ public class TestColumnCardinalityCache
     public void testMultipleRanges()
             throws Exception
     {
-        ColumnCardinalityCache cache = new ColumnCardinalityCache(CONFIG);
+        ColumnCardinalityCache cache = new ColumnCardinalityCache(CONFIG.getCardinalityCacheSize(), CONFIG.getCardinalityCacheExpiration());
         Range range1 = Range.range(DATE, tld("1998-01-01"), false, tld("1998-01-03"), false);
         Range range2 = Range.range(DATE, tld("1998-01-10"), true, tld("1998-01-13"), true);
         AccumuloColumnConstraint constraint = acc("l_receiptdate", DATE, Domain.create(ValueSet.ofRanges(range1, range2), false));
@@ -328,7 +328,7 @@ public class TestColumnCardinalityCache
     public void testManyColumnExactRange()
             throws Exception
     {
-        ColumnCardinalityCache cache = new ColumnCardinalityCache(CONFIG);
+        ColumnCardinalityCache cache = new ColumnCardinalityCache(CONFIG.getCardinalityCacheSize(), CONFIG.getCardinalityCacheExpiration());
         Range rdRange = Range.equal(DATE, tld("1998-01-01"));
         AccumuloColumnConstraint rdConstraint = acc("l_receiptdate", DATE, Domain.create(ValueSet.ofRanges(rdRange), false));
 
@@ -362,7 +362,7 @@ public class TestColumnCardinalityCache
     public void testManyColumnMultipleExactRanges()
             throws Exception
     {
-        ColumnCardinalityCache cache = new ColumnCardinalityCache(CONFIG);
+        ColumnCardinalityCache cache = new ColumnCardinalityCache(CONFIG.getCardinalityCacheSize(), CONFIG.getCardinalityCacheExpiration());
         Range rdRange1 = Range.equal(DATE, tld("1998-01-01"));
         Range rdRange2 = Range.equal(DATE, tld("1998-01-02"));
         AccumuloColumnConstraint rdConstraint = acc("l_receiptdate", DATE, Domain.create(ValueSet.ofRanges(rdRange1, rdRange2), false));
@@ -400,7 +400,7 @@ public class TestColumnCardinalityCache
     public void testManyColumnRange()
             throws Exception
     {
-        ColumnCardinalityCache cache = new ColumnCardinalityCache(CONFIG);
+        ColumnCardinalityCache cache = new ColumnCardinalityCache(CONFIG.getCardinalityCacheSize(), CONFIG.getCardinalityCacheExpiration());
         Range rdRange = Range.range(DATE, tld("1998-01-01"), false, tld("1998-01-03"), false);
         AccumuloColumnConstraint rdConstraint = acc("l_receiptdate", DATE, Domain.create(ValueSet.ofRanges(rdRange), false));
 
@@ -434,7 +434,7 @@ public class TestColumnCardinalityCache
     public void testManyColumnMultipleRanges()
             throws Exception
     {
-        ColumnCardinalityCache cache = new ColumnCardinalityCache(CONFIG);
+        ColumnCardinalityCache cache = new ColumnCardinalityCache(CONFIG.getCardinalityCacheSize(), CONFIG.getCardinalityCacheExpiration());
         Range rdRange1 = Range.range(DATE, tld("1998-01-01"), false, tld("1998-01-03"), false);
         Range rdRange2 = Range.range(DATE, tld("1998-01-10"), true, tld("1998-01-13"), true);
         AccumuloColumnConstraint rdConstraint = acc("l_receiptdate", DATE, Domain.create(ValueSet.ofRanges(rdRange1, rdRange2), false));
@@ -472,7 +472,7 @@ public class TestColumnCardinalityCache
     public void testManyColumnMixedRanges()
             throws Exception
     {
-        ColumnCardinalityCache cache = new ColumnCardinalityCache(CONFIG);
+        ColumnCardinalityCache cache = new ColumnCardinalityCache(CONFIG.getCardinalityCacheSize(), CONFIG.getCardinalityCacheExpiration());
         Range rdRange = Range.range(DATE, tld("1970-01-01"), true, tld("2016-01-01"), true);
         AccumuloColumnConstraint rdConstraint = acc("l_receiptdate", DATE, Domain.create(ValueSet.ofRanges(rdRange), false));
 
@@ -541,7 +541,7 @@ public class TestColumnCardinalityCache
         metricsWriter.close();
         multiTableBatchWriter.close();
 
-        ColumnCardinalityCache cache = new ColumnCardinalityCache(CONFIG);
+        ColumnCardinalityCache cache = new ColumnCardinalityCache(CONFIG.getCardinalityCacheSize(), CONFIG.getCardinalityCacheExpiration());
         Range range = Range.equal(VARCHAR, Slices.copiedBuffer("2", UTF_8));
         AccumuloColumnConstraint constraint = acc("b", VARCHAR, Domain.create(ValueSet.ofRanges(range), false));
 

@@ -13,7 +13,6 @@
  */
 package com.facebook.presto.accumulo.index;
 
-import com.facebook.presto.accumulo.conf.AccumuloConfig;
 import com.facebook.presto.accumulo.index.metrics.MetricCacheKey;
 import com.facebook.presto.accumulo.index.metrics.MetricsStorage;
 import com.facebook.presto.accumulo.model.AccumuloColumnConstraint;
@@ -70,10 +69,9 @@ public class ColumnCardinalityCache
     private final LoadingCache<MetricCacheKey, Long> cache;
 
     @SuppressWarnings("unchecked")
-    public ColumnCardinalityCache(AccumuloConfig config)
+    public ColumnCardinalityCache(int size, Duration expireDuration)
     {
-        int size = requireNonNull(config, "config is null").getCardinalityCacheSize();
-        Duration expireDuration = config.getCardinalityCacheExpiration();
+        requireNonNull(expireDuration, "expireDuration is null");
 
         // Create executor service with one hot thread, pool size capped at 4x processors,
         // one minute keep alive, and a labeled ThreadFactory
