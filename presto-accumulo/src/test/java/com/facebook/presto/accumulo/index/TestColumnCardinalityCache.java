@@ -105,7 +105,7 @@ public class TestColumnCardinalityCache
 
         storage = MetricsStorage.getDefault(connector);
 
-        client = new AccumuloClient(connector, CONFIG, new ZooKeeperMetadataManager(CONFIG, new TypeRegistry()), new AccumuloTableManager(connector), new IndexLookup(connector, new ColumnCardinalityCache(CONFIG)));
+        client = new AccumuloClient(connector, CONFIG, new ZooKeeperMetadataManager(CONFIG, new TypeRegistry()), new AccumuloTableManager(connector), new IndexLookup(CONFIG, connector, new ColumnCardinalityCache(CONFIG)));
 
         connector.securityOperations().changeUserAuthorizations("root", new Authorizations("private", "moreprivate", "foo", "bar", "xyzzy"));
         writeTestData();
@@ -244,8 +244,7 @@ public class TestColumnCardinalityCache
         ColumnCardinalityCache cache = new ColumnCardinalityCache(CONFIG);
         Range range = Range.equal(DATE, tld("1998-01-01"));
         AccumuloColumnConstraint constraint = acc("l_receiptdate", DATE, Domain.create(ValueSet.ofRanges(range), false));
-        Multimap<AccumuloColumnConstraint, org.apache.accumulo.core.data.Range> constraints =
-                ImmutableMultimap.of(constraint, getRangeFromPrestoRange(range, SERIALIZER));
+        Multimap<AccumuloColumnConstraint, org.apache.accumulo.core.data.Range> constraints = ImmutableMultimap.of(constraint, getRangeFromPrestoRange(range, SERIALIZER));
 
         Multimap<Long, AccumuloColumnConstraint> cardinalities = cache.getCardinalities(SCHEMA, TABLE, AUTHS, constraints, EARLY_RETURN_THRESHOLD, POLLING_DURATION, storage, false);
         assertEquals(cardinalities.size(), 1);
@@ -265,7 +264,8 @@ public class TestColumnCardinalityCache
         Range range2 = Range.equal(DATE, tld("1998-01-02"));
         AccumuloColumnConstraint constraint = acc("l_receiptdate", DATE, Domain.create(ValueSet.ofRanges(range1, range2), false));
         Multimap<AccumuloColumnConstraint, org.apache.accumulo.core.data.Range> constraints =
-                ImmutableMultimap.of(constraint, getRangeFromPrestoRange(range1, SERIALIZER),
+                ImmutableMultimap.of(
+                        constraint, getRangeFromPrestoRange(range1, SERIALIZER),
                         constraint, getRangeFromPrestoRange(range2, SERIALIZER));
 
         Multimap<Long, AccumuloColumnConstraint> cardinalities = cache.getCardinalities(SCHEMA, TABLE, AUTHS, constraints, EARLY_RETURN_THRESHOLD, POLLING_DURATION, storage, false);
@@ -304,7 +304,8 @@ public class TestColumnCardinalityCache
         Range range2 = Range.range(DATE, tld("1998-01-10"), true, tld("1998-01-13"), true);
         AccumuloColumnConstraint constraint = acc("l_receiptdate", DATE, Domain.create(ValueSet.ofRanges(range1, range2), false));
         Multimap<AccumuloColumnConstraint, org.apache.accumulo.core.data.Range> constraints =
-                ImmutableMultimap.of(constraint, getRangeFromPrestoRange(range1, SERIALIZER),
+                ImmutableMultimap.of(
+                        constraint, getRangeFromPrestoRange(range1, SERIALIZER),
                         constraint, getRangeFromPrestoRange(range2, SERIALIZER));
 
         Multimap<Long, AccumuloColumnConstraint> cardinalities = cache.getCardinalities(SCHEMA, TABLE, AUTHS, constraints, EARLY_RETURN_THRESHOLD, POLLING_DURATION, storage, false);
@@ -328,7 +329,8 @@ public class TestColumnCardinalityCache
         AccumuloColumnConstraint lnConstraint = acc("l_linenumber", INTEGER, Domain.create(ValueSet.ofRanges(lnRange), false));
 
         Multimap<AccumuloColumnConstraint, org.apache.accumulo.core.data.Range> constraints =
-                ImmutableMultimap.of(rdConstraint, getRangeFromPrestoRange(rdRange, SERIALIZER),
+                ImmutableMultimap.of(
+                        rdConstraint, getRangeFromPrestoRange(rdRange, SERIALIZER),
                         lnConstraint, getRangeFromPrestoRange(lnRange, SERIALIZER));
 
         Multimap<Long, AccumuloColumnConstraint> cardinalities = cache.getCardinalities(SCHEMA, TABLE, AUTHS, constraints, EARLY_RETURN_THRESHOLD, POLLING_DURATION, storage, false);
@@ -363,7 +365,8 @@ public class TestColumnCardinalityCache
         AccumuloColumnConstraint lnConstraint = acc("l_linenumber", INTEGER, Domain.create(ValueSet.ofRanges(lnRange1, lnRange2), false));
 
         Multimap<AccumuloColumnConstraint, org.apache.accumulo.core.data.Range> constraints =
-                ImmutableMultimap.of(rdConstraint, getRangeFromPrestoRange(rdRange1, SERIALIZER),
+                ImmutableMultimap.of(
+                        rdConstraint, getRangeFromPrestoRange(rdRange1, SERIALIZER),
                         rdConstraint, getRangeFromPrestoRange(rdRange2, SERIALIZER),
                         lnConstraint, getRangeFromPrestoRange(lnRange1, SERIALIZER),
                         lnConstraint, getRangeFromPrestoRange(lnRange2, SERIALIZER));
@@ -398,7 +401,8 @@ public class TestColumnCardinalityCache
         AccumuloColumnConstraint lnConstraint = acc("l_linenumber", INTEGER, Domain.create(ValueSet.ofRanges(lnRange), false));
 
         Multimap<AccumuloColumnConstraint, org.apache.accumulo.core.data.Range> constraints =
-                ImmutableMultimap.of(rdConstraint, getRangeFromPrestoRange(rdRange, SERIALIZER),
+                ImmutableMultimap.of(
+                        rdConstraint, getRangeFromPrestoRange(rdRange, SERIALIZER),
                         lnConstraint, getRangeFromPrestoRange(lnRange, SERIALIZER));
 
         Multimap<Long, AccumuloColumnConstraint> cardinalities = cache.getCardinalities(SCHEMA, TABLE, AUTHS, constraints, EARLY_RETURN_THRESHOLD, POLLING_DURATION, storage, false);
@@ -433,7 +437,8 @@ public class TestColumnCardinalityCache
         AccumuloColumnConstraint lnConstraint = acc("l_linenumber", INTEGER, Domain.create(ValueSet.ofRanges(lnRange1, lnRange2), false));
 
         Multimap<AccumuloColumnConstraint, org.apache.accumulo.core.data.Range> constraints =
-                ImmutableMultimap.of(rdConstraint, getRangeFromPrestoRange(rdRange1, SERIALIZER),
+                ImmutableMultimap.of(
+                        rdConstraint, getRangeFromPrestoRange(rdRange1, SERIALIZER),
                         rdConstraint, getRangeFromPrestoRange(rdRange2, SERIALIZER),
                         lnConstraint, getRangeFromPrestoRange(lnRange1, SERIALIZER),
                         lnConstraint, getRangeFromPrestoRange(lnRange2, SERIALIZER));
@@ -468,7 +473,8 @@ public class TestColumnCardinalityCache
         AccumuloColumnConstraint lnConstraint = acc("l_linenumber", INTEGER, Domain.create(ValueSet.ofRanges(lnRange), false));
 
         Multimap<AccumuloColumnConstraint, org.apache.accumulo.core.data.Range> constraints =
-                ImmutableMultimap.of(rdConstraint, getRangeFromPrestoRange(rdRange, SERIALIZER),
+                ImmutableMultimap.of(
+                        rdConstraint, getRangeFromPrestoRange(rdRange, SERIALIZER),
                         lnConstraint, getRangeFromPrestoRange(lnRange, SERIALIZER));
 
         Multimap<Long, AccumuloColumnConstraint> cardinalities = cache.getCardinalities(SCHEMA, TABLE, AUTHS, constraints, EARLY_RETURN_THRESHOLD, POLLING_DURATION, storage, false);
@@ -533,9 +539,7 @@ public class TestColumnCardinalityCache
         AccumuloColumnConstraint constraint = acc("b", VARCHAR, Domain.create(ValueSet.ofRanges(range), false));
 
         Multimap<AccumuloColumnConstraint, org.apache.accumulo.core.data.Range> constraints = ImmutableMultimap.of(constraint, getRangeFromPrestoRange(range, SERIALIZER));
-
         Multimap<Long, AccumuloColumnConstraint> cardinalities = cache.getCardinalities(tableName.getSchemaName(), tableName.getTableName(), new Authorizations("private"), constraints, EARLY_RETURN_THRESHOLD, POLLING_DURATION, storage, false);
-
         assertEquals(cardinalities.size(), 1);
 
         Iterator<Entry<Long, Collection<AccumuloColumnConstraint>>> iterator = cardinalities.asMap().entrySet().iterator();

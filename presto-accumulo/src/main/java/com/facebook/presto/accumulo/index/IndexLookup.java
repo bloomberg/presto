@@ -13,6 +13,7 @@
  */
 package com.facebook.presto.accumulo.index;
 
+import com.facebook.presto.accumulo.conf.AccumuloConfig;
 import com.facebook.presto.accumulo.conf.AccumuloSessionProperties;
 import com.facebook.presto.accumulo.index.metrics.MetricsReader;
 import com.facebook.presto.accumulo.index.metrics.MetricsStorage;
@@ -66,6 +67,7 @@ import static com.facebook.presto.accumulo.conf.AccumuloSessionProperties.isOpti
 import static com.facebook.presto.accumulo.index.Indexer.getIndexTableName;
 import static com.google.common.base.Preconditions.checkArgument;
 import static io.airlift.concurrent.Threads.daemonThreadsNamed;
+import static java.lang.String.format;
 import static java.util.Objects.requireNonNull;
 import static java.util.concurrent.Executors.newCachedThreadPool;
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
@@ -83,12 +85,14 @@ public class IndexLookup
     private final Connector connector;
     private final ExecutorService coreExecutor;
     private final BoundedExecutor executorService;
+    private final int maxIndexLookup;
 
     @Inject
-    public IndexLookup(Connector connector, ColumnCardinalityCache cardinalityCache)
+    public IndexLookup(AccumuloConfig config, Connector connector, ColumnCardinalityCache cardinalityCache)
     {
         this.connector = requireNonNull(connector, "connector is null");
         this.cardinalityCache = requireNonNull(cardinalityCache, "cardinalityCache is null");
+        this.maxIndexLookup = requireNonNull(config, "config is null").getMaxIndexLookupCardinality();
 
         // Create a bounded executor with a pool size at 4x number of processors
         this.coreExecutor = newCachedThreadPool(daemonThreadsNamed("cardinality-lookup-%s"));
@@ -243,7 +247,7 @@ public class IndexLookup
         // If the smallest cardinality in our list is above the lowest cardinality threshold,
         // we should look at intersecting the row ID ranges to try and get under the threshold.
         if (smallestCardAboveThreshold(session, numRows, lowestCardinality.getKey())) {
-            // If we only have one column, we can skip the intersection process and just check the index threshold
+            // If we only have one column, we can check the index threshold without doing the row intersection
             if (cardinalities.size() == 1) {
                 long numEntries = lowestCardinality.getKey();
                 double ratio = ((double) numEntries / (double) numRows);
@@ -253,10 +257,24 @@ public class IndexLookup
                 }
             }
 
-            // Else, get the intersection of all row IDs for all column constraints
-            LOG.debug("%d indexed columns, intersecting ranges", constraintRanges.size());
-            indexRanges = getIndexRanges(indexTable, constraintRanges, rowIdRanges, auths);
-            LOG.debug("Intersection results in %d ranges from secondary index", indexRanges.size());
+            // Else, remove columns with a large number of rows
+            ImmutableSetMultimap.Builder<AccumuloColumnConstraint, Range> builder = ImmutableSetMultimap.builder();
+            cardinalities.entries().stream().filter(x -> x.getKey() < maxIndexLookup).map(Entry::getValue).forEach(constraint -> {
+                LOG.debug(format("Cardinality of column %s is below the max index lookup threshold %s, added for intersection", constraint.getName(), maxIndexLookup));
+                builder.putAll(constraint, constraintRanges.get(constraint));
+            });
+            Multimap<AccumuloColumnConstraint, Range> intersectionColumns = builder.build();
+
+            // If there are columns to do row intersection, then do so
+            if (intersectionColumns.size() > 0) {
+                LOG.debug("%d indexed columns, intersecting ranges", intersectionColumns.size());
+                indexRanges = getIndexRanges(indexTable, intersectionColumns, rowIdRanges, auths);
+                LOG.debug("Intersection results in %d ranges from secondary index", indexRanges.size());
+            }
+            else {
+                LOG.debug("No columns have few enough entries to allow intersection, doing a full table scan");
+                return false;
+            }
         }
         else {
             // Else, we don't need to intersect the columns and we can just use the column with the lowest cardinality,
