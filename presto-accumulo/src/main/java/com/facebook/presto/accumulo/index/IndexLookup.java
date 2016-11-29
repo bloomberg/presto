@@ -22,6 +22,7 @@ import com.facebook.presto.accumulo.model.AccumuloColumnConstraint;
 import com.facebook.presto.accumulo.model.TabletSplitMetadata;
 import com.facebook.presto.accumulo.serializers.AccumuloRowSerializer;
 import com.facebook.presto.spi.ConnectorSession;
+import com.facebook.presto.spi.NodeManager;
 import com.facebook.presto.spi.PrestoException;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMultimap;
@@ -60,6 +61,11 @@ import java.util.concurrent.atomic.AtomicLong;
 import static com.facebook.presto.accumulo.AccumuloErrorCode.UNEXPECTED_ACCUMULO_ERROR;
 import static com.facebook.presto.accumulo.conf.AccumuloSessionProperties.getIndexSmallCardRowThreshold;
 import static com.facebook.presto.accumulo.conf.AccumuloSessionProperties.getIndexSmallCardThreshold;
+import static com.facebook.presto.accumulo.conf.AccumuloSessionProperties.getMaxRowsPerSplit;
+import static com.facebook.presto.accumulo.conf.AccumuloSessionProperties.getMinRowsPerSplit;
+import static com.facebook.presto.accumulo.conf.AccumuloSessionProperties.getNumIndexRowsPerSplit;
+import static com.facebook.presto.accumulo.conf.AccumuloSessionProperties.getSplitsPerWorker;
+import static com.facebook.presto.accumulo.conf.AccumuloSessionProperties.isOptimizeNumRowsPerSplitEnabled;
 import static com.google.common.base.Preconditions.checkArgument;
 import static java.lang.String.format;
 import static java.util.Objects.requireNonNull;
@@ -79,13 +85,16 @@ public class IndexLookup
     private final Connector connector;
     private final ColumnCardinalityCache cardinalityCache;
     private final ExecutorService executor;
+    private final NodeManager nodeManager;
     private final int maxIndexLookup;
 
     @Inject
-    public IndexLookup(Connector connector, AccumuloConfig config)
+    public IndexLookup(Connector connector, AccumuloConfig config, NodeManager nodeManager)
     {
         this.connector = requireNonNull(connector, "connector is null");
         this.cardinalityCache = new ColumnCardinalityCache(config.getCardinalityCacheSize(), config.getCardinalityCacheExpiration());
+        this.nodeManager = requireNonNull(nodeManager, "nodeManager is null");
+
         AtomicLong threadCount = new AtomicLong(0);
         this.executor = MoreExecutors.getExitingExecutorService(
                 new ThreadPoolExecutor(1, 4 * Runtime.getRuntime().availableProcessors(), 60L,
@@ -155,10 +164,9 @@ public class IndexLookup
             LOG.debug("Use of index metrics is disabled");
             // Get the ranges via the index table
             List<Range> indexRanges = getIndexRanges(Indexer.getIndexTableName(schema, table), constraintRanges, rowIdRanges, auths);
-
             if (!indexRanges.isEmpty()) {
                 // Bin the ranges into TabletMetadataSplits and return true to use the tablet splits
-                binRanges(AccumuloSessionProperties.getNumIndexRowsPerSplit(session), indexRanges, tabletSplits);
+                binRanges(optimizeNumRowsPerSplit(session, indexRanges.size(), nodeManager.getWorkerNodes().size()), indexRanges, tabletSplits);
                 LOG.debug("Number of splits for %s.%s is %d with %d ranges", schema, table, tabletSplits.size(), indexRanges.size());
             }
             else {
@@ -171,6 +179,27 @@ public class IndexLookup
             LOG.debug("Use of index metrics is enabled");
             // Get ranges using the metrics
             return getRangesWithMetrics(session, schema, table, constraintRanges, rowIdRanges, tabletSplits, auths, metricsStorage, truncateTimestamps);
+        }
+    }
+
+    private int optimizeNumRowsPerSplit(ConnectorSession session, int numRowIDs, int numWorkers)
+    {
+        if (isOptimizeNumRowsPerSplitEnabled(session)) {
+            int min = getMinRowsPerSplit(session);
+
+            if (numRowIDs <= min) {
+                LOG.debug("RowsPerSplit " + numRowIDs);
+                return numRowIDs;
+            }
+
+            int max = getMaxRowsPerSplit(session);
+            int splitsPerWorker = getSplitsPerWorker(session);
+            int rowsPerSplit = Math.max(Math.min((int) Math.ceil((float) numRowIDs / (float) splitsPerWorker / (float) numWorkers), max), min);
+            LOG.debug("RowsPerSplit %s, Row IDs %s, Min %s, Max %s, Workers %s, SplitsPerWorker %s", rowsPerSplit, numRowIDs, min, max, numWorkers, splitsPerWorker);
+            return rowsPerSplit;
+        }
+        else {
+            return getNumIndexRowsPerSplit(session);
         }
     }
 
@@ -290,7 +319,7 @@ public class IndexLookup
         // If the percentage of scanned rows, the ratio, less than the configured threshold
         if (ratio < threshold) {
             // Bin the ranges into TabletMetadataSplits and return true to use the tablet splits
-            binRanges(AccumuloSessionProperties.getNumIndexRowsPerSplit(session), indexRanges, tabletSplits);
+            binRanges(optimizeNumRowsPerSplit(session, indexRanges.size(), nodeManager.getWorkerNodes().size()), indexRanges, tabletSplits);
             LOG.debug("Number of splits for %s.%s is %d with %d ranges", schema, table, tabletSplits.size(), indexRanges.size());
             return true;
         }

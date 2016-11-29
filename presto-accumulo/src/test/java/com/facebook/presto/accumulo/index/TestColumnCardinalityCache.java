@@ -35,6 +35,7 @@ import com.facebook.presto.spi.predicate.Domain;
 import com.facebook.presto.spi.predicate.Range;
 import com.facebook.presto.spi.predicate.ValueSet;
 import com.facebook.presto.spi.type.Type;
+import com.facebook.presto.testing.TestingNodeManager;
 import com.facebook.presto.type.TypeRegistry;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMultimap;
@@ -107,7 +108,7 @@ public class TestColumnCardinalityCache
 
         storage = MetricsStorage.getDefault(connector);
 
-        client = new AccumuloClient(connector, CONFIG, new ZooKeeperMetadataManager(CONFIG, new TypeRegistry()), new AccumuloTableManager(connector), new IndexLookup(connector, CONFIG));
+        client = new AccumuloClient(connector, CONFIG, new ZooKeeperMetadataManager(CONFIG, new TypeRegistry()), new AccumuloTableManager(connector), new IndexLookup(connector, CONFIG, new TestingNodeManager()));
         connector.securityOperations().changeUserAuthorizations("root", new Authorizations("private", "moreprivate", "foo", "bar", "xyzzy"));
         writeTestData();
     }

@@ -49,6 +49,10 @@ public final class AccumuloSessionProperties
     private static final String SCAN_USERNAME = "scan_username";
     private static final String INDEX_SHORT_CIRCUIT_CARDINALITY_FETCH = "index_short_circuit_cardinality_fetch";
     private static final String INDEX_CARDINALITY_CACHE_POLLING_DURATION = "index_cardinality_cache_polling_duration";
+    private static final String OPTIMIZE_NUM_ROWS_PER_SPLIT = "optimize_num_rows_per_split";
+    private static final String MIN_ROWS_PER_SPLIT = "min_rows_per_split";
+    private static final String MAX_ROWS_PER_SPLIT = "max_rows_per_split";
+    private static final String SPLITS_PER_WORKER = "splits_per_worker";
 
     private final List<PropertyMetadata<?>> sessionProperties;
 
@@ -120,7 +124,31 @@ public final class AccumuloSessionProperties
                 x -> Duration.valueOf(x.toString()).toString(),
                 object -> object);
 
-        sessionProperties = ImmutableList.of(s1, s2, s3, s4, s5, s6, s7, s8, s9, s10, s11);
+        PropertyMetadata<Boolean> s12 = booleanSessionProperty(
+                OPTIMIZE_NUM_ROWS_PER_SPLIT,
+                "Set to true to enable the connector's optimizer to determine the number of row IDs to pack into a split.  Default true",
+                true,
+                false);
+
+        PropertyMetadata<Integer> s13 = integerSessionProperty(
+                MIN_ROWS_PER_SPLIT,
+                "The minimum number of row IDs that are packed into a single Presto split. Requires optimize.num.rows.per.split to be 'true'. Default 100",
+                100,
+                false);
+
+        PropertyMetadata<Integer> s14 = integerSessionProperty(
+                MAX_ROWS_PER_SPLIT,
+                "The maximum number of row IDs that are packed into a single Presto split. Requires optimize.num.rows.per.split to be 'true'. Default 50000",
+                50000,
+                false);
+
+        PropertyMetadata<Integer> s15 = integerSessionProperty(
+                SPLITS_PER_WORKER,
+                "The desired number of splits to generate per worker node. Requires optimize.num.rows.per.split to be 'true'. Default is max(1, num CPUs * 2 / 10)",
+                Math.max(Runtime.getRuntime().availableProcessors() * 2 / 10, 1),
+                false);
+
+        sessionProperties = ImmutableList.of(s1, s2, s3, s4, s5, s6, s7, s8, s9, s10, s11, s12, s13, s14, s15);
     }
 
     public List<PropertyMetadata<?>> getSessionProperties()
@@ -219,5 +247,25 @@ public final class AccumuloSessionProperties
     public static boolean isIndexShortCircuitEnabled(ConnectorSession session)
     {
         return session.getProperty(INDEX_SHORT_CIRCUIT_CARDINALITY_FETCH, Boolean.class);
+    }
+
+    public static boolean isOptimizeNumRowsPerSplitEnabled(ConnectorSession session)
+    {
+        return session.getProperty(OPTIMIZE_NUM_ROWS_PER_SPLIT, Boolean.class);
+    }
+
+    public static int getMinRowsPerSplit(ConnectorSession session)
+    {
+        return session.getProperty(MIN_ROWS_PER_SPLIT, Integer.class);
+    }
+
+    public static int getMaxRowsPerSplit(ConnectorSession session)
+    {
+        return session.getProperty(MAX_ROWS_PER_SPLIT, Integer.class);
+    }
+
+    public static int getSplitsPerWorker(ConnectorSession session)
+    {
+        return session.getProperty(SPLITS_PER_WORKER, Integer.class);
     }
 }
