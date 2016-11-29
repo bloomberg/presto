@@ -484,26 +484,30 @@ Note that session properties are prefixed with the catalog name::
 
     SET SESSION accumulo.column_filter_optimizations_enabled = false;
 
-============================================= ============= =======================================================================================================
-Property Name                                 Default Value Description
-============================================= ============= =======================================================================================================
-``optimize_locality_enabled``                 ``true``      Set to true to enable data locality for non-indexed scans
-``optimize_split_ranges_enabled``             ``true``      Set to true to split non-indexed queries by tablet splits. Should generally be true.
-``optimize_index_enabled``                    ``true``      Set to true to enable usage of the secondary index on query
-``index_rows_per_split``                      ``10000``     The number of Accumulo row IDs that are packed into a single Presto split
-``index_threshold``                           ``0.2``       The ratio between number of rows to be scanned based on the index over the total number of rows
-                                                            If the ratio is below this threshold, the index will be used.
-``index_lowest_cardinality_threshold``        ``0.01``      The threshold (as a percentage) where the column with the lowest cardinality will be used instead
-                                                            of computing an intersection of ranges in the secondary index. The minimum value of this value times
-                                                            the number of rows in the table and the row threshold will be used. Secondary index must be enabled
-``index_lowest_cardinality_row_threshold``    ``50000``     The threshold (as number of rows) where the column with the lowest cardinality will be used instead
-                                                            of computing an intersection of ranges in the secondary index. The minimum value of this value and
-                                                            the percentage threshold will be used. Secondary index must be enabled
-``index_metrics_enabled``                     ``true``      Set to true to enable usage of the metrics table to optimize usage of the index
-``scan_username``                             (config)      User to impersonate when scanning the tables. This property trumps the ``scan_auths`` table property
-``index_short_circuit_cardinality_fetch``     ``true``      Short circuit the retrieval of index metrics once any column is less than the lowest cardinality threshold
-``index_cardinality_cache_polling_duration``  ``10ms``      Sets the cardinality cache polling duration for short circuit retrieval of index metrics
-============================================= ============= =======================================================================================================
+============================================= ============================= ==============================================================================================================================
+Property Name                                 Default Value                 Description
+============================================= ============================= ==============================================================================================================================
+``optimize_locality_enabled``                 ``true``                      Set to true to enable data locality for non-indexed scans
+``optimize_split_ranges_enabled``             ``true``                      Set to true to split non-indexed queries by tablet splits. Should generally be true.
+``optimize_index_enabled``                    ``true``                      Set to true to enable usage of the secondary index on query
+``index_rows_per_split``                      ``10000``                     The number of Accumulo row IDs that are packed into a single Presto split
+``index_threshold``                           ``0.2``                       The ratio between number of rows to be scanned based on the index over the total number of rows
+                                                                            If the ratio is below this threshold, the index will be used.
+``index_lowest_cardinality_threshold``        ``0.01``                      The threshold (as a percentage) where the column with the lowest cardinality will be used instead
+                                                                            of computing an intersection of ranges in the secondary index. The minimum value of this value times
+                                                                            the number of rows in the table and the row threshold will be used. Secondary index must be enabled
+``index_lowest_cardinality_row_threshold``    ``50000``                     The threshold (as number of rows) where the column with the lowest cardinality will be used instead
+                                                                            of computing an intersection of ranges in the secondary index. The minimum value of this value and
+                                                                            the percentage threshold will be used. Secondary index must be enabled
+``index_metrics_enabled``                     ``true``                      Set to true to enable usage of the metrics table to optimize usage of the index
+``scan_username``                             (config)                      User to impersonate when scanning the tables. This property trumps the ``scan_auths`` table property
+``index_short_circuit_cardinality_fetch``     ``true``                      Short circuit the retrieval of index metrics once any column is less than the lowest cardinality threshold
+``index_cardinality_cache_polling_duration``  ``10ms``                      Sets the cardinality cache polling duration for short circuit retrieval of index metrics
+``optimize_num_rows_per_split``               ``true``                      Set to true to enable the connector's optimizer to determine the number of row IDs to pack into a split
+``min_rows_per_split``                        ``100``                       The minimum number of row IDs that are packed into a single Presto split. Requires optimize.num.rows.per.split to be ``true``
+``max_rows_per_split``                        ``50000``                     The maximum number of row IDs that are packed into a single Presto split. Requires optimize.num.rows.per.split to be ``true``
+``splits_per_worker``                         ``max(1, numCPUs * 2 / 25)``  The desired number of splits to generate per worker node. Requires optimize.num.rows.per.split to be 'true``
+============================================= ============================= ==============================================================================================================================
 
 Adding Columns
 --------------
