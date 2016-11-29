@@ -22,6 +22,7 @@ import com.facebook.presto.accumulo.io.AccumuloPageSinkProvider;
 import com.facebook.presto.accumulo.io.AccumuloRecordSetProvider;
 import com.facebook.presto.accumulo.metadata.AccumuloTable;
 import com.facebook.presto.accumulo.metadata.ZooKeeperMetadataManager;
+import com.facebook.presto.spi.NodeManager;
 import com.facebook.presto.spi.PrestoException;
 import com.facebook.presto.spi.type.Type;
 import com.facebook.presto.spi.type.TypeManager;
@@ -63,13 +64,16 @@ public class AccumuloModule
         implements Module
 {
     private final String connectorId;
+    private final NodeManager nodeManager;
     private final TypeManager typeManager;
 
     public AccumuloModule(
             String connectorId,
+            NodeManager nodeManager,
             TypeManager typeManager)
     {
         this.connectorId = requireNonNull(connectorId, "connector id is null");
+        this.nodeManager = requireNonNull(nodeManager, "nodeManager is null");
         this.typeManager = requireNonNull(typeManager, "typeManager is null");
     }
 
@@ -83,6 +87,7 @@ public class AccumuloModule
         appender.activateOptions();
         org.apache.log4j.Logger.getRootLogger().addAppender(appender);
 
+        binder.bind(NodeManager.class).toInstance(nodeManager);
         binder.bind(TypeManager.class).toInstance(typeManager);
 
         binder.bind(AccumuloConnector.class).in(Scopes.SINGLETON);

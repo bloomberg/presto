@@ -22,6 +22,7 @@ import com.facebook.presto.accumulo.metadata.ZooKeeperMetadataManager;
 import com.facebook.presto.spi.ColumnMetadata;
 import com.facebook.presto.spi.ConnectorTableMetadata;
 import com.facebook.presto.spi.SchemaTableName;
+import com.facebook.presto.testing.TestingNodeManager;
 import com.facebook.presto.type.TypeRegistry;
 import com.google.common.collect.ImmutableList;
 import org.apache.accumulo.core.client.Connector;
@@ -49,7 +50,7 @@ public class TestAccumuloClient
         Connector connector = AccumuloQueryRunner.getAccumuloConnector();
         config.setZooKeepers(connector.getInstance().getZooKeepers());
         zooKeeperMetadataManager = new ZooKeeperMetadataManager(config, new TypeRegistry());
-        client = new AccumuloClient(connector, config, zooKeeperMetadataManager, new AccumuloTableManager(connector), new IndexLookup(config, connector, new ColumnCardinalityCache(config)));
+        client = new AccumuloClient(connector, config, zooKeeperMetadataManager, new AccumuloTableManager(connector), new IndexLookup(config, connector, new ColumnCardinalityCache(config), new TestingNodeManager()));
     }
 
     @Test
