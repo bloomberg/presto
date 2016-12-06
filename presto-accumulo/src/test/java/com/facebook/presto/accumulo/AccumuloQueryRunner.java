@@ -31,6 +31,7 @@ import org.apache.accumulo.core.client.Instance;
 import org.apache.accumulo.core.client.ZooKeeperInstance;
 import org.apache.accumulo.core.client.security.tokens.PasswordToken;
 import org.apache.accumulo.minicluster.MiniAccumuloCluster;
+import org.apache.accumulo.minicluster.MiniAccumuloConfig;
 import org.apache.commons.io.FileUtils;
 import org.apache.hadoop.io.Text;
 import org.intellij.lang.annotations.Language;
@@ -54,6 +55,7 @@ import static com.facebook.presto.tpch.TpchMetadata.TINY_SCHEMA_NAME;
 import static io.airlift.units.Duration.nanosSince;
 import static java.lang.String.format;
 import static java.util.concurrent.TimeUnit.SECONDS;
+import static org.apache.accumulo.minicluster.MemoryUnit.GIGABYTE;
 
 public final class AccumuloQueryRunner
 {
@@ -196,8 +198,11 @@ public final class AccumuloQueryRunner
         File macDir = Files.createTempDirectory("mac-").toFile();
         LOG.info("MAC is enabled, starting MiniAccumuloCluster at %s", macDir);
 
+        MiniAccumuloConfig config = new MiniAccumuloConfig(macDir, MAC_PASSWORD);
+        config.setDefaultMemory(2, GIGABYTE);
+
         // Start MAC and connect to it
-        MiniAccumuloCluster accumulo = new MiniAccumuloCluster(macDir, MAC_PASSWORD);
+        MiniAccumuloCluster accumulo = new MiniAccumuloCluster(config);
         accumulo.start();
 
         // Add shutdown hook to stop MAC and cleanup temporary files
