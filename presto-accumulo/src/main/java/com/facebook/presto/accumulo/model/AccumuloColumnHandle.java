@@ -30,7 +30,6 @@ import static java.util.Objects.requireNonNull;
 public final class AccumuloColumnHandle
         implements ColumnHandle, Comparable<AccumuloColumnHandle>
 {
-    private final boolean indexed;
     private final Optional<String> family;
     private final Optional<String> qualifier;
     private final Type type;
@@ -45,8 +44,7 @@ public final class AccumuloColumnHandle
             @JsonProperty("qualifier") Optional<String> qualifier,
             @JsonProperty("type") Type type,
             @JsonProperty("ordinal") int ordinal,
-            @JsonProperty("comment") String comment,
-            @JsonProperty("indexed") boolean indexed)
+            @JsonProperty("comment") String comment)
     {
         this.name = requireNonNull(name, "name is null");
         this.family = requireNonNull(family, "family is null");
@@ -56,7 +54,6 @@ public final class AccumuloColumnHandle
         checkArgument(ordinal >= 0, "ordinal must be >= zero");
 
         this.comment = requireNonNull(comment, "comment is null");
-        this.indexed = requireNonNull(indexed, "indexed is null");
     }
 
     @JsonProperty
@@ -101,16 +98,10 @@ public final class AccumuloColumnHandle
         return new ColumnMetadata(name, type, comment, false);
     }
 
-    @JsonProperty
-    public boolean isIndexed()
-    {
-        return indexed;
-    }
-
     @Override
     public int hashCode()
     {
-        return Objects.hash(indexed, name, family, qualifier, type, ordinal, comment);
+        return Objects.hash(name, family, qualifier, type, ordinal, comment);
     }
 
     @Override
@@ -125,8 +116,7 @@ public final class AccumuloColumnHandle
         }
 
         AccumuloColumnHandle other = (AccumuloColumnHandle) obj;
-        return Objects.equals(this.indexed, other.indexed)
-                && Objects.equals(this.name, other.name)
+        return Objects.equals(this.name, other.name)
                 && Objects.equals(this.family, other.family)
                 && Objects.equals(this.qualifier, other.qualifier)
                 && Objects.equals(this.type, other.type)
@@ -144,7 +134,6 @@ public final class AccumuloColumnHandle
                 .add("type", type)
                 .add("ordinal", ordinal)
                 .add("comment", comment)
-                .add("indexed", indexed)
                 .toString();
     }
 

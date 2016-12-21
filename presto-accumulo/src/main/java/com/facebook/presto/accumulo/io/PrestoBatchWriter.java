@@ -27,6 +27,8 @@ import com.facebook.presto.spi.type.Type;
 import com.facebook.presto.spi.type.VarcharType;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
+import com.google.common.collect.Multimap;
+import com.google.common.collect.MultimapBuilder;
 import org.apache.accumulo.core.client.AccumuloException;
 import org.apache.accumulo.core.client.AccumuloSecurityException;
 import org.apache.accumulo.core.client.BatchScanner;
@@ -50,6 +52,7 @@ import org.apache.commons.lang3.tuple.Triple;
 import org.apache.hadoop.io.Text;
 
 import java.io.IOException;
+import java.nio.ByteBuffer;
 import java.sql.Date;
 import java.sql.Time;
 import java.sql.Timestamp;
@@ -74,6 +77,8 @@ import static com.facebook.presto.spi.type.TimeType.TIME;
 import static com.facebook.presto.spi.type.TimestampType.TIMESTAMP;
 import static com.facebook.presto.spi.type.TinyintType.TINYINT;
 import static com.facebook.presto.spi.type.VarbinaryType.VARBINARY;
+import static java.nio.ByteBuffer.wrap;
+import static java.nio.charset.StandardCharsets.UTF_8;
 import static java.util.Objects.requireNonNull;
 
 /**
@@ -297,7 +302,26 @@ public class PrestoBatchWriter
      * @param rowId Row ID, a Java object of the row value
      * @param columnUpdates A map of Accumulo column family/qualifier/visibility triples to their new value
      */
+    @Deprecated
     public void updateColumns(Object rowId, Map<Triple<String, String, ColumnVisibility>, Object> columnUpdates)
+            throws MutationsRejectedException, TableNotFoundException
+    {
+        Multimap<Pair<ByteBuffer, ByteBuffer>, Pair<ColumnVisibility, Object>> updates = MultimapBuilder.hashKeys().arrayListValues().build();
+        for (Entry<Triple<String, String, ColumnVisibility>, Object> update : columnUpdates.entrySet()) {
+            updates.put(Pair.of(wrap(update.getKey().getLeft().getBytes(UTF_8)), wrap(update.getKey().getMiddle().getBytes(UTF_8))), Pair.of(update.getKey().getRight(), update.getValue()));
+        }
+        updateColumns(rowId, updates);
+    }
+
+    /**
+     * Update all the given columns of the row to their mapped value, identified by the Accumulo column family/qualifier/visibility.
+     * <p>
+     * This method will remove the existing entry, regardless of the new visibility (assuming the given authorizations are able to scan the entry)
+     *
+     * @param rowId Row ID, a Java object of the row value
+     * @param columnUpdates A map of Accumulo column family/qualifier/visibility triples to their new value
+     */
+    public void updateColumns(Object rowId, Multimap<Pair<ByteBuffer, ByteBuffer>, Pair<ColumnVisibility, Object>> columnUpdates)
             throws MutationsRejectedException, TableNotFoundException
     {
         // Get Row ID
@@ -315,8 +339,8 @@ public class PrestoBatchWriter
         try {
             scanner = connector.createScanner(table.getFullTableName(), auths);
             scanner.setRange(new Range(new Text(rowBytes)));
-            for (Triple<String, String, ColumnVisibility> column : columnUpdates.keySet()) {
-                scanner.fetchColumn(new Text(column.getLeft()), new Text(column.getMiddle()));
+            for (Pair<ByteBuffer, ByteBuffer> column : columnUpdates.keySet()) {
+                scanner.fetchColumn(new Text(column.getLeft().array()), new Text(column.getRight().array()));
             }
 
             Mutation deleteMutation = new Mutation(rowBytes);
@@ -334,23 +358,29 @@ public class PrestoBatchWriter
         // Create update mutation
         long updateTimestamp = deleteTimestamp + 1;
         Mutation updateMutation = new Mutation(rowBytes);
-        for (Entry<Triple<String, String, ColumnVisibility>, Object> entry : columnUpdates.entrySet()) {
-            Type type = findColumnHandle(Pair.of(entry.getKey().getLeft(), entry.getKey().getMiddle())).getType();
+        for (Entry<Pair<ByteBuffer, ByteBuffer>, Pair<ColumnVisibility, Object>> entry : columnUpdates.entries()) {
+            Type type = findColumnHandle(Pair.of(entry.getKey().getLeft(), entry.getKey().getRight())).getType();
 
+            Value value;
             if (Types.isArrayType(type)) {
                 // Encode list as a Block
-                Value value = new Value(setText(type, getBlockFromArray(Types.getElementType(type), (List<?>) entry.getValue()), text, serializer).copyBytes());
-                updateMutation.put(entry.getKey().getLeft(), entry.getKey().getMiddle(), entry.getKey().getRight(), updateTimestamp, value);
+                value = new Value(setText(type, getBlockFromArray(Types.getElementType(type), (List<?>) entry.getValue().getRight()), text, serializer).copyBytes());
             }
             else if (Types.isMapType(type)) {
                 // Encode map as a Block
-                Value value = new Value(setText(type, getBlockFromMap(type, (Map<?, ?>) entry.getValue()), text, serializer).copyBytes());
-                updateMutation.put(entry.getKey().getLeft(), entry.getKey().getMiddle(), entry.getKey().getRight(), updateTimestamp, value);
+                value = new Value(setText(type, getBlockFromMap(type, (Map<?, ?>) entry.getValue().getRight()), text, serializer).copyBytes());
             }
             else {
-                Value value = new Value(setText(type, entry.getValue(), text, serializer).copyBytes());
-                updateMutation.put(entry.getKey().getLeft(), entry.getKey().getMiddle(), entry.getKey().getRight(), updateTimestamp, value);
+                // Encode POJO
+                value = new Value(setText(type, entry.getValue().getRight(), text, serializer).copyBytes());
             }
+
+            updateMutation.put(
+                    new Text(entry.getKey().getLeft().array()),
+                    new Text(entry.getKey().getRight().array()),
+                    entry.getValue().getLeft(),
+                    updateTimestamp,
+                    value);
         }
 
         // Update data table
@@ -552,11 +582,11 @@ public class PrestoBatchWriter
         return destination;
     }
 
-    private AccumuloColumnHandle findColumnHandle(Pair<String, String> familyQualifierPair)
+    private AccumuloColumnHandle findColumnHandle(Pair<ByteBuffer, ByteBuffer> familyQualifierPair)
     {
         Optional<AccumuloColumnHandle> column = columns.stream()
                 .filter(columnHandle -> columnHandle.getFamily().isPresent() && columnHandle.getQualifier().isPresent())
-                .filter(columnHandle -> columnHandle.getFamily().get().equals(familyQualifierPair.getLeft()) && columnHandle.getQualifier().get().equals(familyQualifierPair.getRight()))
+                .filter(columnHandle -> columnHandle.getFamily().get().equals(new String(familyQualifierPair.getLeft().array(), UTF_8)) && columnHandle.getQualifier().get().equals(new String(familyQualifierPair.getRight().array(), UTF_8)))
                 .findAny();
 
         if (column.isPresent()) {

@@ -13,6 +13,8 @@
  */
 package com.facebook.presto.accumulo;
 
+import com.facebook.presto.accumulo.metadata.AccumuloTable;
+import com.facebook.presto.accumulo.metadata.ZooKeeperMetadataManager;
 import com.facebook.presto.accumulo.model.AccumuloColumnConstraint;
 import com.facebook.presto.accumulo.model.AccumuloColumnHandle;
 import com.facebook.presto.accumulo.model.AccumuloSplit;
@@ -26,6 +28,7 @@ import com.facebook.presto.spi.ConnectorSplit;
 import com.facebook.presto.spi.ConnectorSplitSource;
 import com.facebook.presto.spi.ConnectorTableLayoutHandle;
 import com.facebook.presto.spi.FixedSplitSource;
+import com.facebook.presto.spi.SchemaTableName;
 import com.facebook.presto.spi.connector.ConnectorSplitManager;
 import com.facebook.presto.spi.connector.ConnectorTransactionHandle;
 import com.facebook.presto.spi.predicate.Domain;
@@ -48,16 +51,19 @@ public class AccumuloSplitManager
     private final String connectorId;
     private final AccumuloClient client;
     private final Connector connector;
+    private final ZooKeeperMetadataManager metadataManager;
 
     @Inject
     public AccumuloSplitManager(
             Connector connector,
             AccumuloConnectorId connectorId,
-            AccumuloClient client)
+            AccumuloClient client,
+            ZooKeeperMetadataManager metadataManager)
     {
         this.connector = requireNonNull(connector, "connector is null");
         this.connectorId = requireNonNull(connectorId, "connectorId is null").toString();
         this.client = requireNonNull(client, "client is null");
+        this.metadataManager = requireNonNull(metadataManager, "metadataManager is null");
     }
 
     @Override
@@ -65,6 +71,8 @@ public class AccumuloSplitManager
     {
         AccumuloTableLayoutHandle layoutHandle = (AccumuloTableLayoutHandle) layout;
         AccumuloTableHandle tableHandle = layoutHandle.getTable();
+
+        AccumuloTable table = metadataManager.getTable(new SchemaTableName(tableHandle.getSchema(), tableHandle.getTable()));
 
         String schemaName = tableHandle.getSchema();
         String tableName = tableHandle.getTable();
@@ -74,10 +82,10 @@ public class AccumuloSplitManager
         List<AccumuloColumnConstraint> constraints = getColumnConstraints(rowIdName, layoutHandle.getConstraint());
 
         // Get the row domain column range
-        Optional<Domain> rDom = getRangeDomain(rowIdName, layoutHandle.getConstraint());
+        Optional<Domain> rangeDomain = getRangeDomain(rowIdName, layoutHandle.getConstraint());
 
         // Call out to our client to retrieve all tablet split metadata using the row ID domain and the secondary index
-        List<TabletSplitMetadata> tabletSplits = client.getTabletSplits(session, schemaName, tableName, rDom, constraints, tableHandle.getSerializerInstance(), tableHandle.getMetricsStorageInstance(connector), tableHandle.isTruncateTimestamps());
+        List<TabletSplitMetadata> tabletSplits = client.getTabletSplits(session, table, rangeDomain, constraints);
 
         // Pack the tablet split metadata into a connector split
         ImmutableList.Builder<ConnectorSplit> cSplits = ImmutableList.builder();
@@ -132,8 +140,7 @@ public class AccumuloSplitManager
                         columnHandle.getFamily().get(),
                         columnHandle.getQualifier().get(),
                         columnHandle.getType(),
-                        Optional.of(columnDomain.getDomain()),
-                        columnHandle.isIndexed()));
+                        Optional.of(columnDomain.getDomain())));
             }
         }
 

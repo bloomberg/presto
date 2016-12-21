@@ -25,12 +25,10 @@ import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Iterables;
-import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.tuple.Pair;
 
 import javax.validation.constraints.NotNull;
 
-import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -176,17 +174,10 @@ public final class AccumuloTableProperties
         return Optional.of(mapping.build());
     }
 
-    public static Optional<List<String>> getIndexColumns(Map<String, Object> tableProperties)
+    public static Optional<String> getIndexColumns(Map<String, Object> tableProperties)
     {
         requireNonNull(tableProperties);
-
-        @SuppressWarnings("unchecked")
-        String indexColumns = (String) tableProperties.get(INDEX_COLUMNS);
-        if (indexColumns == null) {
-            return Optional.empty();
-        }
-
-        return Optional.of(Arrays.asList(StringUtils.split(indexColumns, ',')));
+        return Optional.ofNullable((String) tableProperties.get(INDEX_COLUMNS));
     }
 
     /**

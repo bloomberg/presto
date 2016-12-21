@@ -17,7 +17,10 @@ import com.facebook.presto.accumulo.conf.AccumuloConfig;
 import com.facebook.presto.accumulo.conf.AccumuloSessionProperties;
 import com.facebook.presto.accumulo.index.metrics.MetricsReader;
 import com.facebook.presto.accumulo.index.metrics.MetricsStorage;
+import com.facebook.presto.accumulo.metadata.AccumuloTable;
 import com.facebook.presto.accumulo.model.AccumuloColumnConstraint;
+import com.facebook.presto.accumulo.model.AccumuloColumnHandle;
+import com.facebook.presto.accumulo.model.IndexColumn;
 import com.facebook.presto.accumulo.model.TabletSplitMetadata;
 import com.facebook.presto.accumulo.serializers.AccumuloRowSerializer;
 import com.facebook.presto.spi.ConnectorSession;
@@ -69,7 +72,6 @@ import static com.facebook.presto.accumulo.conf.AccumuloSessionProperties.getSpl
 import static com.facebook.presto.accumulo.conf.AccumuloSessionProperties.isIndexMetricsEnabled;
 import static com.facebook.presto.accumulo.conf.AccumuloSessionProperties.isOptimizeIndexEnabled;
 import static com.facebook.presto.accumulo.conf.AccumuloSessionProperties.isOptimizeNumRowsPerSplitEnabled;
-import static com.facebook.presto.accumulo.index.Indexer.getIndexTableName;
 import static com.google.common.base.Preconditions.checkArgument;
 import static io.airlift.concurrent.Threads.daemonThreadsNamed;
 import static java.lang.String.format;
@@ -123,30 +125,22 @@ public class IndexLookup
      * or the number of row IDs that would be used by the secondary index is greater than the configured threshold
      * (again retrieved from the session).
      *
-     * @param schema Schema name
-     * @param table Table name
      * @param session Current client session
+     * @param table Table metadata
      * @param constraints All column constraints (this method will filter for if the column is indexed)
      * @param rowIdRanges Collection of Accumulo ranges based on any predicate against a record key
      * @param tabletSplits Output parameter containing the bundles of row IDs determined by the use of the index.
-     * @param serializer Instance of a row serializer
      * @param auths Scan authorizations
-     * @param metricsStorage Metrics storage for looking up the cardinality
-     * @param truncateTimestamps True if timestamp type metrics are truncated
      * @return True if the tablet splits are valid and should be used, false otherwise
      * @throws Exception If something bad happens. What are the odds?
      */
     public boolean applyIndex(
-            String schema,
-            String table,
             ConnectorSession session,
+            AccumuloTable table,
             Collection<AccumuloColumnConstraint> constraints,
             Collection<Range> rowIdRanges,
             List<TabletSplitMetadata> tabletSplits,
-            AccumuloRowSerializer serializer,
-            Authorizations auths,
-            MetricsStorage metricsStorage,
-            boolean truncateTimestamps)
+            Authorizations auths)
             throws Exception
     {
         // Early out if index is disabled
@@ -158,7 +152,7 @@ public class IndexLookup
         LOG.debug("Secondary index is enabled");
 
         // Collect Accumulo ranges for each indexed column constraint
-        Multimap<AccumuloColumnConstraint, Range> constraintRanges = getIndexedConstraintRanges(constraints, serializer);
+        Multimap<AccumuloColumnConstraint, Range> constraintRanges = getIndexedConstraintRanges(table, constraints);
 
         // If there is no constraints on an index column, we again will bail out
         if (constraintRanges.isEmpty()) {
@@ -170,11 +164,11 @@ public class IndexLookup
         if (!isIndexMetricsEnabled(session)) {
             LOG.debug("Use of index metrics is disabled");
             // Get the ranges via the index table
-            List<Range> indexRanges = getIndexRanges(getIndexTableName(schema, table), constraintRanges, rowIdRanges, auths);
+            List<Range> indexRanges = getIndexRanges(table.getIndexTableName(), constraintRanges, rowIdRanges, auths);
             if (!indexRanges.isEmpty()) {
                 // Bin the ranges into TabletMetadataSplits and return true to use the tablet splits
                 binRanges(optimizeNumRowsPerSplit(session, indexRanges.size(), nodeManager.getWorkerNodes().size()), indexRanges, tabletSplits);
-                LOG.debug("Number of splits for %s.%s is %d with %d ranges", schema, table, tabletSplits.size(), indexRanges.size());
+                LOG.debug("Number of splits for %s is %d with %d ranges", table.getFullTableName(), tabletSplits.size(), indexRanges.size());
             }
             else {
                 LOG.debug("Query would return no results, returning empty list of splits");
@@ -185,7 +179,7 @@ public class IndexLookup
         else {
             LOG.debug("Use of index metrics is enabled");
             // Get ranges using the metrics
-            return getRangesWithMetrics(session, schema, table, constraintRanges, rowIdRanges, tabletSplits, auths, metricsStorage, truncateTimestamps);
+            return getRangesWithMetrics(session, table, constraintRanges, rowIdRanges, tabletSplits, auths);
         }
     }
 
@@ -210,55 +204,63 @@ public class IndexLookup
         }
     }
 
-    private static Multimap<AccumuloColumnConstraint, Range> getIndexedConstraintRanges(Collection<AccumuloColumnConstraint> constraints, AccumuloRowSerializer serializer)
+    private static Multimap<AccumuloColumnConstraint, Range> getIndexedConstraintRanges(AccumuloTable table, Collection<AccumuloColumnConstraint> constraints)
             throws AccumuloSecurityException, AccumuloException
     {
+        AccumuloRowSerializer serializer = table.getSerializerInstance();
         ImmutableSetMultimap.Builder<AccumuloColumnConstraint, Range> builder = ImmutableSetMultimap.builder();
         constraints.stream()
-                .filter(AccumuloColumnConstraint::isIndexed)
+                .filter(x -> {
+                    for (IndexColumn column : table.getParsedIndexColumns()) {
+                        AccumuloColumnHandle handle = table.getColumn(column.getColumn());
+                        if (handle.getFamily().isPresent() && handle.getQualifier().isPresent() &&
+                                handle.getFamily().get().equals(x.getFamily()) && handle.getQualifier().get().equals(x.getQualifier())) {
+                            return true;
+                        }
+                    }
+                    return false;
+                })
                 .forEach(constraint -> builder.putAll(constraint, getRangesFromDomain(constraint.getDomain(), serializer)));
         return builder.build();
     }
 
     private boolean getRangesWithMetrics(
             ConnectorSession session,
-            String schema,
-            String table,
+            AccumuloTable table,
             Multimap<AccumuloColumnConstraint, Range> constraintRanges,
             Collection<Range> rowIdRanges,
             List<TabletSplitMetadata> tabletSplits,
-            Authorizations auths,
-            MetricsStorage metricsStorage,
-            boolean truncateTimestamps)
+            Authorizations auths)
             throws Exception
     {
+        MetricsStorage metricsStorage = table.getMetricsStorageInstance(connector);
         MetricsReader reader = metricsStorage.newReader();
-        long numRows = reader.getNumRowsInTable(schema, table);
+        long numRows = reader.getNumRowsInTable(table.getSchema(), table.getTable());
 
         // Get the cardinalities from the metrics table
         Multimap<Long, AccumuloColumnConstraint> cardinalities;
         if (AccumuloSessionProperties.isIndexShortCircuitEnabled(session)) {
             cardinalities = cardinalityCache.getCardinalities(
-                    schema,
-                    table,
+                    table.getSchema(),
+                    table.getTable(),
                     auths,
                     constraintRanges,
                     getSmallestCardinalityThreshold(session, numRows),
                     AccumuloSessionProperties.getIndexCardinalityCachePollingDuration(session),
                     metricsStorage,
-                    truncateTimestamps);
+                    table.isTruncateTimestamps());
         }
         else {
             // disable short circuit using 0
             cardinalities = cardinalityCache.getCardinalities(
-                    schema,
-                    table,
+                    table.getSchema(),
+                    table.getTable(),
                     auths,
                     constraintRanges,
                     0,
                     new Duration(0, MILLISECONDS),
                     metricsStorage,
-                    truncateTimestamps);
+                    table.isTruncateTimestamps());
         }
 
         Optional<Entry<Long, AccumuloColumnConstraint>> entry = cardinalities.entries().stream().findFirst();
@@ -267,7 +269,7 @@ public class IndexLookup
         }
 
         Entry<Long, AccumuloColumnConstraint> lowestCardinality = entry.get();
-        String indexTable = getIndexTableName(schema, table);
+        String indexTable = table.getIndexTableName();
         double threshold = getIndexThreshold(session);
         List<Range> indexRanges;
 
@@ -327,7 +329,7 @@ public class IndexLookup
         if (ratio < threshold) {
             // Bin the ranges into TabletMetadataSplits and return true to use the tablet splits
             binRanges(optimizeNumRowsPerSplit(session, indexRanges.size(), nodeManager.getWorkerNodes().size()), indexRanges, tabletSplits);
-            LOG.debug("Number of splits for %s.%s is %d with %d ranges", schema, table, tabletSplits.size(), indexRanges.size());
+            LOG.debug("Number of splits for %s is %d with %d ranges", table.getFullTableName(), tabletSplits.size(), indexRanges.size());
             return true;
         }
         else {

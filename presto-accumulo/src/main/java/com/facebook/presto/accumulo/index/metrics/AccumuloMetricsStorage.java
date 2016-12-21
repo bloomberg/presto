@@ -18,6 +18,7 @@ import com.facebook.presto.accumulo.index.Indexer;
 import com.facebook.presto.accumulo.iterators.ValueSummingIterator;
 import com.facebook.presto.accumulo.metadata.AccumuloTable;
 import com.facebook.presto.accumulo.model.AccumuloColumnHandle;
+import com.facebook.presto.accumulo.model.IndexColumn;
 import com.facebook.presto.spi.PrestoException;
 import com.facebook.presto.spi.SchemaTableName;
 import com.google.common.collect.ImmutableList;
@@ -107,8 +108,9 @@ public class AccumuloMetricsStorage
     {
         ImmutableMap.Builder<String, Set<Text>> groups = ImmutableMap.builder();
 
-        // For each indexed column
-        for (AccumuloColumnHandle columnHandle : table.getColumns().stream().filter(AccumuloColumnHandle::isIndexed).collect(Collectors.toList())) {
+        for (IndexColumn indexColumn : table.getParsedIndexColumns()) {
+            AccumuloColumnHandle columnHandle = table.getColumn(indexColumn.getColumn());
+
             // Create a Text version of the index column family
             Text indexColumnFamily = new Text(Indexer.getIndexColumnFamily(columnHandle.getFamily().get().getBytes(UTF_8), columnHandle.getQualifier().get().getBytes(UTF_8)).array());
             groups.put(indexColumnFamily.toString(), ImmutableSet.of(indexColumnFamily));

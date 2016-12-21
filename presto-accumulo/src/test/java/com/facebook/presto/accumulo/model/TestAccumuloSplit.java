@@ -63,15 +63,13 @@ public class TestAccumuloSplit
                                 "fam1",
                                 "qual1",
                                 VARCHAR,
-                                Optional.empty(),
-                                true),
+                                Optional.empty()),
                         new AccumuloColumnConstraint(
                                 "bar",
                                 "fam2",
                                 "qual2",
                                 VARCHAR,
-                                Optional.empty(),
-                                true)),
+                                Optional.empty())),
                 Optional.of("foo,bar"),
                 Optional.of("localhost:9000"));
 

@@ -125,9 +125,9 @@ public class TestColumnCardinalityCache
     {
         int ordinal = 0;
         ImmutableList.Builder<AccumuloColumnHandle> builder = ImmutableList.builder();
-        builder.add(new AccumuloColumnHandle("UUID", Optional.empty(), Optional.empty(), VARCHAR, ordinal++, "", false));
+        builder.add(new AccumuloColumnHandle("UUID", Optional.empty(), Optional.empty(), VARCHAR, ordinal++, ""));
         for (TpchColumn<?> column : columns) {
-            builder.add(new AccumuloColumnHandle(column.getColumnName(), Optional.of(column.getColumnName()), Optional.of(column.getColumnName()), getPrestoType(column.getType()), ordinal++, "", true));
+            builder.add(new AccumuloColumnHandle(column.getColumnName(), Optional.of(column.getColumnName()), Optional.of(column.getColumnName()), getPrestoType(column.getType()), ordinal++, ""));
         }
         return builder.build();
     }
@@ -139,7 +139,7 @@ public class TestColumnCardinalityCache
             columns.add(new ColumnMetadata(column.getColumnName(), getPrestoType(column.getType())));
         }
 
-        String indexColumns = StringUtils.join(tpchTable.getColumns().stream().map(TpchColumn::getColumnName).collect(Collectors.toList()), ",");
+        String indexColumns = StringUtils.join(tpchTable.getColumns().stream().filter(x -> !x.getColumnName().equals(tpchTable.getColumns().get(0).getColumnName())).map(TpchColumn::getColumnName).collect(Collectors.toList()), ",");
         Map<String, Object> properties = new HashMap<>();
         new AccumuloTableProperties().getTableProperties().forEach(meta -> properties.put(meta.getName(), meta.getDefaultValue()));
         properties.put("index_columns", indexColumns);
@@ -572,6 +572,6 @@ public class TestColumnCardinalityCache
      */
     private static AccumuloColumnConstraint acc(String name, Type type, Domain domain)
     {
-        return new AccumuloColumnConstraint(name, name, name, type, Optional.of(domain), true);
+        return new AccumuloColumnConstraint(name, name, name, type, Optional.of(domain));
     }
 }
