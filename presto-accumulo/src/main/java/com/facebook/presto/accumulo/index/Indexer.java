@@ -17,15 +17,16 @@ import com.facebook.presto.accumulo.Types;
 import com.facebook.presto.accumulo.index.metrics.MetricsWriter;
 import com.facebook.presto.accumulo.metadata.AccumuloTable;
 import com.facebook.presto.accumulo.model.AccumuloColumnHandle;
+import com.facebook.presto.accumulo.model.IndexColumn;
 import com.facebook.presto.accumulo.serializers.AccumuloRowSerializer;
 import com.facebook.presto.spi.PrestoException;
 import com.facebook.presto.spi.SchemaTableName;
+import com.facebook.presto.spi.StandardErrorCode;
 import com.facebook.presto.spi.type.Type;
 import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableMultimap;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Multimap;
+import com.google.common.collect.MultimapBuilder;
 import org.apache.accumulo.core.client.BatchScanner;
 import org.apache.accumulo.core.client.BatchWriter;
 import org.apache.accumulo.core.client.Connector;
@@ -40,20 +41,21 @@ import org.apache.accumulo.core.data.Value;
 import org.apache.accumulo.core.security.Authorizations;
 import org.apache.accumulo.core.security.ColumnVisibility;
 import org.apache.commons.lang.ArrayUtils;
+import org.apache.commons.lang3.tuple.Pair;
 import org.apache.commons.lang3.tuple.Triple;
 import org.apache.hadoop.io.Text;
 
 import javax.annotation.concurrent.NotThreadSafe;
 
 import java.nio.ByteBuffer;
-import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
-import java.util.stream.Collectors;
 
+import static com.facebook.presto.accumulo.serializers.AccumuloRowSerializer.getBlockFromArray;
+import static com.facebook.presto.accumulo.serializers.AccumuloRowSerializer.getBlockFromMap;
 import static com.facebook.presto.spi.StandardErrorCode.NOT_SUPPORTED;
 import static com.facebook.presto.spi.type.TimestampType.TIMESTAMP;
 import static com.google.common.base.Preconditions.checkArgument;
@@ -109,8 +111,7 @@ public class Indexer
     private final BatchWriter indexWriter;
     private final Connector connector;
     private final MetricsWriter metricsWriter;
-    private final Multimap<ByteBuffer, ByteBuffer> indexColumns;
-    private final Map<ByteBuffer, Map<ByteBuffer, Type>> indexColumnTypes;
+    private final List<IndexColumn> indexColumns;
     private final AccumuloRowSerializer serializer;
     private final boolean truncateTimestamps;
 
@@ -129,26 +130,8 @@ public class Indexer
         this.serializer = table.getSerializerInstance();
         this.truncateTimestamps = table.isTruncateTimestamps();
 
-        ImmutableMultimap.Builder<ByteBuffer, ByteBuffer> indexColumnsBuilder = ImmutableMultimap.builder();
-        Map<ByteBuffer, Map<ByteBuffer, Type>> indexColumnTypesBuilder = new HashMap<>();
-
         // Initialize metadata
-        table.getColumns().forEach(columnHandle -> {
-            if (columnHandle.isIndexed()) {
-                // Wrap the column family and qualifier for this column and add it to
-                // collection of indexed columns
-                ByteBuffer family = wrap(columnHandle.getFamily().get().getBytes(UTF_8));
-                ByteBuffer qualifier = wrap(columnHandle.getQualifier().get().getBytes(UTF_8));
-                indexColumnsBuilder.put(family, qualifier);
-
-                // Create a mapping for this column's Presto type, again creating a new one for the
-                // family if necessary
-                indexColumnTypesBuilder.computeIfAbsent(family, k -> new HashMap<>()).put(qualifier, columnHandle.getType());
-            }
-        });
-
-        indexColumns = indexColumnsBuilder.build();
-        indexColumnTypes = ImmutableMap.copyOf(indexColumnTypesBuilder);
+        indexColumns = table.getParsedIndexColumns();
 
         // If there are no indexed columns, throw an exception
         if (indexColumns.isEmpty()) {
@@ -173,40 +156,15 @@ public class Indexer
         // Increment the cardinality for the number of rows in the table
         metricsWriter.incrementRowCount();
 
-        // For each column update in this mutation
+        // Convert the list of updates into a data structure we can use for indexing
+        Multimap<Pair<ByteBuffer, ByteBuffer>, Triple<byte[], Long, byte[]>> updates = MultimapBuilder.hashKeys().arrayListValues().build();
         for (ColumnUpdate columnUpdate : mutation.getUpdates()) {
-            // Get the column qualifiers we want to index for this column family (if any)
             ByteBuffer family = wrap(columnUpdate.getColumnFamily());
-            Collection<ByteBuffer> indexQualifiers = indexColumns.get(family);
-
-            // If we have column qualifiers we want to index for this column family
-            if (indexQualifiers != null) {
-                // Check if we want to index this particular qualifier
-                ByteBuffer qualifier = wrap(columnUpdate.getColumnQualifier());
-                if (indexQualifiers.contains(qualifier)) {
-                    // If so, create a mutation using the following mapping:
-                    // Row ID = column value
-                    // Column Family = columnqualifier_columnfamily
-                    // Column Qualifier = row ID
-                    // Value = empty
-                    ByteBuffer indexFamily = getIndexColumnFamily(columnUpdate.getColumnFamily(), columnUpdate.getColumnQualifier());
-                    Type type = indexColumnTypes.get(family).get(qualifier);
-                    ColumnVisibility visibility = new ColumnVisibility(columnUpdate.getColumnVisibility());
-
-                    // If this is an array type, then index each individual element in the array
-                    if (Types.isArrayType(type)) {
-                        Type elementType = Types.getElementType(type);
-                        List<?> elements = serializer.decode(type, columnUpdate.getValue());
-                        for (Object element : elements) {
-                            addIndexMutation(wrap(serializer.encode(elementType, element)), indexFamily, mutation.getRow(), visibility, truncateTimestamps && elementType == TIMESTAMP);
-                        }
-                    }
-                    else {
-                        addIndexMutation(wrap(columnUpdate.getValue()), indexFamily, mutation.getRow(), visibility, truncateTimestamps && type == TIMESTAMP);
-                    }
-                }
-            }
+            ByteBuffer qualifier = wrap(columnUpdate.getColumnQualifier());
+            updates.put(Pair.of(family, qualifier), Triple.of(columnUpdate.getColumnVisibility(), columnUpdate.getTimestamp(), columnUpdate.getValue()));
         }
+
+        applyUpdate(mutation.getRow(), updates, false);
     }
 
     public void index(Iterable<Mutation> mutations)
@@ -218,6 +176,26 @@ public class Indexer
     }
 
     /**
+     * Deprecated.  Converts the given <code>columnUpdates</code> parameter to the new data structure and calls {@link Indexer#update(byte[], Multimap, Authorizations)}
+     *
+     * @param rowBytes Serialized bytes of the row ID to update
+     * @param columnUpdates Map of a Triple containing column family, column qualifier, and NEW column visibility to the new column value.
+     * @param auths Authorizations to scan the table for deleting the entries.  For proper deletes, these authorizations must encapsulate whatever the visibility of the existing row is, otherwise you'll have duplicate values
+     * @deprecated Use {@link Indexer#update(byte[], Multimap, Authorizations)}
+     */
+    @Deprecated
+    public void update(byte[] rowBytes, Map<Triple<String, String, ColumnVisibility>, Object> columnUpdates, Authorizations auths)
+            throws MutationsRejectedException, TableNotFoundException
+    {
+        Multimap<Pair<ByteBuffer, ByteBuffer>, Pair<ColumnVisibility, Object>> updates = MultimapBuilder.hashKeys().arrayListValues().build();
+        columnUpdates.entrySet().forEach(
+                update -> updates.put(
+                        Pair.of(wrap(update.getKey().getLeft().getBytes(UTF_8)), wrap(update.getKey().getMiddle().getBytes(UTF_8))),
+                        Pair.of(update.getKey().getRight(), update.getValue())));
+        update(rowBytes, updates, auths);
+    }
+
+    /**
      * Update the index value and metrics for the given row ID using the provided column updates.
      * <p>
      * This method uses a Scanner to fetch the existing values of row, applying delete Mutations to
@@ -225,10 +203,10 @@ public class Indexer
      * the table), and then applying the new updates.
      *
      * @param rowBytes Serialized bytes of the row ID to update
-     * @param columnUpdates Map of a Triple containg column family, column qualifier, and NEW column visibility to the new column value.
+     * @param columnUpdates Multimap of a Pair of the column family/qualifier to all updates for this column containing the visibility and Java Object for this column type
      * @param auths Authorizations to scan the table for deleting the entries.  For proper deletes, these authorizations must encapsulate whatever the visibility of the existing row is, otherwise you'll have duplicate values
      */
-    public void update(byte[] rowBytes, Map<Triple<String, String, ColumnVisibility>, Object> columnUpdates, Authorizations auths)
+    public void update(byte[] rowBytes, Multimap<Pair<ByteBuffer, ByteBuffer>, Pair<ColumnVisibility, Object>> columnUpdates, Authorizations auths)
             throws MutationsRejectedException, TableNotFoundException
     {
         // Delete the column updates
@@ -238,34 +216,21 @@ public class Indexer
             scanner = connector.createScanner(table.getFullTableName(), auths);
             scanner.setRange(Range.exact(new Text(rowBytes)));
 
-            for (Triple<String, String, ColumnVisibility> update : columnUpdates.keySet()) {
-                scanner.fetchColumn(new Text(update.getLeft()), new Text(update.getMiddle()));
+            for (Pair<ByteBuffer, ByteBuffer> update : columnUpdates.keySet()) {
+                scanner.fetchColumn(new Text(update.getLeft().array()), new Text(update.getRight().array()));
             }
 
-            // First, delete all index entries for this column
-            Text familyText = new Text();
-            Text qualifierText = new Text();
-            Text visibilityText = new Text();
+            // Scan the table to create a list of items to delete the index entries of
+            Text text = new Text();
+            Multimap<Pair<ByteBuffer, ByteBuffer>, Triple<byte[], Long, byte[]>> deleteEntries = MultimapBuilder.hashKeys().arrayListValues().build();
             for (Entry<Key, Value> entry : scanner) {
-                ByteBuffer familyBytes = wrap(entry.getKey().getColumnFamily(familyText).copyBytes());
-                ByteBuffer qualifierBytes = wrap(entry.getKey().getColumnQualifier(qualifierText).copyBytes());
-                ColumnVisibility visibility = new ColumnVisibility(entry.getKey().getColumnVisibility(visibilityText).copyBytes());
-
-                ByteBuffer indexFamily = Indexer.getIndexColumnFamily(familyBytes.array(), qualifierBytes.array());
-                Type type = indexColumnTypes.get(familyBytes).get(qualifierBytes);
-
-                // If this is an array type, then update each individual element in the array
-                if (Types.isArrayType(type)) {
-                    Type elementType = Types.getElementType(type);
-                    List<?> elements = serializer.decode(type, entry.getValue().get());
-                    for (Object element : elements) {
-                        deleteIndexMutation(wrap(serializer.encode(elementType, element)), indexFamily, rowBytes, visibility, deleteTimestamp, truncateTimestamps && elementType == TIMESTAMP);
-                    }
-                }
-                else {
-                    deleteIndexMutation(wrap(entry.getValue().get()), indexFamily, rowBytes, visibility, deleteTimestamp, truncateTimestamps && type == TIMESTAMP);
-                }
+                ByteBuffer family = wrap(entry.getKey().getColumnFamily(text).copyBytes());
+                ByteBuffer qualifier = wrap(entry.getKey().getColumnQualifier(text).copyBytes());
+                byte[] visibility = entry.getKey().getColumnVisibility(text).copyBytes();
+                deleteEntries.put(Pair.of(family, qualifier), Triple.of(visibility, deleteTimestamp, entry.getValue().get()));
             }
+
+            applyUpdate(rowBytes, deleteEntries, true);
         }
         finally {
             if (scanner != null) {
@@ -273,25 +238,33 @@ public class Indexer
             }
         }
 
-        // And now insert the updates
+        // Encode the values of the column updates and gather the entries
         long updateTimestamp = deleteTimestamp + 1;
-        for (Map.Entry<Triple<String, String, ColumnVisibility>, Object> entry : columnUpdates.entrySet()) {
-            ByteBuffer family = wrap(entry.getKey().getLeft().getBytes(UTF_8));
-            ByteBuffer qualifier = wrap(entry.getKey().getMiddle().getBytes(UTF_8));
-            ByteBuffer indexFamily = Indexer.getIndexColumnFamily(family.array(), qualifier.array());
-            Type type = indexColumnTypes.get(family).get(qualifier);
+        Multimap<Pair<ByteBuffer, ByteBuffer>, Triple<byte[], Long, byte[]>> updateEntries = MultimapBuilder.hashKeys().arrayListValues().build();
 
-            // If this is an array type, then update each individual element in the array
-            if (Types.isArrayType(type)) {
-                Type elementType = Types.getElementType(type);
-                for (Object element : (List<?>) entry.getValue()) {
-                    addIndexMutation(wrap(serializer.encode(elementType, element)), indexFamily, rowBytes, entry.getKey().getRight(), updateTimestamp, truncateTimestamps && elementType == TIMESTAMP);
-                }
+        for (Entry<Pair<ByteBuffer, ByteBuffer>, Pair<ColumnVisibility, Object>> update : columnUpdates.entries()) {
+            AccumuloColumnHandle handle = table.getColumn(new String(update.getKey().getLeft().array(), UTF_8), new String(update.getKey().getRight().array(), UTF_8));
+
+            if (!handle.getFamily().isPresent() || !handle.getQualifier().isPresent()) {
+                throw new PrestoException(StandardErrorCode.INVALID_TABLE_PROPERTY, "Row ID column cannot be indexed");
+            }
+
+            byte[] value;
+            if (Types.isArrayType(handle.getType())) {
+                value = serializer.encode(handle.getType(), getBlockFromArray(Types.getElementType(handle.getType()), (List<?>) update.getValue().getRight()));
+            }
+            else if (Types.isMapType(handle.getType())) {
+                value = serializer.encode(handle.getType(), getBlockFromMap(Types.getElementType(handle.getType()), (Map<?, ?>) update.getValue().getRight()));
             }
             else {
-                addIndexMutation(wrap(serializer.encode(type, entry.getValue())), indexFamily, rowBytes, entry.getKey().getRight(), updateTimestamp, truncateTimestamps && type == TIMESTAMP);
+                value = serializer.encode(handle.getType(), update.getValue().getRight());
             }
+
+            updateEntries.put(update.getKey(), Triple.of(update.getValue().getLeft().getExpression(), updateTimestamp, value));
         }
+
+        // Apply the update mutations
+        applyUpdate(rowBytes, updateEntries, false);
     }
 
     /**
@@ -316,7 +289,7 @@ public class Indexer
      * <p>
      * This method creates a new BatchScanner per call.
      * <p>
-     * Like typical use of a BatchWriter, this method does not flush mutations to the underlying index table.
+     * Like the typical use of a BatchWriter, this method does not flush mutations to the underlying index table.
      * For higher throughput the modifications to the metrics table are tracked in memory and added to the metrics table when the indexer is flushed or closed.
      *
      * @param auths Authorizations for scanning and deleting index/metric entries
@@ -334,52 +307,80 @@ public class Indexer
             scanner = connector.createBatchScanner(table.getFullTableName(), auths, 10);
             scanner.setRanges(ranges);
 
+            long deleteTimestamp = System.currentTimeMillis();
+
+            // Scan the table to create a list of items to delete the index entries of
             Text text = new Text();
             Text previousRowId = null;
-            // Scan each row to be deleted, creating a delete mutation for each
+            Multimap<Pair<ByteBuffer, ByteBuffer>, Triple<byte[], Long, byte[]>> deleteEntries = MultimapBuilder.hashKeys().arrayListValues().build();
             for (Entry<Key, Value> entry : scanner) {
-                // Decrement the cardinality for the number of rows in the table
                 entry.getKey().getRow(text);
-                if (previousRowId == null || !previousRowId.equals(text)) {
+                if (previousRowId == null) {
                     metricsWriter.decrementRowCount();
+                    previousRowId = new Text(text);
                 }
-                previousRowId = new Text(text);
+                else if (!previousRowId.equals(text)) {
+                    metricsWriter.decrementRowCount();
+                    applyUpdate(previousRowId.copyBytes(), deleteEntries, true);
+                    previousRowId.set(text);
+                    deleteEntries.clear();
+                }
 
-                // Get the column qualifiers we want to index for this column family (if any)
                 ByteBuffer family = wrap(entry.getKey().getColumnFamily(text).copyBytes());
-                Collection<ByteBuffer> indexQualifiers = indexColumns.get(family);
+                ByteBuffer qualifier = wrap(entry.getKey().getColumnQualifier(text).copyBytes());
+                byte[] visibility = entry.getKey().getColumnVisibility(text).copyBytes();
+                deleteEntries.put(Pair.of(family, qualifier), Triple.of(visibility, deleteTimestamp, entry.getValue().get()));
+            }
 
-                // If we have column qualifiers we want to index for this column family
-                if (indexQualifiers != null) {
-                    // Check if we want to index this particular qualifier
-                    ByteBuffer qualifier = wrap(entry.getKey().getColumnQualifier(text).copyBytes());
-                    if (indexQualifiers.contains(qualifier)) {
-                        // If so, create a delete mutation using the following mapping:
-                        // Row ID = column value
-                        // Column Family = columnqualifier_columnfamily
-                        // Column Qualifier = row ID
-                        ByteBuffer indexFamily = Indexer.getIndexColumnFamily(family.array(), qualifier.array());
-                        Type type = indexColumnTypes.get(family).get(qualifier);
-                        ColumnVisibility visibility = new ColumnVisibility(entry.getKey().getColumnVisibility());
-
-                        // If this is an array type, then delete each individual element in the array
-                        if (Types.isArrayType(type)) {
-                            Type elementType = Types.getElementType(type);
-                            List<?> elements = serializer.decode(type, entry.getValue().get());
-                            for (Object element : elements) {
-                                deleteIndexMutation(wrap(serializer.encode(elementType, element)), indexFamily, entry.getKey().getRow(text).copyBytes(), visibility, truncateTimestamps && elementType == TIMESTAMP);
-                            }
-                        }
-                        else {
-                            deleteIndexMutation(wrap(entry.getValue().get()), indexFamily, entry.getKey().getRow(text).copyBytes(), visibility, truncateTimestamps && type == TIMESTAMP);
-                        }
-                    }
-                }
+            // Apply final updates
+            if (previousRowId != null && deleteEntries.size() > 0) {
+                applyUpdate(previousRowId.copyBytes(), deleteEntries, true);
             }
         }
         finally {
             if (scanner != null) {
                 scanner.close();
+            }
+        }
+    }
+
+    private void applyUpdate(byte[] row, Multimap<Pair<ByteBuffer, ByteBuffer>, Triple<byte[], Long, byte[]>> updates, boolean delete)
+            throws MutationsRejectedException
+    {
+        for (IndexColumn column : indexColumns) {
+            AccumuloColumnHandle handle = table.getColumn(column.getColumn());
+
+            if (!handle.getFamily().isPresent() || !handle.getQualifier().isPresent()) {
+                throw new PrestoException(StandardErrorCode.INVALID_TABLE_PROPERTY, "Row ID column cannot be indexed");
+            }
+
+            // If this mutation has an updated column family
+            ByteBuffer family = wrap(handle.getFamily().get().getBytes(UTF_8));
+            ByteBuffer qualifier = wrap(handle.getQualifier().get().getBytes(UTF_8));
+            for (Triple<byte[], Long, byte[]> value : updates.get(Pair.of(family, qualifier))) {
+                Type type = handle.getType();
+                ColumnVisibility visibility = new ColumnVisibility(value.getLeft());
+                ByteBuffer indexFamily = getIndexColumnFamily(family.array(), qualifier.array());
+
+                // If this is an array type, then index each individual element in the array
+                if (Types.isArrayType(type)) {
+                    Type elementType = Types.getElementType(type);
+                    List<?> elements = serializer.decode(type, value.getRight());
+                    for (Object element : elements) {
+                        if (!delete) {
+                            addIndexMutation(wrap(serializer.encode(elementType, element)), indexFamily, row, visibility, truncateTimestamps && elementType == TIMESTAMP);
+                        }
+                        else {
+                            deleteIndexMutation(wrap(serializer.encode(elementType, element)), indexFamily, row, visibility, truncateTimestamps && elementType == TIMESTAMP);
+                        }
+                    }
+                }
+                else if (!delete) {
+                    addIndexMutation(wrap(value.getRight()), indexFamily, row, visibility, truncateTimestamps && type == TIMESTAMP);
+                }
+                else {
+                    deleteIndexMutation(wrap(value.getRight()), indexFamily, row, visibility, truncateTimestamps && type == TIMESTAMP);
+                }
             }
         }
     }
@@ -442,8 +443,8 @@ public class Indexer
     public static Map<String, Set<Text>> getLocalityGroups(AccumuloTable table)
     {
         Map<String, Set<Text>> groups = new HashMap<>();
-        // For each indexed column
-        for (AccumuloColumnHandle columnHandle : table.getColumns().stream().filter(AccumuloColumnHandle::isIndexed).collect(Collectors.toList())) {
+        for (IndexColumn indexColumn : table.getParsedIndexColumns()) {
+            AccumuloColumnHandle columnHandle = table.getColumn(indexColumn.getColumn());
             // Create a Text version of the index column family
             Text indexColumnFamily = new Text(getIndexColumnFamily(columnHandle.getFamily().get().getBytes(UTF_8), columnHandle.getQualifier().get().getBytes(UTF_8)).array());
 

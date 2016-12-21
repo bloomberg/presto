@@ -60,10 +60,10 @@ public abstract class TestAbstractMetricStorage
     protected AccumuloTable table;
     protected AccumuloTable table2;
 
-    protected AccumuloColumnHandle c1 = new AccumuloColumnHandle("id", Optional.empty(), Optional.empty(), VARCHAR, 0, "", false);
-    protected AccumuloColumnHandle c2 = new AccumuloColumnHandle("age", Optional.of("cf"), Optional.of("age"), BIGINT, 1, "", true);
-    protected AccumuloColumnHandle c3 = new AccumuloColumnHandle("firstname", Optional.of("cf"), Optional.of("firstname"), VARCHAR, 2, "", true);
-    protected AccumuloColumnHandle c4 = new AccumuloColumnHandle("arr", Optional.of("cf"), Optional.of("arr"), new ArrayType(VARCHAR), 3, "", true);
+    protected AccumuloColumnHandle c1 = new AccumuloColumnHandle("id", Optional.empty(), Optional.empty(), VARCHAR, 0, "");
+    protected AccumuloColumnHandle c2 = new AccumuloColumnHandle("age", Optional.of("cf"), Optional.of("age"), BIGINT, 1, "");
+    protected AccumuloColumnHandle c3 = new AccumuloColumnHandle("firstname", Optional.of("cf"), Optional.of("firstname"), VARCHAR, 2, "");
+    protected AccumuloColumnHandle c4 = new AccumuloColumnHandle("arr", Optional.of("cf"), Optional.of("arr"), new ArrayType(VARCHAR), 3, "");
 
     protected LexicoderRowSerializer serializer = new LexicoderRowSerializer();
     protected MetricsStorage storage;
@@ -115,8 +115,8 @@ public abstract class TestAbstractMetricStorage
             throws Exception
     {
         storage = getMetricsStorage(config);
-        table = new AccumuloTable("default", "index_test_table", ImmutableList.of(c1, c2, c3, c4), "id", false, LexicoderRowSerializer.class.getCanonicalName(), null, Optional.of(storage.getClass().getCanonicalName()), false);
-        table2 = new AccumuloTable("default", "index_test_table_two", ImmutableList.of(c1, c2, c3, c4), "id", false, LexicoderRowSerializer.class.getCanonicalName(), null, Optional.of(storage.getClass().getCanonicalName()), false);
+        table = new AccumuloTable("default", "index_test_table", ImmutableList.of(c1, c2, c3, c4), "id", false, LexicoderRowSerializer.class.getCanonicalName(), null, Optional.of(storage.getClass().getCanonicalName()), false, Optional.of("age,firstname,arr"));
+        table2 = new AccumuloTable("default", "index_test_table_two", ImmutableList.of(c1, c2, c3, c4), "id", false, LexicoderRowSerializer.class.getCanonicalName(), null, Optional.of(storage.getClass().getCanonicalName()), false, Optional.of("age,firstname,arr"));
     }
 
     @Test
@@ -441,13 +441,14 @@ public abstract class TestAbstractMetricStorage
         AccumuloTable table = new AccumuloTable(
                 "default",
                 "test_timestamp_reads",
-                ImmutableList.of(c1, new AccumuloColumnHandle("time", Optional.of("cf"), Optional.of("time"), TIMESTAMP_TYPE.get(), 1, "", true)),
+                ImmutableList.of(c1, new AccumuloColumnHandle("time", Optional.of("cf"), Optional.of("time"), TIMESTAMP_TYPE.get(), 1, "")),
                 "id",
                 false,
                 LexicoderRowSerializer.class.getCanonicalName(),
                 null,
                 Optional.of(storage.getClass().getCanonicalName()),
-                true);
+                true,
+                Optional.of("time"));
 
         MetricCacheKey metricCacheKey =
                 new MetricCacheKey(

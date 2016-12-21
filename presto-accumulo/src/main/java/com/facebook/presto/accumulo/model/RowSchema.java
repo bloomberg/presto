@@ -30,16 +30,11 @@ public class RowSchema
 
     public RowSchema addRowId(String name, Type type)
     {
-        columns.add(new AccumuloColumnHandle(name, Optional.empty(), Optional.empty(), type, columns.size(), "Accumulo row ID", false));
+        columns.add(new AccumuloColumnHandle(name, Optional.empty(), Optional.empty(), type, columns.size(), "Accumulo row ID"));
         return this;
     }
 
     public RowSchema addColumn(String prestoName, Optional<String> family, Optional<String> qualifier, Type type)
-    {
-        return addColumn(prestoName, family, qualifier, type, false);
-    }
-
-    public RowSchema addColumn(String prestoName, Optional<String> family, Optional<String> qualifier, Type type, boolean indexed)
     {
         columns.add(
                 new AccumuloColumnHandle(
@@ -48,8 +43,7 @@ public class RowSchema
                         qualifier,
                         type,
                         columns.size(),
-                        format("Accumulo column %s:%s. Indexed: %b", family, qualifier, indexed),
-                        indexed));
+                        format("Accumulo column %s:%s", family, qualifier)));
         return this;
     }
 
@@ -94,8 +88,7 @@ public class RowSchema
                     columnHandle.getName(),
                     columnHandle.getFamily(),
                     columnHandle.getQualifier(),
-                    columnHandle.getType(),
-                    columnHandle.isIndexed());
+                    columnHandle.getType());
         }
         return schema;
     }
