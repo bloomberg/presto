@@ -30,7 +30,6 @@ public class AccumuloColumnConstraint
     private final String family;
     private final String qualifier;
     private final Type type;
-    private final boolean indexed;
     private final Optional<Domain> domain;
 
     @JsonCreator
@@ -39,21 +38,13 @@ public class AccumuloColumnConstraint
             @JsonProperty("family") String family,
             @JsonProperty("qualifier") String qualifier,
             @JsonProperty("type") Type type,
-            @JsonProperty("domain") Optional<Domain> domain,
-            @JsonProperty("indexed") boolean indexed)
+            @JsonProperty("domain") Optional<Domain> domain)
     {
         this.name = requireNonNull(name, "name is null");
         this.family = requireNonNull(family, "family is null");
         this.qualifier = requireNonNull(qualifier, "qualifier is null");
         this.type = requireNonNull(type, "type is null");
-        this.indexed = requireNonNull(indexed, "indexed is null");
         this.domain = requireNonNull(domain, "domain is null");
-    }
-
-    @JsonProperty
-    public boolean isIndexed()
-    {
-        return indexed;
     }
 
     @JsonProperty
@@ -89,7 +80,7 @@ public class AccumuloColumnConstraint
     @Override
     public int hashCode()
     {
-        return Objects.hash(name, family, qualifier, type, domain, indexed);
+        return Objects.hash(name, family, qualifier, type, domain);
     }
 
     @Override
@@ -108,8 +99,7 @@ public class AccumuloColumnConstraint
                 && Objects.equals(this.family, other.family)
                 && Objects.equals(this.qualifier, other.qualifier)
                 && Objects.equals(this.type, other.type)
-                && Objects.equals(this.domain, other.domain)
-                && Objects.equals(this.indexed, other.indexed);
+                && Objects.equals(this.domain, other.domain);
     }
 
     @Override
@@ -120,7 +110,6 @@ public class AccumuloColumnConstraint
                 .add("family", this.family)
                 .add("qualifier", this.qualifier)
                 .add("type", this.type)
-                .add("indexed", this.indexed)
                 .add("domain", this.domain)
                 .toString();
     }

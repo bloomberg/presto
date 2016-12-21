@@ -17,6 +17,7 @@ import com.facebook.presto.accumulo.index.Indexer;
 import com.facebook.presto.accumulo.index.metrics.AccumuloMetricsStorage;
 import com.facebook.presto.accumulo.index.metrics.MetricsStorage;
 import com.facebook.presto.accumulo.model.AccumuloColumnHandle;
+import com.facebook.presto.accumulo.model.IndexColumn;
 import com.facebook.presto.accumulo.serializers.AccumuloRowSerializer;
 import com.facebook.presto.spi.ColumnMetadata;
 import com.facebook.presto.spi.PrestoException;
@@ -28,11 +29,15 @@ import com.google.common.collect.ImmutableList;
 import org.apache.accumulo.core.client.Connector;
 
 import java.lang.reflect.InvocationTargetException;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
+import static com.facebook.presto.spi.StandardErrorCode.FUNCTION_IMPLEMENTATION_ERROR;
 import static com.facebook.presto.spi.StandardErrorCode.NOT_FOUND;
 import static com.google.common.base.MoreObjects.toStringHelper;
+import static com.google.common.base.Preconditions.checkArgument;
 import static java.util.Objects.requireNonNull;
 
 /**
@@ -41,19 +46,20 @@ import static java.util.Objects.requireNonNull;
 public class AccumuloTable
 {
     private final boolean external;
-    private final Integer rowIdOrdinal;
     private final String schema;
     private final String serializerClassName;
     private final Optional<String> scanAuthorizations;
     private final List<ColumnMetadata> columnsMetadata;
     private final Optional<String> metricsStorageClass;
     private final boolean truncateTimestamps;
+    private final Optional<String> indexColumns;
 
     private final boolean indexed;
     private final List<AccumuloColumnHandle> columns;
     private final String rowId;
     private final String table;
     private final SchemaTableName schemaTableName;
+    private final List<IndexColumn> parsedIndexColumns;
 
     @JsonCreator
     public AccumuloTable(
@@ -65,7 +71,8 @@ public class AccumuloTable
             @JsonProperty("serializerClassName") String serializerClassName,
             @JsonProperty("scanAuthorizations") Optional<String> scanAuthorizations,
             @JsonProperty("metricsStorageClass") Optional<String> metricsStorageClass,
-            @JsonProperty("truncateTimestamps") boolean truncateTimestamps)
+            @JsonProperty("truncateTimestamps") boolean truncateTimestamps,
+            @JsonProperty("indexColumns") Optional<String> indexColumns)
     {
         this.external = requireNonNull(external, "external is null");
         this.rowId = requireNonNull(rowId, "rowId is null");
@@ -76,28 +83,27 @@ public class AccumuloTable
         this.scanAuthorizations = scanAuthorizations;
         this.metricsStorageClass = requireNonNull(metricsStorageClass, "metricsStorageClass is null");
         this.truncateTimestamps = truncateTimestamps;
-
-        boolean indexed = false;
-        Optional<Integer> rowIdOrdinal = Optional.empty();
+        this.indexColumns = requireNonNull(indexColumns, "indexColumns is null");
+        this.indexed = indexColumns.isPresent() && indexColumns.get().length() > 0;
+        if (indexColumns.isPresent() && !indexColumns.get().isEmpty()) {
+            this.parsedIndexColumns =
+                    Arrays.stream(indexColumns.get().split(","))
+                            .map(column -> {
+                                checkArgument(this.columns.stream().filter(x -> x.getName().equals(column)).count() == 1, "Specified index column is not defined: " + column);
+                                return new IndexColumn(column);
+                            })
+                            .collect(Collectors.toList());
+        }
+        else {
+            this.parsedIndexColumns = ImmutableList.of();
+        }
 
         // Extract the ColumnMetadata from the handles for faster access
         ImmutableList.Builder<ColumnMetadata> columnMetadataBuilder = ImmutableList.builder();
         for (AccumuloColumnHandle column : this.columns) {
             columnMetadataBuilder.add(column.getColumnMetadata());
-            indexed |= column.isIndexed();
-            if (column.getName().equals(this.rowId)) {
-                rowIdOrdinal = Optional.of(column.getOrdinal());
-            }
         }
 
-        if (rowIdOrdinal.isPresent()) {
-            this.rowIdOrdinal = rowIdOrdinal.get();
-        }
-        else {
-            throw new IllegalArgumentException("rowIdOrdinal is null, enable to locate rowId in given column list");
-        }
-
-        this.indexed = indexed;
         this.columnsMetadata = columnMetadataBuilder.build();
         this.schemaTableName = new SchemaTableName(this.schema, this.table);
     }
@@ -174,16 +180,44 @@ public class AccumuloTable
         return truncateTimestamps;
     }
 
+    @JsonProperty
+    public Optional<String> getIndexColumns()
+    {
+        return indexColumns;
+    }
+
+    @JsonIgnore
+    public AccumuloColumnHandle getColumn(String column)
+    {
+        Optional<AccumuloColumnHandle> handle = getColumns().stream().filter(x -> x.getName().equals(column)).findAny();
+        if (handle.isPresent()) {
+            return handle.get();
+        }
+
+        throw new PrestoException(FUNCTION_IMPLEMENTATION_ERROR, "Failed to find column: " + column);
+    }
+
+    @JsonIgnore
+    public AccumuloColumnHandle getColumn(String family, String qualifier)
+    {
+        Optional<AccumuloColumnHandle> handle = getColumns().stream().filter(x -> x.getFamily().isPresent() && x.getFamily().get().equals(family) && x.getQualifier().isPresent() && x.getQualifier().get().equals(qualifier)).findAny();
+        if (handle.isPresent()) {
+            return handle.get();
+        }
+
+        throw new PrestoException(FUNCTION_IMPLEMENTATION_ERROR, "Failed to find column for family/qualifier: " + family + ":" + qualifier);
+    }
+
+    @JsonIgnore
+    public List<IndexColumn> getParsedIndexColumns()
+    {
+        return parsedIndexColumns;
+    }
+
     @JsonIgnore
     public boolean isIndexed()
     {
         return indexed;
-    }
-
-    @JsonIgnore
-    public int getRowIdOrdinal()
-    {
-        return this.rowIdOrdinal;
     }
 
     @JsonIgnore

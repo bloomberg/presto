@@ -190,13 +190,14 @@ public class TestAccumuloMetricStorage
         AccumuloTable table = new AccumuloTable(
                 "default",
                 "test_accumulo_timestamp_inserts",
-                ImmutableList.of(c1, new AccumuloColumnHandle("time", Optional.of("cf"), Optional.of("time"), TIMESTAMP_TYPE.get(), 1, "", true)),
+                ImmutableList.of(c1, new AccumuloColumnHandle("time", Optional.of("cf"), Optional.of("time"), TIMESTAMP_TYPE.get(), 1, "")),
                 "id",
                 false,
                 LexicoderRowSerializer.class.getCanonicalName(),
                 null,
                 Optional.of(storage.getClass().getCanonicalName()),
-                true);
+                true,
+                Optional.of("time"));
 
         storage.create(table);
 
@@ -266,6 +267,6 @@ public class TestAccumuloMetricStorage
 
     private AccumuloTable getTable(String tablename, boolean external)
     {
-        return new AccumuloTable(table.getSchema(), tablename, table.getColumns(), table.getRowId(), external, table.getSerializerClassName(), table.getScanAuthorizations(), table.getMetricsStorageClass(), table.isTruncateTimestamps());
+        return new AccumuloTable(table.getSchema(), tablename, table.getColumns(), table.getRowId(), external, table.getSerializerClassName(), table.getScanAuthorizations(), table.getMetricsStorageClass(), table.isTruncateTimestamps(), table.getIndexColumns());
     }
 }

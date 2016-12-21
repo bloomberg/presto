@@ -131,7 +131,8 @@ public class AccumuloClient
                 AccumuloTableProperties.getSerializerClass(tableProperties),
                 AccumuloTableProperties.getScanAuthorizations(tableProperties),
                 Optional.of(AccumuloTableProperties.getMetricsStorageClass(tableProperties)),
-                AccumuloTableProperties.isTruncateTimestampsEnabled(tableProperties));
+                AccumuloTableProperties.isTruncateTimestampsEnabled(tableProperties),
+                AccumuloTableProperties.getIndexColumns(tableProperties));
 
         // Validate the DDL is something we can handle
         validateCreateTable(table, meta);
@@ -286,9 +287,6 @@ public class AccumuloClient
         // Get the column mappings from the table property or auto-generate columns if not defined
         Map<String, Pair<String, String>> mapping = AccumuloTableProperties.getColumnMapping(meta.getProperties()).orElse(autoGenerateMapping(meta.getColumns(), AccumuloTableProperties.getLocalityGroups(meta.getProperties())));
 
-        // The list of indexed columns
-        Optional<List<String>> indexedColumns = AccumuloTableProperties.getIndexColumns(meta.getProperties());
-
         // And now we parse the configured columns and create handles for the metadata manager
         ImmutableList.Builder<AccumuloColumnHandle> cBuilder = ImmutableList.builder();
         for (int ordinal = 0; ordinal < meta.getColumns().size(); ++ordinal) {
@@ -303,8 +301,7 @@ public class AccumuloClient
                                 Optional.empty(),
                                 cm.getType(),
                                 ordinal,
-                                "Accumulo row ID",
-                                false));
+                                "Accumulo row ID"));
             }
             else {
                 if (!mapping.containsKey(cm.getName())) {
@@ -313,8 +310,7 @@ public class AccumuloClient
 
                 // Get the mapping for this column
                 Pair<String, String> famqual = mapping.get(cm.getName());
-                boolean indexed = indexedColumns.isPresent() && indexedColumns.get().contains(cm.getName().toLowerCase(Locale.ENGLISH));
-                String comment = format("Accumulo column %s:%s. Indexed: %b", famqual.getLeft(), famqual.getRight(), indexed);
+                String comment = format("Accumulo column %s:%s", famqual.getLeft(), famqual.getRight());
 
                 // Create a new AccumuloColumnHandle object
                 cBuilder.add(
@@ -324,8 +320,7 @@ public class AccumuloClient
                                 Optional.of(famqual.getRight()),
                                 cm.getType(),
                                 ordinal,
-                                comment,
-                                indexed));
+                                comment));
             }
         }
 
@@ -472,7 +467,8 @@ public class AccumuloClient
                 oldTable.getSerializerClassName(),
                 oldTable.getScanAuthorizations(),
                 oldTable.getMetricsStorageClass(),
-                oldTable.isTruncateTimestamps());
+                oldTable.isTruncateTimestamps(),
+                oldTable.getIndexColumns());
 
         // Validate table existence
         if (!tableManager.exists(oldTable.getFullTableName())) {
@@ -574,8 +570,7 @@ public class AccumuloClient
                         columnHandle.getQualifier(),
                         columnHandle.getType(),
                         columnHandle.getOrdinal(),
-                        columnHandle.getComment(),
-                        columnHandle.isIndexed()));
+                        columnHandle.getComment()));
             }
             else {
                 newColumnList.add(columnHandle);
@@ -592,7 +587,8 @@ public class AccumuloClient
                 table.getSerializerClassName(),
                 table.getScanAuthorizations(),
                 table.getMetricsStorageClass(),
-                table.isTruncateTimestamps());
+                table.isTruncateTimestamps(),
+                table.getIndexColumns());
 
         // Replace the table metadata
         metaManager.deleteTableMetadata(new SchemaTableName(table.getSchema(), table.getTable()));
@@ -635,41 +631,33 @@ public class AccumuloClient
      * all sorts of sweet optimizations. What you have here is an important method.
      *
      * @param session Current session
-     * @param schema Schema name
-     * @param table Table Name
+     * @param table Table metadata
      * @param rowIdDomain Domain for the row ID
      * @param constraints Column constraints for the query
-     * @param serializer Instance of a row serializer
-     * @param metricsStorage Metrics storage instance for the table
-     * @param truncateTimestamps True if timestamp type metrics are truncated
      * @return List of TabletSplitMetadata objects for Presto
      */
     public List<TabletSplitMetadata> getTabletSplits(
             ConnectorSession session,
-            String schema,
-            String table,
+            AccumuloTable table,
             Optional<Domain> rowIdDomain,
-            List<AccumuloColumnConstraint> constraints,
-            AccumuloRowSerializer serializer,
-            MetricsStorage metricsStorage,
-            boolean truncateTimestamps)
+            List<AccumuloColumnConstraint> constraints)
     {
         try {
-            String tableName = AccumuloTable.getFullTableName(schema, table);
+            String tableName = table.getFullTableName();
             LOG.debug("Getting tablet splits for table %s", tableName);
 
             // Get the initial Range based on the row ID domain
-            Collection<Range> rowIdRanges = getRangesFromDomain(rowIdDomain, serializer);
+            Collection<Range> rowIdRanges = getRangesFromDomain(rowIdDomain, table.getSerializerInstance());
             List<TabletSplitMetadata> tabletSplits = new ArrayList<>();
 
             // Use the secondary index, if enabled
             if (AccumuloSessionProperties.isOptimizeIndexEnabled(session)) {
                 // Get the scan authorizations to query the index
-                Authorizations auths = getScanAuthorizations(session, schema, table);
+                Authorizations auths = getScanAuthorizations(session, table);
 
                 // Check the secondary index based on the column constraints
                 // If this returns true, return the tablet splits to Presto
-                if (indexLookup.applyIndex(schema, table, session, constraints, rowIdRanges, tabletSplits, serializer, auths, metricsStorage, truncateTimestamps)) {
+                if (indexLookup.applyIndex(session, table, constraints, rowIdRanges, tabletSplits, auths)) {
                     return tabletSplits;
                 }
             }
@@ -717,13 +705,12 @@ public class AccumuloClient
      * In order of priority: session username authorizations, then table property, then the default connector auths.
      *
      * @param session Current session
-     * @param schema Schema name
-     * @param table Table Name
+     * @param table Table metadata
      * @return Scan authorizations
      * @throws AccumuloException If a generic Accumulo error occurs
      * @throws AccumuloSecurityException If a security exception occurs
      */
-    private Authorizations getScanAuthorizations(ConnectorSession session, String schema, String table)
+    private Authorizations getScanAuthorizations(ConnectorSession session, AccumuloTable table)
             throws AccumuloException, AccumuloSecurityException
     {
         String sessionScanUser = AccumuloSessionProperties.getScanUsername(session);
@@ -733,12 +720,7 @@ public class AccumuloClient
             return scanAuths;
         }
 
-        AccumuloTable accumuloTable = this.getTable(new SchemaTableName(schema, table));
-        if (accumuloTable == null) {
-            throw new TableNotFoundException(new SchemaTableName(schema, table));
-        }
-
-        Optional<String> strAuths = accumuloTable.getScanAuthorizations();
+        Optional<String> strAuths = table.getScanAuthorizations();
         if (strAuths.isPresent()) {
             Authorizations scanAuths = new Authorizations(Iterables.toArray(COMMA_SPLITTER.split(strAuths.get()), String.class));
             LOG.debug("scan_auths table property set, using: %s", scanAuths);
