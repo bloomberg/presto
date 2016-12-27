@@ -76,7 +76,7 @@ public final class AccumuloTableProperties
 
         PropertyMetadata<String> s2 = stringSessionProperty(
                 INDEX_COLUMNS,
-                "A comma-delimited list of Presto columns that are indexed in this table's corresponding index table. Default is no indexed columns.",
+                "A comma-delimited list of Presto column that are indexed in this table's corresponding index table. To specify a composite index, delimit two or more Presto columns with a colon. See the documentation for more information. Default is no indexed columns.",
                 "",
                 false);
 

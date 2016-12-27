@@ -19,8 +19,6 @@ import com.facebook.presto.accumulo.index.metrics.MetricsReader;
 import com.facebook.presto.accumulo.index.metrics.MetricsStorage;
 import com.facebook.presto.accumulo.metadata.AccumuloTable;
 import com.facebook.presto.accumulo.model.AccumuloColumnConstraint;
-import com.facebook.presto.accumulo.model.AccumuloColumnHandle;
-import com.facebook.presto.accumulo.model.IndexColumn;
 import com.facebook.presto.accumulo.model.TabletSplitMetadata;
 import com.facebook.presto.accumulo.serializers.AccumuloRowSerializer;
 import com.facebook.presto.spi.ConnectorSession;
@@ -209,18 +207,19 @@ public class IndexLookup
     {
         AccumuloRowSerializer serializer = table.getSerializerInstance();
         ImmutableSetMultimap.Builder<AccumuloColumnConstraint, Range> builder = ImmutableSetMultimap.builder();
-        constraints.stream()
-                .filter(x -> {
-                    for (IndexColumn column : table.getParsedIndexColumns()) {
-                        AccumuloColumnHandle handle = table.getColumn(column.getColumn());
-                        if (handle.getFamily().isPresent() && handle.getQualifier().isPresent() &&
-                                handle.getFamily().get().equals(x.getFamily()) && handle.getQualifier().get().equals(x.getQualifier())) {
-                            return true;
-                        }
-                    }
-                    return false;
-                })
-                .forEach(constraint -> builder.putAll(constraint, getRangesFromDomain(constraint.getDomain(), serializer)));
+        // TODO
+//        constraints.stream()
+//                .filter(x -> {
+//                    for (IndexColumn column : table.getParsedIndexColumns()) {
+//                        AccumuloColumnHandle handle = table.getColumn(column.getColumns());
+//                        if (handle.getFamily().isPresent() && handle.getQualifier().isPresent() &&
+//                                handle.getFamily().get().equals(x.getFamily()) && handle.getQualifier().get().equals(x.getQualifier())) {
+//                            return true;
+//                        }
+//                    }
+//                    return false;
+//                })
+//                .forEach(constraint -> builder.putAll(constraint, getRangesFromDomain(constraint.getDomain(), serializer)));
         return builder.build();
     }
 
@@ -378,7 +377,7 @@ public class IndexLookup
                     scanner.setRanges(constraintEntry.getValue());
 
                     // Fetch the column family for this specific column
-                    Text cf = new Text(Indexer.getIndexColumnFamily(constraintEntry.getKey().getFamily().getBytes(), constraintEntry.getKey().getQualifier().getBytes()).array());
+                    Text cf = new Text(Indexer.getIndexColumnFamily(constraintEntry.getKey().getFamily().getBytes(), constraintEntry.getKey().getQualifier().getBytes()));
                     scanner.fetchColumnFamily(cf);
 
                     // For each entry in the scanner

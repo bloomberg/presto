@@ -22,14 +22,15 @@ import com.facebook.presto.accumulo.serializers.AccumuloRowSerializer;
 import com.facebook.presto.spi.ColumnMetadata;
 import com.facebook.presto.spi.PrestoException;
 import com.facebook.presto.spi.SchemaTableName;
+import com.facebook.presto.spi.type.TimestampType;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.google.common.base.Splitter;
 import com.google.common.collect.ImmutableList;
 import org.apache.accumulo.core.client.Connector;
 
 import java.lang.reflect.InvocationTargetException;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
@@ -38,6 +39,7 @@ import static com.facebook.presto.spi.StandardErrorCode.FUNCTION_IMPLEMENTATION_
 import static com.facebook.presto.spi.StandardErrorCode.NOT_FOUND;
 import static com.google.common.base.MoreObjects.toStringHelper;
 import static com.google.common.base.Preconditions.checkArgument;
+import static java.lang.String.format;
 import static java.util.Objects.requireNonNull;
 
 /**
@@ -76,6 +78,8 @@ public class AccumuloTable
     {
         this.external = requireNonNull(external, "external is null");
         this.rowId = requireNonNull(rowId, "rowId is null");
+        checkArgument(columns.stream().filter(column -> column.getName().equals(rowId)).count() == 1, format("Row ID %s is not present in column definition", rowId));
+
         this.schema = requireNonNull(schema, "schema is null");
         this.table = requireNonNull(table, "table is null");
         this.columns = ImmutableList.copyOf(requireNonNull(columns, "columns are null"));
@@ -87,10 +91,21 @@ public class AccumuloTable
         this.indexed = indexColumns.isPresent() && indexColumns.get().length() > 0;
         if (indexColumns.isPresent() && !indexColumns.get().isEmpty()) {
             this.parsedIndexColumns =
-                    Arrays.stream(indexColumns.get().split(","))
-                            .map(column -> {
-                                checkArgument(this.columns.stream().filter(x -> x.getName().equals(column)).count() == 1, "Specified index column is not defined: " + column);
-                                return new IndexColumn(column);
+                    Splitter.on(',').trimResults().omitEmptyStrings().splitToList(indexColumns.get()).stream()
+                            .map(indexColumn -> {
+                                ImmutableList.Builder<String> builder = ImmutableList.builder();
+                                List<String> parsedIndexColumns = Splitter.on(':').trimResults().omitEmptyStrings().splitToList(indexColumn);
+                                for (int i = 0; i < parsedIndexColumns.size(); ++i) {
+                                    String column = parsedIndexColumns.get(i);
+                                    List<AccumuloColumnHandle> columnHandle = this.columns.stream().filter(x -> x.getName().equals(column)).collect(Collectors.toList());
+                                    checkArgument(columnHandle.size() == 1, "Specified index column is not defined: " + column);
+                                    checkArgument(!column.equals(rowId), "Specified index column cannot be the row ID: " + column);
+                                    if (columnHandle.get(0).getType().equals(TimestampType.TIMESTAMP)) {
+                                        checkArgument(i + 1 == parsedIndexColumns.size(), "Timestamp-type columns must be at the end of a composite index");
+                                    }
+                                    builder.add(column);
+                                }
+                                return new IndexColumn(builder.build());
                             })
                             .collect(Collectors.toList());
         }

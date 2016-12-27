@@ -21,6 +21,7 @@ import com.facebook.presto.accumulo.model.AccumuloColumnHandle;
 import com.facebook.presto.accumulo.model.IndexColumn;
 import com.facebook.presto.spi.PrestoException;
 import com.facebook.presto.spi.SchemaTableName;
+import com.facebook.presto.spi.type.TimestampType;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
@@ -43,6 +44,7 @@ import org.apache.accumulo.core.iterators.TypedValueCombiner;
 import org.apache.accumulo.core.iterators.user.SummingCombiner;
 import org.apache.hadoop.io.Text;
 
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
@@ -58,12 +60,8 @@ import java.util.stream.Collectors;
 
 import static com.facebook.presto.accumulo.AccumuloErrorCode.ACCUMULO_TABLE_DNE;
 import static com.facebook.presto.accumulo.AccumuloErrorCode.UNEXPECTED_ACCUMULO_ERROR;
-import static com.facebook.presto.accumulo.index.metrics.MetricsStorage.TimestampPrecision.DAY;
-import static com.facebook.presto.accumulo.index.metrics.MetricsStorage.TimestampPrecision.HOUR;
-import static com.facebook.presto.accumulo.index.metrics.MetricsStorage.TimestampPrecision.MINUTE;
-import static com.facebook.presto.accumulo.index.metrics.MetricsStorage.TimestampPrecision.SECOND;
+import static com.facebook.presto.accumulo.index.Indexer.TIMESTAMP_CARDINALITY_FAMILIES;
 import static com.facebook.presto.spi.StandardErrorCode.FUNCTION_IMPLEMENTATION_ERROR;
-import static com.facebook.presto.spi.type.TimestampType.TIMESTAMP;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static java.util.Objects.requireNonNull;
 import static java.util.concurrent.TimeUnit.SECONDS;
@@ -74,11 +72,7 @@ public class AccumuloMetricsStorage
     private static final byte[] CARDINALITY_CQ = "___card___".getBytes(UTF_8);
     private static final LongCombiner.Type ENCODER_TYPE = LongCombiner.Type.STRING;
     private static final TypedValueCombiner.Encoder<Long> ENCODER = new LongCombiner.StringEncoder();
-    private static final Map<TimestampPrecision, byte[]> TIMESTAMP_CARDINALITY_FAMILIES = ImmutableMap.of(
-            SECOND, "_tss".getBytes(UTF_8),
-            MINUTE, "_tsm".getBytes(UTF_8),
-            HOUR, "_tsh".getBytes(UTF_8),
-            DAY, "_tsd".getBytes(UTF_8));
+    private static final byte[] HYPHEN = new byte[] {'-'};
 
     private final AccumuloTableManager tableManager;
 
@@ -109,17 +103,49 @@ public class AccumuloMetricsStorage
         ImmutableMap.Builder<String, Set<Text>> groups = ImmutableMap.builder();
 
         for (IndexColumn indexColumn : table.getParsedIndexColumns()) {
-            AccumuloColumnHandle columnHandle = table.getColumn(indexColumn.getColumn());
-
-            // Create a Text version of the index column family
-            Text indexColumnFamily = new Text(Indexer.getIndexColumnFamily(columnHandle.getFamily().get().getBytes(UTF_8), columnHandle.getQualifier().get().getBytes(UTF_8)).array());
-            groups.put(indexColumnFamily.toString(), ImmutableSet.of(indexColumnFamily));
-
-            if (table.isTruncateTimestamps() && columnHandle.getType() == TIMESTAMP) {
-                for (byte[] family : TIMESTAMP_CARDINALITY_FAMILIES.values()) {
-                    Text timestampFamily = new Text(Bytes.concat(indexColumnFamily.copyBytes(), family));
-                    groups.put(timestampFamily.toString(), ImmutableSet.of(timestampFamily));
+            List<byte[]> families = new ArrayList<>();
+            for (String column : indexColumn.getColumns()) {
+                AccumuloColumnHandle columnHandle = table.getColumn(column);
+                byte[] concatFamily = Indexer.getIndexColumnFamily(columnHandle.getFamily().get().getBytes(UTF_8), columnHandle.getQualifier().get().getBytes(UTF_8));
+                if (columnHandle.getType().equals(TimestampType.TIMESTAMP)) {
+                    if (families.size() == 0) {
+                        families.add(concatFamily);
+                        for (byte[] tsFamily : TIMESTAMP_CARDINALITY_FAMILIES.values()) {
+                            families.add(Bytes.concat(concatFamily, tsFamily));
+                        }
+                    }
+                    else {
+                        List<byte[]> newFamilies = new ArrayList<>();
+                        for (byte[] family : families) {
+                            newFamilies.add(Bytes.concat(family, HYPHEN, concatFamily));
+                            for (byte[] tsFamily : TIMESTAMP_CARDINALITY_FAMILIES.values()) {
+                                newFamilies.add(Bytes.concat(family, HYPHEN, Bytes.concat(concatFamily, tsFamily)));
+                            }
+                        }
+                        families = newFamilies;
+                    }
                 }
+                else {
+                    if (families.size() == 0) {
+                        families.add(concatFamily);
+                    }
+                    else {
+                        List<byte[]> newFamilies = new ArrayList<>();
+                        for (byte[] family : families) {
+                            newFamilies.add(Bytes.concat(family, HYPHEN, concatFamily));
+                        }
+                        families = newFamilies;
+                    }
+                }
+            }
+
+            for (byte[] family : families) {
+                // Create a Text version of the index column family
+                Text indexColumnFamily = new Text(family);
+
+                // Add this to the locality groups,
+                // it is a 1:1 mapping of locality group to column families
+                groups.put(indexColumnFamily.toString(), ImmutableSet.of(indexColumnFamily));
             }
         }
 
@@ -234,7 +260,6 @@ public class AccumuloMetricsStorage
                     metricsWriter.close();
                 }
                 metrics.clear();
-                timestampMetrics.clear();
             }
             catch (MutationsRejectedException e) {
                 throw new PrestoException(UNEXPECTED_ACCUMULO_ERROR, "Mutation was rejected by server on close", e);
@@ -269,18 +294,6 @@ public class AccumuloMetricsStorage
                             ENCODER.encode(entry.getValue().get()));
 
                     // Add to our list of mutations
-                    mutationBuilder.add(mut);
-                }
-            }
-
-            for (Map.Entry<TimestampTruncateKey, AtomicLong> entry : timestampMetrics.entrySet()) {
-                if (entry.getValue().get() != 0) {
-                    Mutation mut = new Mutation(entry.getKey().value.array());
-                    mut.put(
-                            Bytes.concat(entry.getKey().column.array(), TIMESTAMP_CARDINALITY_FAMILIES.get(entry.getKey().level)),
-                            CARDINALITY_CQ,
-                            entry.getKey().visibility,
-                            ENCODER.encode(entry.getValue().get()));
                     mutationBuilder.add(mut);
                 }
             }
@@ -340,7 +353,7 @@ public class AccumuloMetricsStorage
             }
             else {
                 // For timestamp columns
-                List<Future<Long>> tasks = MetricsStorage.splitTimestampRange(key.range).asMap().entrySet().stream().map(timestampEntry ->
+                List<Future<Long>> tasks = Indexer.splitTimestampRange(key.range).asMap().entrySet().stream().map(timestampEntry ->
                         executorService.submit(() -> {
                                     long sum = 0;
                                     BatchScanner scanner = null;

@@ -42,7 +42,6 @@ import static java.nio.ByteBuffer.wrap;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertNotNull;
-import static org.testng.Assert.assertTrue;
 
 public abstract class TestAbstractMetricStorage
 {
@@ -104,10 +103,6 @@ public abstract class TestAbstractMetricStorage
 
     @Test
     public abstract void testExists()
-            throws Exception;
-
-    @Test
-    public abstract void testTimestampInserts()
             throws Exception;
 
     @BeforeClass
@@ -180,12 +175,12 @@ public abstract class TestAbstractMetricStorage
         assertEquals(storage.newReader().getCardinality(mck("2", "cf", "age", false, new Authorizations())), 0);
         assertEquals(storage.newReader().getCardinality(mck("3", "cf", "age", false, new Authorizations())), 0);
 
-        writer.incrementCardinality(bb("abc"), bb("cf_firstname"), new ColumnVisibility(), false);
-        writer.incrementCardinality(bb("def"), bb("cf_firstname"), new ColumnVisibility(), false);
-        writer.incrementCardinality(bb("ghi"), bb("cf_firstname"), new ColumnVisibility(), false);
-        writer.incrementCardinality(bb("1"), bb("cf_age"), new ColumnVisibility(), false);
-        writer.incrementCardinality(bb("2"), bb("cf_age"), new ColumnVisibility(), false);
-        writer.incrementCardinality(bb("3"), bb("cf_age"), new ColumnVisibility(), false);
+        writer.incrementCardinality(bb("abc"), bb("cf_firstname"), new ColumnVisibility());
+        writer.incrementCardinality(bb("def"), bb("cf_firstname"), new ColumnVisibility());
+        writer.incrementCardinality(bb("ghi"), bb("cf_firstname"), new ColumnVisibility());
+        writer.incrementCardinality(bb("1"), bb("cf_age"), new ColumnVisibility());
+        writer.incrementCardinality(bb("2"), bb("cf_age"), new ColumnVisibility());
+        writer.incrementCardinality(bb("3"), bb("cf_age"), new ColumnVisibility());
         writer.flush();
 
         assertEquals(storage.newReader().getCardinality(mck("abc", "cf", "firstname", false, new Authorizations())), 1);
@@ -195,12 +190,12 @@ public abstract class TestAbstractMetricStorage
         assertEquals(storage.newReader().getCardinality(mck("2", "cf", "age", false, new Authorizations())), 1);
         assertEquals(storage.newReader().getCardinality(mck("3", "cf", "age", false, new Authorizations())), 1);
 
-        writer.incrementCardinality(bb("abc"), bb("cf_firstname"), new ColumnVisibility(), false);
-        writer.incrementCardinality(bb("def"), bb("cf_firstname"), new ColumnVisibility(), false);
-        writer.incrementCardinality(bb("ghi"), bb("cf_firstname"), new ColumnVisibility(), false);
-        writer.incrementCardinality(bb("1"), bb("cf_age"), new ColumnVisibility(), false);
-        writer.incrementCardinality(bb("2"), bb("cf_age"), new ColumnVisibility(), false);
-        writer.incrementCardinality(bb("3"), bb("cf_age"), new ColumnVisibility(), false);
+        writer.incrementCardinality(bb("abc"), bb("cf_firstname"), new ColumnVisibility());
+        writer.incrementCardinality(bb("def"), bb("cf_firstname"), new ColumnVisibility());
+        writer.incrementCardinality(bb("ghi"), bb("cf_firstname"), new ColumnVisibility());
+        writer.incrementCardinality(bb("1"), bb("cf_age"), new ColumnVisibility());
+        writer.incrementCardinality(bb("2"), bb("cf_age"), new ColumnVisibility());
+        writer.incrementCardinality(bb("3"), bb("cf_age"), new ColumnVisibility());
         writer.flush();
 
         assertEquals(storage.newReader().getCardinality(mck("abc", "cf", "firstname", false, new Authorizations())), 2);
@@ -210,12 +205,12 @@ public abstract class TestAbstractMetricStorage
         assertEquals(storage.newReader().getCardinality(mck("2", "cf", "age", false, new Authorizations())), 2);
         assertEquals(storage.newReader().getCardinality(mck("3", "cf", "age", false, new Authorizations())), 2);
 
-        writer.incrementCardinality(bb("abc"), bb("cf_firstname"), new ColumnVisibility("foo"), false);
-        writer.incrementCardinality(bb("def"), bb("cf_firstname"), new ColumnVisibility("foo"), false);
-        writer.incrementCardinality(bb("ghi"), bb("cf_firstname"), new ColumnVisibility("foo"), false);
-        writer.incrementCardinality(bb("1"), bb("cf_age"), new ColumnVisibility("foo"), false);
-        writer.incrementCardinality(bb("2"), bb("cf_age"), new ColumnVisibility("foo"), false);
-        writer.incrementCardinality(bb("3"), bb("cf_age"), new ColumnVisibility("foo"), false);
+        writer.incrementCardinality(bb("abc"), bb("cf_firstname"), new ColumnVisibility("foo"));
+        writer.incrementCardinality(bb("def"), bb("cf_firstname"), new ColumnVisibility("foo"));
+        writer.incrementCardinality(bb("ghi"), bb("cf_firstname"), new ColumnVisibility("foo"));
+        writer.incrementCardinality(bb("1"), bb("cf_age"), new ColumnVisibility("foo"));
+        writer.incrementCardinality(bb("2"), bb("cf_age"), new ColumnVisibility("foo"));
+        writer.incrementCardinality(bb("3"), bb("cf_age"), new ColumnVisibility("foo"));
         writer.flush();
 
         assertEquals(storage.newReader().getCardinality(mck("abc", "cf", "firstname", false, new Authorizations())), 2);
@@ -232,12 +227,12 @@ public abstract class TestAbstractMetricStorage
         assertEquals(storage.newReader().getCardinality(mck("2", "cf", "age", false, new Authorizations("foo"))), 3);
         assertEquals(storage.newReader().getCardinality(mck("3", "cf", "age", false, new Authorizations("foo"))), 3);
 
-        writer.incrementCardinality(bb("abc"), bb("cf_firstname"), new ColumnVisibility("bar"), false);
-        writer.incrementCardinality(bb("def"), bb("cf_firstname"), new ColumnVisibility("bar"), false);
-        writer.incrementCardinality(bb("ghi"), bb("cf_firstname"), new ColumnVisibility("bar"), false);
-        writer.incrementCardinality(bb("1"), bb("cf_age"), new ColumnVisibility("bar"), false);
-        writer.incrementCardinality(bb("2"), bb("cf_age"), new ColumnVisibility("bar"), false);
-        writer.incrementCardinality(bb("3"), bb("cf_age"), new ColumnVisibility("bar"), false);
+        writer.incrementCardinality(bb("abc"), bb("cf_firstname"), new ColumnVisibility("bar"));
+        writer.incrementCardinality(bb("def"), bb("cf_firstname"), new ColumnVisibility("bar"));
+        writer.incrementCardinality(bb("ghi"), bb("cf_firstname"), new ColumnVisibility("bar"));
+        writer.incrementCardinality(bb("1"), bb("cf_age"), new ColumnVisibility("bar"));
+        writer.incrementCardinality(bb("2"), bb("cf_age"), new ColumnVisibility("bar"));
+        writer.incrementCardinality(bb("3"), bb("cf_age"), new ColumnVisibility("bar"));
         writer.flush();
 
         assertEquals(storage.newReader().getCardinality(mck("abc", "cf", "firstname", false, new Authorizations())), 2);
@@ -273,34 +268,34 @@ public abstract class TestAbstractMetricStorage
         assertEquals(storage.newReader().getCardinality(mck("a", "z", "cf", "firstname", false, new Authorizations())), 0);
         assertEquals(storage.newReader().getCardinality(mck("0", "9", "cf", "age", false, new Authorizations())), 0);
 
-        writer.incrementCardinality(bb("abc"), bb("cf_firstname"), new ColumnVisibility(), false);
-        writer.incrementCardinality(bb("def"), bb("cf_firstname"), new ColumnVisibility(), false);
-        writer.incrementCardinality(bb("ghi"), bb("cf_firstname"), new ColumnVisibility(), false);
-        writer.incrementCardinality(bb("1"), bb("cf_age"), new ColumnVisibility(), false);
-        writer.incrementCardinality(bb("2"), bb("cf_age"), new ColumnVisibility(), false);
-        writer.incrementCardinality(bb("3"), bb("cf_age"), new ColumnVisibility(), false);
+        writer.incrementCardinality(bb("abc"), bb("cf_firstname"), new ColumnVisibility());
+        writer.incrementCardinality(bb("def"), bb("cf_firstname"), new ColumnVisibility());
+        writer.incrementCardinality(bb("ghi"), bb("cf_firstname"), new ColumnVisibility());
+        writer.incrementCardinality(bb("1"), bb("cf_age"), new ColumnVisibility());
+        writer.incrementCardinality(bb("2"), bb("cf_age"), new ColumnVisibility());
+        writer.incrementCardinality(bb("3"), bb("cf_age"), new ColumnVisibility());
         writer.flush();
 
         assertEquals(storage.newReader().getCardinality(mck("a", "z", "cf", "firstname", false, new Authorizations())), 3);
         assertEquals(storage.newReader().getCardinality(mck("0", "9", "cf", "age", false, new Authorizations())), 3);
 
-        writer.incrementCardinality(bb("abc"), bb("cf_firstname"), new ColumnVisibility(), false);
-        writer.incrementCardinality(bb("def"), bb("cf_firstname"), new ColumnVisibility(), false);
-        writer.incrementCardinality(bb("ghi"), bb("cf_firstname"), new ColumnVisibility(), false);
-        writer.incrementCardinality(bb("1"), bb("cf_age"), new ColumnVisibility(), false);
-        writer.incrementCardinality(bb("2"), bb("cf_age"), new ColumnVisibility(), false);
-        writer.incrementCardinality(bb("3"), bb("cf_age"), new ColumnVisibility(), false);
+        writer.incrementCardinality(bb("abc"), bb("cf_firstname"), new ColumnVisibility());
+        writer.incrementCardinality(bb("def"), bb("cf_firstname"), new ColumnVisibility());
+        writer.incrementCardinality(bb("ghi"), bb("cf_firstname"), new ColumnVisibility());
+        writer.incrementCardinality(bb("1"), bb("cf_age"), new ColumnVisibility());
+        writer.incrementCardinality(bb("2"), bb("cf_age"), new ColumnVisibility());
+        writer.incrementCardinality(bb("3"), bb("cf_age"), new ColumnVisibility());
         writer.flush();
 
         assertEquals(storage.newReader().getCardinality(mck("a", "z", "cf", "firstname", false, new Authorizations())), 6);
         assertEquals(storage.newReader().getCardinality(mck("0", "9", "cf", "age", false, new Authorizations())), 6);
 
-        writer.incrementCardinality(bb("abc"), bb("cf_firstname"), new ColumnVisibility("foo"), false);
-        writer.incrementCardinality(bb("def"), bb("cf_firstname"), new ColumnVisibility("foo"), false);
-        writer.incrementCardinality(bb("ghi"), bb("cf_firstname"), new ColumnVisibility("foo"), false);
-        writer.incrementCardinality(bb("1"), bb("cf_age"), new ColumnVisibility("foo"), false);
-        writer.incrementCardinality(bb("2"), bb("cf_age"), new ColumnVisibility("foo"), false);
-        writer.incrementCardinality(bb("3"), bb("cf_age"), new ColumnVisibility("foo"), false);
+        writer.incrementCardinality(bb("abc"), bb("cf_firstname"), new ColumnVisibility("foo"));
+        writer.incrementCardinality(bb("def"), bb("cf_firstname"), new ColumnVisibility("foo"));
+        writer.incrementCardinality(bb("ghi"), bb("cf_firstname"), new ColumnVisibility("foo"));
+        writer.incrementCardinality(bb("1"), bb("cf_age"), new ColumnVisibility("foo"));
+        writer.incrementCardinality(bb("2"), bb("cf_age"), new ColumnVisibility("foo"));
+        writer.incrementCardinality(bb("3"), bb("cf_age"), new ColumnVisibility("foo"));
         writer.flush();
 
         assertEquals(storage.newReader().getCardinality(mck("a", "z", "cf", "firstname", false, new Authorizations())), 6);
@@ -309,12 +304,12 @@ public abstract class TestAbstractMetricStorage
         assertEquals(storage.newReader().getCardinality(mck("a", "z", "cf", "firstname", false, new Authorizations("foo"))), 9);
         assertEquals(storage.newReader().getCardinality(mck("0", "9", "cf", "age", false, new Authorizations("foo"))), 9);
 
-        writer.incrementCardinality(bb("abc"), bb("cf_firstname"), new ColumnVisibility("bar"), false);
-        writer.incrementCardinality(bb("def"), bb("cf_firstname"), new ColumnVisibility("bar"), false);
-        writer.incrementCardinality(bb("ghi"), bb("cf_firstname"), new ColumnVisibility("bar"), false);
-        writer.incrementCardinality(bb("1"), bb("cf_age"), new ColumnVisibility("bar"), false);
-        writer.incrementCardinality(bb("2"), bb("cf_age"), new ColumnVisibility("bar"), false);
-        writer.incrementCardinality(bb("3"), bb("cf_age"), new ColumnVisibility("bar"), false);
+        writer.incrementCardinality(bb("abc"), bb("cf_firstname"), new ColumnVisibility("bar"));
+        writer.incrementCardinality(bb("def"), bb("cf_firstname"), new ColumnVisibility("bar"));
+        writer.incrementCardinality(bb("ghi"), bb("cf_firstname"), new ColumnVisibility("bar"));
+        writer.incrementCardinality(bb("1"), bb("cf_age"), new ColumnVisibility("bar"));
+        writer.incrementCardinality(bb("2"), bb("cf_age"), new ColumnVisibility("bar"));
+        writer.incrementCardinality(bb("3"), bb("cf_age"), new ColumnVisibility("bar"));
         writer.flush();
 
         assertEquals(storage.newReader().getCardinality(mck("a", "z", "cf", "firstname", false, new Authorizations())), 6);
@@ -365,9 +360,9 @@ public abstract class TestAbstractMetricStorage
             assertEquals(cardinalities.get(key).longValue(), 0);
         }
 
-        writer.incrementCardinality(bb("abc"), bb("cf_firstname"), new ColumnVisibility(), false);
-        writer.incrementCardinality(bb("def"), bb("cf_firstname"), new ColumnVisibility(), false);
-        writer.incrementCardinality(bb("ghi"), bb("cf_firstname"), new ColumnVisibility(), false);
+        writer.incrementCardinality(bb("abc"), bb("cf_firstname"), new ColumnVisibility());
+        writer.incrementCardinality(bb("def"), bb("cf_firstname"), new ColumnVisibility());
+        writer.incrementCardinality(bb("ghi"), bb("cf_firstname"), new ColumnVisibility());
         writer.flush();
 
         cardinalities = storage.newReader().getCardinalities(keys);
@@ -376,9 +371,9 @@ public abstract class TestAbstractMetricStorage
             assertEquals(cardinalities.get(key).longValue(), 1);
         }
 
-        writer.incrementCardinality(bb("abc"), bb("cf_firstname"), new ColumnVisibility(), false);
-        writer.incrementCardinality(bb("def"), bb("cf_firstname"), new ColumnVisibility(), false);
-        writer.incrementCardinality(bb("ghi"), bb("cf_firstname"), new ColumnVisibility(), false);
+        writer.incrementCardinality(bb("abc"), bb("cf_firstname"), new ColumnVisibility());
+        writer.incrementCardinality(bb("def"), bb("cf_firstname"), new ColumnVisibility());
+        writer.incrementCardinality(bb("ghi"), bb("cf_firstname"), new ColumnVisibility());
         writer.flush();
 
         cardinalities = storage.newReader().getCardinalities(keys);
@@ -387,9 +382,9 @@ public abstract class TestAbstractMetricStorage
             assertEquals(cardinalities.get(key).longValue(), 2);
         }
 
-        writer.incrementCardinality(bb("abc"), bb("cf_firstname"), new ColumnVisibility("foo"), false);
-        writer.incrementCardinality(bb("def"), bb("cf_firstname"), new ColumnVisibility("foo"), false);
-        writer.incrementCardinality(bb("ghi"), bb("cf_firstname"), new ColumnVisibility("foo"), false);
+        writer.incrementCardinality(bb("abc"), bb("cf_firstname"), new ColumnVisibility("foo"));
+        writer.incrementCardinality(bb("def"), bb("cf_firstname"), new ColumnVisibility("foo"));
+        writer.incrementCardinality(bb("ghi"), bb("cf_firstname"), new ColumnVisibility("foo"));
         writer.flush();
 
         cardinalities = storage.newReader().getCardinalities(keys);
@@ -404,9 +399,9 @@ public abstract class TestAbstractMetricStorage
             assertEquals(cardinalities.get(key).longValue(), 3);
         }
 
-        writer.incrementCardinality(bb("abc"), bb("cf_firstname"), new ColumnVisibility("bar"), false);
-        writer.incrementCardinality(bb("def"), bb("cf_firstname"), new ColumnVisibility("bar"), false);
-        writer.incrementCardinality(bb("ghi"), bb("cf_firstname"), new ColumnVisibility("bar"), false);
+        writer.incrementCardinality(bb("abc"), bb("cf_firstname"), new ColumnVisibility("bar"));
+        writer.incrementCardinality(bb("def"), bb("cf_firstname"), new ColumnVisibility("bar"));
+        writer.incrementCardinality(bb("ghi"), bb("cf_firstname"), new ColumnVisibility("bar"));
         writer.flush();
 
         cardinalities = storage.newReader().getCardinalities(keys);
@@ -434,63 +429,6 @@ public abstract class TestAbstractMetricStorage
         }
     }
 
-    @Test
-    public void testTimestampReads()
-            throws Exception
-    {
-        AccumuloTable table = new AccumuloTable(
-                "default",
-                "test_timestamp_reads",
-                ImmutableList.of(c1, new AccumuloColumnHandle("time", Optional.of("cf"), Optional.of("time"), TIMESTAMP_TYPE.get(), 1, "")),
-                "id",
-                false,
-                LexicoderRowSerializer.class.getCanonicalName(),
-                null,
-                Optional.of(storage.getClass().getCanonicalName()),
-                true,
-                Optional.of("time"));
-
-        MetricCacheKey metricCacheKey =
-                new MetricCacheKey(
-                        "default",
-                        "test_timestamp_reads",
-                        "cf",
-                        "time",
-                        true,
-                        new Authorizations(),
-                        new Range(
-                                new Text(serializer.encode(TIMESTAMP_TYPE.get(), START_TIMESTAMP)),
-                                true,
-                                new Text(serializer.encode(TIMESTAMP_TYPE.get(), END_TIMESTAMP)),
-                                false));
-
-        storage.create(table);
-
-        assertTrue(storage.exists(table.getSchemaTableName()));
-
-        MetricsWriter writer = storage.newWriter(table);
-
-        writer.incrementCardinality(bb(TIMESTAMP), bb("cf_time"), new ColumnVisibility(), true);
-        writer.flush();
-
-        assertEquals(storage.newReader().getCardinality(metricCacheKey), 1L);
-
-        writer.incrementCardinality(bb(TIMESTAMP), bb("cf_time"), new ColumnVisibility(), true);
-        writer.flush();
-
-        assertEquals(storage.newReader().getCardinality(metricCacheKey), 2L);
-
-        writer.incrementCardinality(bb(TIMESTAMP), bb("cf_time"), new ColumnVisibility(), true);
-        writer.flush();
-
-        assertEquals(storage.newReader().getCardinality(metricCacheKey), 3L);
-
-        writer.incrementCardinality(bb(TIMESTAMP), bb("cf_time"), new ColumnVisibility(), true);
-        writer.close();
-
-        assertEquals(storage.newReader().getCardinality(metricCacheKey), 4L);
-    }
-
     protected static ByteBuffer bb(String v)
     {
         return wrap(b(v));
@@ -499,11 +437,6 @@ public abstract class TestAbstractMetricStorage
     protected static byte[] b(String v)
     {
         return v.getBytes(UTF_8);
-    }
-
-    protected ByteBuffer bb(Long v)
-    {
-        return wrap(serializer.encode(TIMESTAMP_TYPE.get(), v));
     }
 
     protected MetricCacheKey mck(String value, String family, String qualifier, boolean truncateTimestamp, Authorizations auths)

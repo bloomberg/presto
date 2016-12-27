@@ -17,34 +17,21 @@ import com.facebook.presto.accumulo.AccumuloQueryRunner;
 import com.facebook.presto.accumulo.conf.AccumuloConfig;
 import com.facebook.presto.accumulo.index.metrics.MetricsStorage.TimestampPrecision;
 import com.facebook.presto.accumulo.metadata.AccumuloTable;
-import com.facebook.presto.accumulo.model.AccumuloColumnHandle;
-import com.facebook.presto.accumulo.serializers.LexicoderRowSerializer;
 import com.facebook.presto.spi.PrestoException;
-import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
-import com.google.common.primitives.Bytes;
 import org.apache.accumulo.core.client.Connector;
-import org.apache.accumulo.core.client.Scanner;
-import org.apache.accumulo.core.data.Key;
-import org.apache.accumulo.core.data.Range;
-import org.apache.accumulo.core.data.Value;
 import org.apache.accumulo.core.security.Authorizations;
-import org.apache.accumulo.core.security.ColumnVisibility;
-import org.apache.hadoop.io.Text;
 import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.Test;
 
 import java.util.Map;
-import java.util.Map.Entry;
-import java.util.Optional;
 
 import static com.facebook.presto.accumulo.index.metrics.MetricsStorage.TimestampPrecision.DAY;
 import static com.facebook.presto.accumulo.index.metrics.MetricsStorage.TimestampPrecision.HOUR;
 import static com.facebook.presto.accumulo.index.metrics.MetricsStorage.TimestampPrecision.MINUTE;
 import static com.facebook.presto.accumulo.index.metrics.MetricsStorage.TimestampPrecision.SECOND;
 import static java.nio.charset.StandardCharsets.UTF_8;
-import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertFalse;
 import static org.testng.Assert.assertTrue;
 
@@ -181,83 +168,6 @@ public class TestAccumuloMetricStorage
         assertFalse(storage.exists(table.getSchemaTableName()));
         storage.create(table);
         assertTrue(storage.exists(table.getSchemaTableName()));
-    }
-
-    @Override
-    public void testTimestampInserts()
-            throws Exception
-    {
-        AccumuloTable table = new AccumuloTable(
-                "default",
-                "test_accumulo_timestamp_inserts",
-                ImmutableList.of(c1, new AccumuloColumnHandle("time", Optional.of("cf"), Optional.of("time"), TIMESTAMP_TYPE.get(), 1, "")),
-                "id",
-                false,
-                LexicoderRowSerializer.class.getCanonicalName(),
-                null,
-                Optional.of(storage.getClass().getCanonicalName()),
-                true,
-                Optional.of("time"));
-
-        storage.create(table);
-
-        assertTrue(storage.exists(table.getSchemaTableName()));
-
-        MetricsWriter writer = storage.newWriter(table);
-
-        writer.incrementCardinality(bb(TIMESTAMP), bb("cf_time"), new ColumnVisibility(), true);
-        writer.flush();
-
-        assertEquals(getAccumuloHashValue(table, SECOND, "cf_time", SECOND_TIMESTAMP), 1L);
-        assertEquals(getAccumuloHashValue(table, MINUTE, "cf_time", MINUTE_TIMESTAMP), 1L);
-        assertEquals(getAccumuloHashValue(table, HOUR, "cf_time", HOUR_TIMESTAMP), 1L);
-        assertEquals(getAccumuloHashValue(table, DAY, "cf_time", DAY_TIMESTAMP), 1L);
-
-        writer.incrementCardinality(bb(TIMESTAMP), bb("cf_time"), new ColumnVisibility(), true);
-        writer.flush();
-
-        assertEquals(getAccumuloHashValue(table, SECOND, "cf_time", SECOND_TIMESTAMP), 2L);
-        assertEquals(getAccumuloHashValue(table, MINUTE, "cf_time", MINUTE_TIMESTAMP), 2L);
-        assertEquals(getAccumuloHashValue(table, HOUR, "cf_time", HOUR_TIMESTAMP), 2L);
-        assertEquals(getAccumuloHashValue(table, DAY, "cf_time", DAY_TIMESTAMP), 2L);
-
-        writer.incrementCardinality(bb(TIMESTAMP), bb("cf_time"), new ColumnVisibility(), true);
-        writer.flush();
-
-        assertEquals(getAccumuloHashValue(table, SECOND, "cf_time", SECOND_TIMESTAMP), 3L);
-        assertEquals(getAccumuloHashValue(table, MINUTE, "cf_time", MINUTE_TIMESTAMP), 3L);
-        assertEquals(getAccumuloHashValue(table, HOUR, "cf_time", HOUR_TIMESTAMP), 3L);
-        assertEquals(getAccumuloHashValue(table, DAY, "cf_time", DAY_TIMESTAMP), 3L);
-
-        writer.incrementCardinality(bb(TIMESTAMP), bb("cf_time"), new ColumnVisibility(), true);
-        writer.close();
-
-        assertEquals(getAccumuloHashValue(table, SECOND, "cf_time", SECOND_TIMESTAMP), 4L);
-        assertEquals(getAccumuloHashValue(table, MINUTE, "cf_time", MINUTE_TIMESTAMP), 4L);
-        assertEquals(getAccumuloHashValue(table, HOUR, "cf_time", HOUR_TIMESTAMP), 4L);
-        assertEquals(getAccumuloHashValue(table, DAY, "cf_time", DAY_TIMESTAMP), 4L);
-    }
-
-    private long getAccumuloHashValue(AccumuloTable table, TimestampPrecision level, String family, Long value)
-            throws Exception
-    {
-        Scanner scanner = null;
-        try {
-            scanner = connector.createScanner(table.getIndexTableName() + "_metrics", new Authorizations());
-            scanner.setRange(new Range(new Text(serializer.encode(TIMESTAMP_TYPE.get(), value))));
-            scanner.fetchColumn(new Text(Bytes.concat(family.getBytes(UTF_8), TIMESTAMP_CARDINALITY_FAMILIES.get(level))), new Text("___card___"));
-
-            long sum = 0;
-            for (Entry<Key, Value> entry : scanner) {
-                sum += Long.parseLong(entry.getValue().toString());
-            }
-            return sum;
-        }
-        finally {
-            if (scanner != null) {
-                scanner.close();
-            }
-        }
     }
 
     private AccumuloTable getTable(String tablename)

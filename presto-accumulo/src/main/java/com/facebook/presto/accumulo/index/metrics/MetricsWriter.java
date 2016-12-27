@@ -13,7 +13,6 @@
  */
 package com.facebook.presto.accumulo.index.metrics;
 
-import com.facebook.presto.accumulo.index.metrics.MetricsStorage.TimestampPrecision;
 import com.facebook.presto.accumulo.metadata.AccumuloTable;
 import com.facebook.presto.accumulo.serializers.LexicoderRowSerializer;
 import org.apache.accumulo.core.security.ColumnVisibility;
@@ -21,16 +20,12 @@ import org.apache.accumulo.core.security.ColumnVisibility;
 import java.nio.ByteBuffer;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicLong;
 
 import static com.facebook.presto.accumulo.index.metrics.MetricsStorage.METRICS_TABLE_ROWS_COLUMN;
 import static com.facebook.presto.accumulo.index.metrics.MetricsStorage.METRICS_TABLE_ROW_ID;
-import static com.facebook.presto.accumulo.index.metrics.MetricsStorage.getTruncatedTimestamps;
-import static com.facebook.presto.spi.type.TimestampType.TIMESTAMP;
 import static com.google.common.base.MoreObjects.toStringHelper;
-import static java.nio.ByteBuffer.wrap;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static java.util.Objects.requireNonNull;
 
@@ -42,7 +37,6 @@ public abstract class MetricsWriter
         implements AutoCloseable
 {
     protected final Map<CardinalityKey, AtomicLong> metrics = new HashMap<>();
-    protected final Map<TimestampTruncateKey, AtomicLong> timestampMetrics = new HashMap<>();
     protected final AccumuloTable table;
     protected final LexicoderRowSerializer serializer = new LexicoderRowSerializer();
 
@@ -63,7 +57,7 @@ public abstract class MetricsWriter
      */
     public void incrementRowCount()
     {
-        incrementCardinality(METRICS_TABLE_ROW_ID, METRICS_TABLE_ROWS_COLUMN, EMPTY_VISIBILITY, false);
+        incrementCardinality(METRICS_TABLE_ROW_ID, METRICS_TABLE_ROWS_COLUMN, EMPTY_VISIBILITY);
     }
 
     /**
@@ -72,22 +66,10 @@ public abstract class MetricsWriter
      * @param value Cell's value
      * @param column Column of the row
      * @param visibility Row's visibility
-     * @param truncateTimestamp True if this column is a TIMESTAMP type AND truncate timestamps is enabled, otherwise false
      */
-    public void incrementCardinality(ByteBuffer value, ByteBuffer column, ColumnVisibility visibility, boolean truncateTimestamp)
+    public void incrementCardinality(ByteBuffer value, ByteBuffer column, ColumnVisibility visibility)
     {
-        CardinalityKey key = new CardinalityKey(value, column, visibility);
-        AtomicLong count = metrics.computeIfAbsent(key, k -> new AtomicLong(0));
-
-        count.incrementAndGet();
-
-        if (truncateTimestamp) {
-            for (Entry<TimestampPrecision, Long> entry : getTruncatedTimestamps(serializer.decode(TIMESTAMP, value.array())).entrySet()) {
-                TimestampTruncateKey truncatedKey = new TimestampTruncateKey(entry.getKey(), wrap(serializer.encode(TIMESTAMP, entry.getValue())), column, visibility);
-                AtomicLong truncatedCount = timestampMetrics.computeIfAbsent(truncatedKey, k -> new AtomicLong(0));
-                truncatedCount.incrementAndGet();
-            }
-        }
+        metrics.computeIfAbsent(new CardinalityKey(value, column, visibility), key -> new AtomicLong(0L)).incrementAndGet();
     }
 
     /**
@@ -95,7 +77,7 @@ public abstract class MetricsWriter
      */
     public void decrementRowCount()
     {
-        decrementCardinality(METRICS_TABLE_ROW_ID, METRICS_TABLE_ROWS_COLUMN, EMPTY_VISIBILITY, false);
+        decrementCardinality(METRICS_TABLE_ROW_ID, METRICS_TABLE_ROWS_COLUMN, EMPTY_VISIBILITY);
     }
 
     /**
@@ -104,30 +86,10 @@ public abstract class MetricsWriter
      * @param value Cell's value
      * @param column Column of the row
      * @param visibility Row's visibility
-     * @param truncateTimestamp True if this column is a TIMESTAMP type AND truncate timestamps is enabled, otherwise false
      */
-    public void decrementCardinality(ByteBuffer value, ByteBuffer column, ColumnVisibility visibility, boolean truncateTimestamp)
+    public void decrementCardinality(ByteBuffer value, ByteBuffer column, ColumnVisibility visibility)
     {
-        CardinalityKey key = new CardinalityKey(value, column, visibility);
-        AtomicLong count = metrics.get(key);
-        if (count == null) {
-            count = new AtomicLong(0);
-            metrics.put(key, count);
-        }
-
-        count.decrementAndGet();
-
-        if (truncateTimestamp) {
-            for (Entry<TimestampPrecision, Long> entry : getTruncatedTimestamps(serializer.decode(TIMESTAMP, value.array())).entrySet()) {
-                TimestampTruncateKey truncatedKey = new TimestampTruncateKey(entry.getKey(), wrap(serializer.encode(TIMESTAMP, entry.getValue())), column, visibility);
-                AtomicLong truncatedCount = timestampMetrics.get(truncatedKey);
-                if (truncatedCount == null) {
-                    truncatedCount = new AtomicLong(0);
-                    timestampMetrics.put(truncatedKey, truncatedCount);
-                }
-                truncatedCount.decrementAndGet();
-            }
-        }
+        metrics.computeIfAbsent(new CardinalityKey(value, column, visibility), key -> new AtomicLong(0L)).decrementAndGet();
     }
 
     /**
@@ -195,60 +157,6 @@ public abstract class MetricsWriter
                     .add("value", new String(value.array(), UTF_8))
                     .add("column", new String(column.array(), UTF_8))
                     .add("visibility", visibility.toString())
-                    .toString();
-        }
-    }
-
-    protected static class TimestampTruncateKey
-            extends CardinalityKey
-    {
-        public TimestampPrecision level;
-
-        /**
-         * Creates a new instance of {@link TimestampTruncateKey}
-         *
-         * @param level Truncate level for this key
-         * @param value The value of the cell
-         * @param column The column of the row
-         * @param visibility The column visibility
-         */
-        public TimestampTruncateKey(TimestampPrecision level, ByteBuffer value, ByteBuffer column, ColumnVisibility visibility)
-        {
-            super(value, column, visibility);
-            this.level = requireNonNull(level, "level is null");
-        }
-
-        @Override
-        public boolean equals(Object obj)
-        {
-            if (this == obj) {
-                return true;
-            }
-            if ((obj == null) || (getClass() != obj.getClass())) {
-                return false;
-            }
-
-            TimestampTruncateKey other = (TimestampTruncateKey) obj;
-            return Objects.equals(this.value, other.value)
-                    && Objects.equals(this.column, other.column)
-                    && Objects.equals(this.visibility, other.visibility)
-                    && Objects.equals(this.level, other.level);
-        }
-
-        @Override
-        public int hashCode()
-        {
-            return Objects.hash(value, column, visibility);
-        }
-
-        @Override
-        public String toString()
-        {
-            return toStringHelper(this)
-                    .add("value", new String(value.array(), UTF_8))
-                    .add("column", new String(column.array(), UTF_8))
-                    .add("visibility", visibility.toString())
-                    .add("level", level.toString())
                     .toString();
         }
     }
