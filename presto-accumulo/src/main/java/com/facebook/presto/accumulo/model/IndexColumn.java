@@ -14,8 +14,10 @@
 package com.facebook.presto.accumulo.model;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
+import java.util.List;
 import java.util.Objects;
 
 import static com.google.common.base.MoreObjects.toStringHelper;
@@ -23,24 +25,30 @@ import static java.util.Objects.requireNonNull;
 
 public class IndexColumn
 {
-    private final String column;
+    private final List<String> columns;
 
     @JsonCreator
-    public IndexColumn(@JsonProperty("column") String column)
+    public IndexColumn(@JsonProperty("columns") List<String> columns)
     {
-        this.column = requireNonNull(column, "column is null");
+        this.columns = requireNonNull(columns, "column is null");
     }
 
     @JsonProperty
-    public String getColumn()
+    public List<String> getColumns()
     {
-        return column;
+        return columns;
+    }
+
+    @JsonIgnore
+    public int getNumColumns()
+    {
+        return columns.size();
     }
 
     @Override
     public int hashCode()
     {
-        return Objects.hash(column);
+        return Objects.hash(columns);
     }
 
     @Override
@@ -55,12 +63,12 @@ public class IndexColumn
         }
 
         IndexColumn other = (IndexColumn) obj;
-        return Objects.equals(this.column, other.column);
+        return Objects.equals(this.columns, other.columns);
     }
 
     @Override
     public String toString()
     {
-        return toStringHelper(this).add("column", column).toString();
+        return toStringHelper(this).add("columns", columns).toString();
     }
 }
