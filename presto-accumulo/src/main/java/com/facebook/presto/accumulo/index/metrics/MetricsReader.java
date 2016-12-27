@@ -109,7 +109,7 @@ public abstract class MetricsReader
     public String getColumnFamily(MetricCacheKey key)
     {
         if (key.qualifier.isPresent()) {
-            return new String(Indexer.getIndexColumnFamily(key.family.getBytes(UTF_8), key.qualifier.get().getBytes(UTF_8)).array(), UTF_8);
+            return new String(Indexer.getIndexColumnFamily(key.family.getBytes(UTF_8), key.qualifier.get().getBytes(UTF_8)), UTF_8);
         }
         else {
             return key.family;

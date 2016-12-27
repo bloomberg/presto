@@ -14,19 +14,26 @@
 package com.facebook.presto.accumulo.index;
 
 import com.facebook.presto.accumulo.Types;
+import com.facebook.presto.accumulo.index.metrics.MetricsStorage.TimestampPrecision;
 import com.facebook.presto.accumulo.index.metrics.MetricsWriter;
 import com.facebook.presto.accumulo.metadata.AccumuloTable;
 import com.facebook.presto.accumulo.model.AccumuloColumnHandle;
 import com.facebook.presto.accumulo.model.IndexColumn;
 import com.facebook.presto.accumulo.serializers.AccumuloRowSerializer;
+import com.facebook.presto.accumulo.serializers.LexicoderRowSerializer;
 import com.facebook.presto.spi.PrestoException;
 import com.facebook.presto.spi.SchemaTableName;
 import com.facebook.presto.spi.StandardErrorCode;
 import com.facebook.presto.spi.type.Type;
 import com.google.common.collect.ImmutableList;
+import com.google.common.collect.ImmutableMap;
+import com.google.common.collect.ImmutableMultimap;
 import com.google.common.collect.ImmutableSet;
+import com.google.common.collect.ListMultimap;
 import com.google.common.collect.Multimap;
 import com.google.common.collect.MultimapBuilder;
+import com.google.common.primitives.Bytes;
+import io.airlift.log.Logger;
 import org.apache.accumulo.core.client.BatchScanner;
 import org.apache.accumulo.core.client.BatchWriter;
 import org.apache.accumulo.core.client.Connector;
@@ -36,6 +43,7 @@ import org.apache.accumulo.core.client.TableNotFoundException;
 import org.apache.accumulo.core.data.ColumnUpdate;
 import org.apache.accumulo.core.data.Key;
 import org.apache.accumulo.core.data.Mutation;
+import org.apache.accumulo.core.data.PartialKey;
 import org.apache.accumulo.core.data.Range;
 import org.apache.accumulo.core.data.Value;
 import org.apache.accumulo.core.security.Authorizations;
@@ -48,17 +56,30 @@ import org.apache.hadoop.io.Text;
 import javax.annotation.concurrent.NotThreadSafe;
 
 import java.nio.ByteBuffer;
+import java.sql.Timestamp;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.OptionalLong;
 import java.util.Set;
+import java.util.stream.Collectors;
 
+import static com.facebook.presto.accumulo.index.Indexer.Destination.INDEX;
+import static com.facebook.presto.accumulo.index.Indexer.Destination.METRIC;
+import static com.facebook.presto.accumulo.index.metrics.MetricsStorage.TimestampPrecision.DAY;
+import static com.facebook.presto.accumulo.index.metrics.MetricsStorage.TimestampPrecision.HOUR;
+import static com.facebook.presto.accumulo.index.metrics.MetricsStorage.TimestampPrecision.MILLISECOND;
+import static com.facebook.presto.accumulo.index.metrics.MetricsStorage.TimestampPrecision.MINUTE;
+import static com.facebook.presto.accumulo.index.metrics.MetricsStorage.TimestampPrecision.SECOND;
 import static com.facebook.presto.accumulo.serializers.AccumuloRowSerializer.getBlockFromArray;
 import static com.facebook.presto.accumulo.serializers.AccumuloRowSerializer.getBlockFromMap;
+import static com.facebook.presto.spi.StandardErrorCode.NOT_FOUND;
 import static com.facebook.presto.spi.StandardErrorCode.NOT_SUPPORTED;
 import static com.facebook.presto.spi.type.TimestampType.TIMESTAMP;
 import static com.google.common.base.Preconditions.checkArgument;
+import static java.lang.String.format;
 import static java.nio.ByteBuffer.wrap;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static java.util.Objects.requireNonNull;
@@ -104,8 +125,17 @@ import static java.util.Objects.requireNonNull;
 @NotThreadSafe
 public class Indexer
 {
+    public static final Map<TimestampPrecision, byte[]> TIMESTAMP_CARDINALITY_FAMILIES = ImmutableMap.of(
+            SECOND, "_tss".getBytes(UTF_8),
+            MINUTE, "_tsm".getBytes(UTF_8),
+            HOUR, "_tsh".getBytes(UTF_8),
+            DAY, "_tsd".getBytes(UTF_8));
+
     private static final byte[] EMPTY_BYTES = new byte[0];
+    private static final byte[] HYPHEN = new byte[] {'-'};
+    private static final byte[] NULL_BYTE = new byte[] {'\0'};
     private static final byte UNDERSCORE = '_';
+    private static final Logger LOG = Logger.get(Indexer.class);
 
     private final AccumuloTable table;
     private final BatchWriter indexWriter;
@@ -344,80 +374,200 @@ public class Indexer
         }
     }
 
+    public static class IndexValues
+    {
+        ListMultimap<Pair<ByteBuffer, ByteBuffer>, Pair<Long, byte[]>> columnValues = MultimapBuilder.hashKeys().arrayListValues().build();
+
+        public void addValue(Pair<ByteBuffer, ByteBuffer> column, Pair<Long, byte[]> value)
+        {
+            columnValues.put(column, value);
+        }
+
+        public List<byte[]> getValues(Pair<ByteBuffer, ByteBuffer> column)
+        {
+            return columnValues.get(column).stream().map(Pair::getRight).collect(Collectors.toList());
+        }
+
+        public int size()
+        {
+            return columnValues.keySet().size();
+        }
+
+        public long getTimestamp()
+        {
+            OptionalLong timestamp = columnValues.values().stream().mapToLong(Pair::getLeft).max();
+            if (timestamp.isPresent()) {
+                return timestamp.getAsLong();
+            }
+
+            throw new PrestoException(StandardErrorCode.FUNCTION_IMPLEMENTATION_ERROR, "getTimestamp called with an empty list");
+        }
+    }
+
+    public enum Destination
+    {
+        INDEX,
+        METRIC
+    }
+
     private void applyUpdate(byte[] row, Multimap<Pair<ByteBuffer, ByteBuffer>, Triple<byte[], Long, byte[]>> updates, boolean delete)
             throws MutationsRejectedException
     {
-        for (IndexColumn column : indexColumns) {
-            AccumuloColumnHandle handle = table.getColumn(column.getColumn());
+        // Start stepping through each index we want to create
+        for (IndexColumn indexColumn : indexColumns) {
+            // We'll first need to gather all of the values together by column visibility
+            // This ensures the index entries we create will have the same visibility labels as the mutations
+            // A design choice here is to ignore the timestamp and round it up to the highest value when we create the index entries
+            Map<ColumnVisibility, IndexValues> visibilityToIndexValues = new HashMap<>();
+            byte[] indexFamilyBuilder = new byte[0];
+            for (String column : indexColumn.getColumns()) {
+                AccumuloColumnHandle handle = table.getColumn(column);
 
-            if (!handle.getFamily().isPresent() || !handle.getQualifier().isPresent()) {
-                throw new PrestoException(StandardErrorCode.INVALID_TABLE_PROPERTY, "Row ID column cannot be indexed");
+                // Family/qualifier are guaranteed to exist due to pre-check in metadata
+                ByteBuffer family = wrap(handle.getFamily().get().getBytes(UTF_8));
+                ByteBuffer qualifier = wrap(handle.getQualifier().get().getBytes(UTF_8));
+                Pair<ByteBuffer, ByteBuffer> familyQualifierPair = Pair.of(family, qualifier);
+
+                // Append to the index family family
+                indexFamilyBuilder = indexFamilyBuilder.length == 0
+                        ? getIndexColumnFamily(family.array(), qualifier.array())
+                        : Bytes.concat(indexFamilyBuilder, HYPHEN, getIndexColumnFamily(family.array(), qualifier.array()));
+
+                // Populate the map of visibility to the entries containing that visibility
+                updates.get(familyQualifierPair)
+                        .stream()
+                        .map(x -> Triple.of(new ColumnVisibility(x.getLeft()), x.getMiddle(), x.getRight())) // Convert byte[] to ColumnVisibility
+                        .collect(Collectors.groupingBy(Triple::getLeft)) // Group by Column Visibility
+                        .entrySet() // Iterate through each group
+                        .forEach(visibilityEntry -> {
+                            // Get the index values for this visibility and append the updates
+                            IndexValues indexValues = visibilityToIndexValues.computeIfAbsent(visibilityEntry.getKey(), x -> new IndexValues());
+                            visibilityEntry.getValue().forEach(valueEntry -> indexValues.addValue(familyQualifierPair, Pair.of(valueEntry.getMiddle(), valueEntry.getRight())));
+                        });
             }
 
-            // If this mutation has an updated column family
-            ByteBuffer family = wrap(handle.getFamily().get().getBytes(UTF_8));
-            ByteBuffer qualifier = wrap(handle.getQualifier().get().getBytes(UTF_8));
-            for (Triple<byte[], Long, byte[]> value : updates.get(Pair.of(family, qualifier))) {
-                Type type = handle.getType();
-                ColumnVisibility visibility = new ColumnVisibility(value.getLeft());
-                ByteBuffer indexFamily = getIndexColumnFamily(family.array(), qualifier.array());
+            byte[] indexFamily = indexFamilyBuilder;
+            // Now that we have gathered all the values, we must ensure the number of values gathered for each column visibility is equal to the expected number
+            // If so, we can create the index for this entry
+            for (Entry<ColumnVisibility, IndexValues> indexValueEntry : visibilityToIndexValues.entrySet().stream()
+                    .filter(x -> indexColumn.getNumColumns() == x.getValue().size()) // remove all values where there aren't enough values
+                    .collect(Collectors.toList())) {
+                Multimap<Destination, Pair<byte[], byte[]>> indexValues = MultimapBuilder.hashKeys(2).arrayListValues().build();
+                ColumnVisibility visibility = indexValueEntry.getKey();
+                long timestamp = indexValueEntry.getValue().getTimestamp();
+                for (String column : indexColumn.getColumns()) {
+                    AccumuloColumnHandle handle = table.getColumn(column);
+                    byte[] family = handle.getFamily().get().getBytes(UTF_8);
+                    byte[] qualifier = handle.getQualifier().get().getBytes(UTF_8);
+                    Type type = handle.getType();
+                    for (byte[] value : indexValueEntry.getValue().getValues(Pair.of(wrap(family), wrap(qualifier)))) {
+                        if (Types.isArrayType(type)) {
+                            Type elementType = Types.getElementType(type);
+                            List<?> elements = serializer.decode(type, value);
+                            if (indexValues.size() == 0) {
+                                for (Object element : elements) {
+                                    indexValues.put(INDEX, Pair.of(indexFamily, serializer.encode(elementType, element)));
+                                    indexValues.put(METRIC, Pair.of(indexFamily, serializer.encode(elementType, element)));
 
-                // If this is an array type, then index each individual element in the array
-                if (Types.isArrayType(type)) {
-                    Type elementType = Types.getElementType(type);
-                    List<?> elements = serializer.decode(type, value.getRight());
-                    for (Object element : elements) {
-                        if (!delete) {
-                            addIndexMutation(wrap(serializer.encode(elementType, element)), indexFamily, row, visibility, truncateTimestamps && elementType == TIMESTAMP);
+                                    if (elementType.equals(TIMESTAMP) && truncateTimestamps) {
+                                        for (Entry<TimestampPrecision, Long> entry : getTruncatedTimestamps((Long) element).entrySet()) {
+                                            indexValues.put(METRIC, Pair.of(Bytes.concat(indexFamily, TIMESTAMP_CARDINALITY_FAMILIES.get(entry.getKey())), serializer.encode(elementType, entry.getValue())));
+                                        }
+                                    }
+                                }
+                            }
+                            else {
+                                Multimap<Destination, Pair<byte[], byte[]>> newIndexValues = MultimapBuilder.hashKeys(2).arrayListValues().build();
+                                for (Pair<byte[], byte[]> previousValue : indexValues.get(INDEX)) {
+                                    for (Object element : elements) {
+                                        newIndexValues.put(INDEX, Pair.of(previousValue.getLeft(), Bytes.concat(previousValue.getRight(), NULL_BYTE, serializer.encode(elementType, element))));
+                                    }
+                                }
+
+                                for (Pair<byte[], byte[]> previousValue : indexValues.get(METRIC)) {
+                                    for (Object element : elements) {
+                                        newIndexValues.put(METRIC, Pair.of(previousValue.getLeft(), Bytes.concat(previousValue.getRight(), NULL_BYTE, serializer.encode(elementType, element))));
+
+                                        if (elementType.equals(TIMESTAMP) && truncateTimestamps) {
+                                            for (Entry<TimestampPrecision, Long> entry : getTruncatedTimestamps((Long) element).entrySet()) {
+                                                newIndexValues.put(METRIC, Pair.of(Bytes.concat(previousValue.getLeft(), TIMESTAMP_CARDINALITY_FAMILIES.get(entry.getKey())), Bytes.concat(previousValue.getRight(), NULL_BYTE, serializer.encode(TIMESTAMP, entry.getValue()))));
+                                            }
+                                        }
+                                    }
+                                }
+                                indexValues = newIndexValues;
+                            }
                         }
                         else {
-                            deleteIndexMutation(wrap(serializer.encode(elementType, element)), indexFamily, row, visibility, truncateTimestamps && elementType == TIMESTAMP);
+                            if (indexValues.size() == 0) {
+                                indexValues.put(INDEX, Pair.of(indexFamily, value));
+                                indexValues.put(METRIC, Pair.of(indexFamily, value));
+
+                                if (type.equals(TIMESTAMP) && truncateTimestamps) {
+                                    for (Entry<TimestampPrecision, Long> entry : getTruncatedTimestamps(serializer.decode(TIMESTAMP, value)).entrySet()) {
+                                        indexValues.put(METRIC, Pair.of(Bytes.concat(indexFamily, TIMESTAMP_CARDINALITY_FAMILIES.get(entry.getKey())), serializer.encode(TIMESTAMP, entry.getValue())));
+                                    }
+                                }
+                            }
+                            else {
+                                Multimap<Destination, Pair<byte[], byte[]>> newIndexValues = MultimapBuilder.hashKeys(2).arrayListValues().build();
+                                for (Pair<byte[], byte[]> previousValue : indexValues.get(INDEX)) {
+                                    newIndexValues.put(INDEX, Pair.of(previousValue.getLeft(), Bytes.concat(previousValue.getRight(), NULL_BYTE, value)));
+                                }
+
+                                for (Pair<byte[], byte[]> previousValue : indexValues.get(METRIC)) {
+                                    newIndexValues.put(METRIC, Pair.of(previousValue.getLeft(), Bytes.concat(previousValue.getRight(), NULL_BYTE, value)));
+
+                                    if (type.equals(TIMESTAMP) && truncateTimestamps) {
+                                        for (Entry<TimestampPrecision, Long> entry : getTruncatedTimestamps(serializer.decode(TIMESTAMP, value)).entrySet()) {
+                                            newIndexValues.put(METRIC, Pair.of(Bytes.concat(previousValue.getLeft(), TIMESTAMP_CARDINALITY_FAMILIES.get(entry.getKey())), Bytes.concat(previousValue.getRight(), NULL_BYTE, serializer.encode(TIMESTAMP, entry.getValue()))));
+                                        }
+                                    }
+                                }
+                                indexValues = newIndexValues;
+                            }
                         }
                     }
                 }
-                else if (!delete) {
-                    addIndexMutation(wrap(value.getRight()), indexFamily, row, visibility, truncateTimestamps && type == TIMESTAMP);
+
+                // Now that we have aggregated the values for this index column, add or delete them
+                for (Pair<byte[], byte[]> indexValue : indexValues.get(INDEX)) {
+                    if (delete) {
+                        deleteIndexMutation(wrap(indexValue.getRight()), wrap(indexValue.getLeft()), row, visibility, timestamp);
+                    }
+                    else {
+                        addIndexMutation(wrap(indexValue.getRight()), wrap(indexValue.getLeft()), row, visibility, timestamp);
+                    }
                 }
-                else {
-                    deleteIndexMutation(wrap(value.getRight()), indexFamily, row, visibility, truncateTimestamps && type == TIMESTAMP);
+
+                for (Pair<byte[], byte[]> indexValue : indexValues.get(METRIC)) {
+                    if (delete) {
+                        metricsWriter.decrementCardinality(wrap(indexValue.getRight()), wrap(indexValue.getLeft()), visibility);
+                    }
+                    else {
+                        metricsWriter.incrementCardinality(wrap(indexValue.getRight()), wrap(indexValue.getLeft()), visibility);
+                    }
                 }
             }
         }
     }
 
-    private void addIndexMutation(ByteBuffer row, ByteBuffer family, byte[] qualifier, ColumnVisibility visibility, boolean truncateTimestamp)
-            throws MutationsRejectedException
-    {
-        addIndexMutation(row, family, qualifier, visibility, System.currentTimeMillis(), truncateTimestamp);
-    }
-
-    private void addIndexMutation(ByteBuffer row, ByteBuffer family, byte[] qualifier, ColumnVisibility visibility, long timestamp, boolean truncateTimestamp)
+    private void addIndexMutation(ByteBuffer row, ByteBuffer family, byte[] qualifier, ColumnVisibility visibility, long timestamp)
             throws MutationsRejectedException
     {
         // Create the mutation and add it to the batch writer
         Mutation indexMutation = new Mutation(row.array());
         indexMutation.put(family.array(), qualifier, visibility, timestamp, EMPTY_BYTES);
         indexWriter.addMutation(indexMutation);
-
-        // Increment the cardinality metrics for this value of index
-        // metrics is a mapping of row ID to column family
-        metricsWriter.incrementCardinality(row, family, visibility, truncateTimestamp);
     }
 
-    private void deleteIndexMutation(ByteBuffer row, ByteBuffer family, byte[] qualifier, ColumnVisibility visibility, boolean truncateTimestamp)
-            throws MutationsRejectedException
-    {
-        deleteIndexMutation(row, family, qualifier, visibility, System.currentTimeMillis(), truncateTimestamp);
-    }
-
-    private void deleteIndexMutation(ByteBuffer row, ByteBuffer family, byte[] qualifier, ColumnVisibility visibility, long timestamp, boolean truncateTimestamp)
+    private void deleteIndexMutation(ByteBuffer row, ByteBuffer family, byte[] qualifier, ColumnVisibility visibility, long timestamp)
             throws MutationsRejectedException
     {
         // Create the mutation and add it to the batch writer
         Mutation indexMutation = new Mutation(row.array());
         indexMutation.putDelete(family.array(), qualifier, visibility, timestamp);
         indexWriter.addMutation(indexMutation);
-        metricsWriter.decrementCardinality(row, family, visibility, truncateTimestamp);
     }
 
     /**
@@ -428,9 +578,9 @@ public class Indexer
      * @return ByteBuffer of the given index column family
      */
 
-    public static ByteBuffer getIndexColumnFamily(byte[] columnFamily, byte[] columnQualifier)
+    public static byte[] getIndexColumnFamily(byte[] columnFamily, byte[] columnQualifier)
     {
-        return wrap(ArrayUtils.addAll(ArrayUtils.add(columnFamily, UNDERSCORE), columnQualifier));
+        return ArrayUtils.addAll(ArrayUtils.add(columnFamily, UNDERSCORE), columnQualifier);
     }
 
     /**
@@ -444,9 +594,17 @@ public class Indexer
     {
         Map<String, Set<Text>> groups = new HashMap<>();
         for (IndexColumn indexColumn : table.getParsedIndexColumns()) {
-            AccumuloColumnHandle columnHandle = table.getColumn(indexColumn.getColumn());
+            byte[] family = new byte[0];
+            for (String column : indexColumn.getColumns()) {
+                AccumuloColumnHandle columnHandle = table.getColumn(column);
+                byte[] concatFamily = getIndexColumnFamily(columnHandle.getFamily().get().getBytes(UTF_8), columnHandle.getQualifier().get().getBytes(UTF_8));
+                family = family.length == 0
+                        ? concatFamily
+                        : Bytes.concat(family, HYPHEN, concatFamily);
+            }
+
             // Create a Text version of the index column family
-            Text indexColumnFamily = new Text(getIndexColumnFamily(columnHandle.getFamily().get().getBytes(UTF_8), columnHandle.getQualifier().get().getBytes(UTF_8)).array());
+            Text indexColumnFamily = new Text(family);
 
             // Add this to the locality groups,
             // it is a 1:1 mapping of locality group to column families
@@ -476,5 +634,237 @@ public class Indexer
     public static String getIndexTableName(SchemaTableName tableName)
     {
         return getIndexTableName(tableName.getSchemaName(), tableName.getTableName());
+    }
+
+    /**
+     * Gets a Boolean value indicating if the given Range is an exact value
+     *
+     * @param range Range to check
+     * @return True if exact, false otherwise
+     */
+    public static boolean isExact(Range range)
+    {
+        return !range.isInfiniteStartKey() && !range.isInfiniteStopKey()
+                && range.getStartKey().followingKey(PartialKey.ROW).equals(range.getEndKey());
+    }
+
+    public static Map<TimestampPrecision, Long> getTruncatedTimestamps(long value)
+    {
+        return ImmutableMap.of(
+                DAY, value / 86400000L * 86400000L,
+                HOUR, value / 3600000L * 3600000L,
+                MINUTE, value / 60000L * 60000L,
+                SECOND, value / 1000L * 1000L);
+    }
+
+    public static Multimap<TimestampPrecision, Range> splitTimestampRange(Range value)
+    {
+        requireNonNull(value);
+
+        AccumuloRowSerializer serializer = new LexicoderRowSerializer();
+
+        // Selfishly refusing to split any infinite-ended ranges
+        if (value.isInfiniteStopKey() || value.isInfiniteStartKey() || isExact(value)) {
+            return ImmutableMultimap.of(MILLISECOND, value);
+        }
+
+        Multimap<TimestampPrecision, Range> splitTimestampRange = MultimapBuilder.enumKeys(TimestampPrecision.class).arrayListValues().build();
+
+        Text text = new Text();
+        value.getStartKey().getRow(text);
+        boolean startKeyInclusive = text.getLength() == 9;
+        Timestamp startTime = new Timestamp(serializer.decode(TIMESTAMP, Arrays.copyOfRange(text.getBytes(), 0, 9)));
+
+        value.getEndKey().getRow(text);
+        Timestamp endTime = new Timestamp(serializer.decode(TIMESTAMP, Arrays.copyOfRange(text.getBytes(), 0, 9)));
+        boolean endKeyInclusive = text.getLength() == 10;
+        LOG.debug(format("Start: %s  %s  End: %s %s", startTime, startKeyInclusive, endTime, endKeyInclusive));
+        if (startTime.getTime() + 1000L > endTime.getTime()) {
+            LOG.debug(format("%s %s %s", MILLISECOND, new Timestamp(serializer.decode(TIMESTAMP, value.getStartKey().getRow().copyBytes())), new Timestamp(serializer.decode(TIMESTAMP, value.getEndKey().getRow().copyBytes()))));
+            return ImmutableMultimap.of(MILLISECOND, value);
+        }
+
+        Pair<TimestampPrecision, Timestamp> nextTime = Pair.of(getPrecision(startTime), startTime);
+        Pair<TimestampPrecision, Range> previousRange = null;
+
+        switch (nextTime.getLeft()) {
+            case MILLISECOND:
+                break;
+            case SECOND:
+                int compare = Long.compare(startTime.getTime() + 1000L, endTime.getTime());
+                if (compare < 0) {
+                    previousRange = Pair.of(SECOND, new Range(new Text(serializer.encode(TIMESTAMP, startTime.getTime()))));
+                }
+                break;
+            case MINUTE:
+                compare = Long.compare(startTime.getTime() + 60000L, endTime.getTime());
+                if (compare < 0) {
+                    previousRange = Pair.of(MINUTE, new Range(new Text(serializer.encode(TIMESTAMP, startTime.getTime()))));
+                }
+                else {
+                    previousRange = Pair.of(SECOND, new Range(new Text(serializer.encode(TIMESTAMP, startTime.getTime()))));
+                }
+                break;
+            case HOUR:
+                compare = Long.compare(startTime.getTime() + 3600000L, endTime.getTime());
+                if (compare < 0) {
+                    previousRange = Pair.of(HOUR, new Range(new Text(serializer.encode(TIMESTAMP, startTime.getTime()))));
+                }
+                else {
+                    previousRange = Pair.of(MINUTE, new Range(new Text(serializer.encode(TIMESTAMP, startTime.getTime()))));
+                }
+                break;
+            case DAY:
+                compare = Long.compare(startTime.getTime() + 86400000L, endTime.getTime());
+                if (compare < 0) {
+                    previousRange = Pair.of(DAY, new Range(new Text(serializer.encode(TIMESTAMP, startTime.getTime()))));
+                }
+                else {
+                    previousRange = Pair.of(HOUR, new Range(new Text(serializer.encode(TIMESTAMP, startTime.getTime()))));
+                }
+                break;
+        }
+
+        boolean cont = true;
+        do {
+            Pair<TimestampPrecision, Timestamp> prevTime = nextTime;
+            nextTime = getNextTimestamp(prevTime.getRight(), endTime);
+
+            Pair<TimestampPrecision, Range> nextRange;
+            if (prevTime.getLeft() == MILLISECOND && nextTime.getLeft() == MILLISECOND) {
+                nextRange = Pair.of(MILLISECOND, new Range(new Text(serializer.encode(TIMESTAMP, prevTime.getRight().getTime())), startKeyInclusive, new Text(serializer.encode(TIMESTAMP, nextTime.getRight().getTime())), true));
+            }
+            else if (nextTime.getLeft() == MILLISECOND) {
+                Pair<TimestampPrecision, Timestamp> followingTime = getNextTimestamp(nextTime.getRight(), endTime);
+                nextRange = Pair.of(MILLISECOND, new Range(new Text(serializer.encode(TIMESTAMP, nextTime.getRight().getTime())), true, new Text(serializer.encode(TIMESTAMP, followingTime.getRight().getTime())), endKeyInclusive));
+                cont = false;
+            }
+            else {
+                nextRange = Pair.of(nextTime.getLeft(), new Range(new Text(serializer.encode(TIMESTAMP, nextTime.getRight().getTime()))));
+            }
+
+            // Combine this range into previous range
+            if (previousRange != null) {
+                if (previousRange.getLeft().equals(nextRange.getLeft())) {
+                    previousRange = Pair.of(previousRange.getLeft(), new Range(
+                            previousRange.getRight().getStartKey(),
+                            previousRange.getRight().isStartKeyInclusive(),
+                            nextRange.getRight().getEndKey(),
+                            nextRange.getRight().isEndKeyInclusive()));
+                }
+                else {
+                    // Add range to map and roll over
+                    Timestamp s = new Timestamp(serializer.decode(TIMESTAMP, Arrays.copyOfRange(previousRange.getRight().getStartKey().getRow().getBytes(), 0, 9)));
+                    if (isExact(previousRange.getRight())) {
+                        LOG.debug(format("%s %s", previousRange.getLeft(), s));
+                    }
+                    else {
+                        Timestamp e = new Timestamp(serializer.decode(TIMESTAMP, Arrays.copyOfRange(previousRange.getRight().getEndKey().getRow().getBytes(), 0, 9)));
+                        LOG.debug(format("%s %s %s", previousRange.getLeft(), s, e));
+                    }
+
+                    splitTimestampRange.put(previousRange.getLeft(), previousRange.getRight());
+                    previousRange = nextRange;
+                }
+            }
+            else {
+                previousRange = nextRange;
+            }
+        }
+        while (cont && !nextTime.getRight().equals(endTime));
+
+        Timestamp s = new Timestamp(serializer.decode(TIMESTAMP, Arrays.copyOfRange(previousRange.getRight().getStartKey().getRow().getBytes(), 0, 9)));
+        if (isExact(previousRange.getRight())) {
+            LOG.debug(format("%s %s", previousRange.getLeft(), s));
+        }
+        else {
+            Timestamp e = new Timestamp(serializer.decode(TIMESTAMP, Arrays.copyOfRange(previousRange.getRight().getEndKey().getRow().getBytes(), 0, 9)));
+            LOG.debug(format("%s %s %s", previousRange.getLeft(), s, e));
+        }
+
+        splitTimestampRange.put(previousRange.getLeft(), previousRange.getRight());
+        return ImmutableMultimap.copyOf(splitTimestampRange);
+    }
+
+    private static Pair<TimestampPrecision, Timestamp> getNextTimestamp(Timestamp start, Timestamp end)
+    {
+        Timestamp nextTimestamp = advanceTimestamp(start, end);
+        TimestampPrecision nextPrecision = getPrecision(nextTimestamp);
+        if (nextTimestamp.equals(end)) {
+            return Pair.of(nextPrecision, nextTimestamp);
+        }
+
+        TimestampPrecision followingPrecision = getPrecision(advanceTimestamp(nextTimestamp, end));
+
+        int compare = nextPrecision.compareTo(followingPrecision);
+        if (compare == 0) {
+            return Pair.of(nextPrecision, nextTimestamp);
+        }
+        else if (compare < 0) {
+            return Pair.of(nextPrecision, nextTimestamp);
+        }
+        else {
+            return Pair.of(followingPrecision, nextTimestamp);
+        }
+    }
+
+    private static Timestamp advanceTimestamp(Timestamp start, Timestamp end)
+    {
+        switch (getPrecision(start)) {
+            case DAY:
+                long time = start.getTime() + 86400000L;
+                if (time < end.getTime()) {
+                    return new Timestamp(time);
+                }
+            case HOUR:
+                time = start.getTime() + 3600000L;
+                if (time < end.getTime()) {
+                    return new Timestamp(time);
+                }
+            case MINUTE:
+                time = start.getTime() + 60000L;
+                if (time < end.getTime()) {
+                    return new Timestamp(time);
+                }
+            case SECOND:
+                time = start.getTime() + 1000L;
+                if (time < end.getTime()) {
+                    return new Timestamp(time);
+                }
+            case MILLISECOND:
+                if ((start.getTime() - 999L) % 1000 == 0) {
+                    return new Timestamp(Math.min(start.getTime() + 1, end.getTime()));
+                }
+                else {
+                    return new Timestamp(Math.min((start.getTime() / 1000L * 1000L) + 999L, end.getTime()));
+                }
+            default:
+                throw new PrestoException(NOT_FOUND, "Unknown precision:" + getPrecision(start));
+        }
+    }
+
+    private static TimestampPrecision getPrecision(Timestamp time)
+    {
+        if (time.getTime() % 1000 == 0) {
+            if (time.getTime() % 60000L == 0) {
+                if (time.getTime() % 3600000L == 0) {
+                    if (time.getTime() % 86400000L == 0) {
+                        return DAY;
+                    }
+                    else {
+                        return HOUR;
+                    }
+                }
+                else {
+                    return MINUTE;
+                }
+            }
+            else {
+                return SECOND;
+            }
+        }
+        else {
+            return MILLISECOND;
+        }
     }
 }
