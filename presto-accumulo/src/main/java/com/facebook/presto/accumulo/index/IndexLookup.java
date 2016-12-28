@@ -411,6 +411,7 @@ public class IndexLookup
             tasks.add(executor.submit(() -> {
                 BatchScanner scanner = null;
                 try {
+                    long start = System.currentTimeMillis();
                     // Create a batch scanner against the index table, setting the ranges
                     scanner = connector.createBatchScanner(indexTable, auths, 10);
                     scanner.setRanges(queryParameters.getRanges());
@@ -430,7 +431,7 @@ public class IndexLookup
                         }
                     }
 
-                    LOG.info("Retrieved %s ranges for index column %s", columnRanges.size(), queryParameters.getIndexColumn());
+                    LOG.info("Retrieved %s ranges for index column %s took %s ms", columnRanges.size(), queryParameters.getIndexColumn(), System.currentTimeMillis() - start);
                     return columnRanges;
                 }
                 finally {
