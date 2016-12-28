@@ -592,6 +592,24 @@ public class TestArrayOperators
     }
 
     @Test
+    public void testArrayOverlap()
+            throws Exception
+    {
+        assertFunction("ARRAY_OVERLAP(ARRAY [12], ARRAY [10])", BOOLEAN, false);
+        assertFunction("ARRAY_OVERLAP(ARRAY ['foo', 'bar', 'baz'], ARRAY ['foo', 'test', 'bar'])", BOOLEAN, true);
+        assertFunction("ARRAY_OVERLAP(ARRAY [NULL], ARRAY [NULL, NULL])", BOOLEAN, true);
+        assertFunction("ARRAY_OVERLAP(ARRAY ['abc', NULL, 'xyz', NULL], ARRAY [NULL, 'abc', NULL, NULL])", BOOLEAN, true);
+        assertFunction("ARRAY_OVERLAP(ARRAY [1, 5], ARRAY [1])", BOOLEAN, true);
+        assertFunction("ARRAY_OVERLAP(ARRAY [1, 1, 2, 4], ARRAY [1, 1, 4, 4])", BOOLEAN, true);
+        assertFunction("ARRAY_OVERLAP(ARRAY [2, 8], ARRAY [8, 3])", BOOLEAN, true);
+        assertFunction("ARRAY_OVERLAP(ARRAY [IF (RAND() < 1.0, 7, 1) , 2], ARRAY [7])", BOOLEAN, true);
+        assertFunction("ARRAY_OVERLAP(ARRAY [1, 5], ARRAY [1.0])", BOOLEAN, true);
+        assertFunction("ARRAY_OVERLAP(ARRAY [8.3, 1.6, 4.1, 5.2], ARRAY [4.0, 5.2, 8.3, 9.7, 3.5])", BOOLEAN, true);
+        assertFunction("ARRAY_OVERLAP(ARRAY [5.1, 7, 3.0, 4.8, 10], ARRAY [6.5, 10.0, 1.9, 5.1, 3.9, 4.8])", BOOLEAN, true);
+        assertFunction("ARRAY_OVERLAP(ARRAY [ARRAY [4, 5], ARRAY [6, 7]], ARRAY [ARRAY [4, 5], ARRAY [6, 8]])", BOOLEAN, true);
+    }
+
+    @Test
     public void testArrayUnion()
             throws Exception
     {

@@ -22,6 +22,7 @@ import com.facebook.presto.spi.type.TimestampType;
 import com.facebook.presto.spi.type.Type;
 import com.facebook.presto.type.ArrayType;
 import com.google.common.collect.ImmutableList;
+import org.apache.accumulo.core.data.ArrayByteSequence;
 import org.apache.accumulo.core.data.Range;
 import org.apache.accumulo.core.security.Authorizations;
 import org.apache.accumulo.core.security.ColumnVisibility;
@@ -260,6 +261,29 @@ public abstract class TestAbstractMetricStorage
         assertEquals(storage.newReader().getCardinality(mck("1", "cf", "age", false, new Authorizations("foo", "bar"))), 4);
         assertEquals(storage.newReader().getCardinality(mck("2", "cf", "age", false, new Authorizations("foo", "bar"))), 4);
         assertEquals(storage.newReader().getCardinality(mck("3", "cf", "age", false, new Authorizations("foo", "bar"))), 4);
+
+        ColumnVisibility cv = new ColumnVisibility("(bar&test2)|foo|test");
+        System.out.println(cv.getParseTree().getType());
+        cv.getParseTree().getChildren().stream().forEach(node -> {
+            if(node.getType() == ColumnVisibility.NodeType.TERM)
+            System.out.println(node.getTerm(cv.getExpression()));
+            else
+                System.out.println(node.getType() + " " + new ArrayByteSequence(cv.getExpression(), node.getTermStart(), node.getTermEnd()- node.getTermStart()));
+        });
+        writer.incrementCardinality(bb("abc"), bb("cf_firstname"), new ColumnVisibility("bar|foo"), false);
+        writer.incrementCardinality(bb("def"), bb("cf_firstname"), new ColumnVisibility("bar|foo"), false);
+        writer.incrementCardinality(bb("ghi"), bb("cf_firstname"), new ColumnVisibility("bar|foo"), false);
+        writer.incrementCardinality(bb("1"), bb("cf_age"), new ColumnVisibility("bar|foo"), false);
+        writer.incrementCardinality(bb("2"), bb("cf_age"), new ColumnVisibility("bar|foo"), false);
+        writer.incrementCardinality(bb("3"), bb("cf_age"), new ColumnVisibility("bar|foo"), false);
+        writer.flush();
+
+        assertEquals(storage.newReader().getCardinality(mck("abc", "cf", "firstname", false, new Authorizations("foo"))), 4);
+        assertEquals(storage.newReader().getCardinality(mck("def", "cf", "firstname", false, new Authorizations("foo"))), 4);
+        assertEquals(storage.newReader().getCardinality(mck("ghi", "cf", "firstname", false, new Authorizations("foo"))), 4);
+        assertEquals(storage.newReader().getCardinality(mck("1", "cf", "age", false, new Authorizations("foo"))), 4);
+        assertEquals(storage.newReader().getCardinality(mck("2", "cf", "age", false, new Authorizations("foo"))), 4);
+        assertEquals(storage.newReader().getCardinality(mck("3", "cf", "age", false, new Authorizations("foo"))), 4);
     }
 
     @Test
