@@ -17,7 +17,6 @@ import com.facebook.presto.accumulo.index.metrics.MetricCacheKey;
 import com.facebook.presto.accumulo.index.metrics.MetricsStorage;
 import com.facebook.presto.accumulo.model.AccumuloColumnConstraint;
 import com.facebook.presto.spi.PrestoException;
-import com.facebook.presto.spi.type.TimestampType;
 import com.google.common.cache.CacheBuilder;
 import com.google.common.cache.CacheLoader;
 import com.google.common.cache.LoadingCache;
@@ -33,13 +32,17 @@ import org.apache.accumulo.core.data.PartialKey;
 import org.apache.accumulo.core.data.Range;
 import org.apache.accumulo.core.security.Authorizations;
 import org.apache.commons.lang3.tuple.Pair;
+import org.apache.hadoop.io.Text;
 
 import javax.annotation.Nonnull;
 
+import java.util.ArrayList;
 import java.util.Collection;
+import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Optional;
+import java.util.concurrent.Callable;
 import java.util.concurrent.CompletionService;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorCompletionService;
@@ -49,7 +52,6 @@ import java.util.concurrent.SynchronousQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.stream.Collectors;
 
 import static com.facebook.presto.accumulo.AccumuloErrorCode.UNEXPECTED_ACCUMULO_ERROR;
 import static java.util.Objects.requireNonNull;
@@ -104,58 +106,56 @@ public class ColumnCardinalityCache
      *
      * @param schema Schema name
      * @param table Table name
-     * @param idxConstraintRangePairs Mapping of all ranges for a given constraint
+     * @param queryParameters List of index query parameters
      * @param auths Scan-time authorizations for loading any cardinalities from Accumulo
      * @param earlyReturnThreshold Smallest acceptable cardinality to return early while other tasks complete. Use a negative value to disable early return.
      * @param pollingDuration Duration for polling the cardinality completion service. Use a Duration of zero to disable polling.
      * @param metricsStorage Metrics storage for looking up the cardinality
-     * @param truncateTimestamps True if timestamp type metrics are truncated
      * @return An immutable multimap of cardinality to column constraint, sorted by cardinality from smallest to largest
      * @throws TableNotFoundException If the metrics table does not exist
      * @throws ExecutionException If another error occurs; I really don't even know anymore.
      */
-    public Multimap<Long, AccumuloColumnConstraint> getCardinalities(
+    public Multimap<Long, IndexQueryParameters> getCardinalities(
             String schema,
             String table,
-            Multimap<AccumuloColumnConstraint, Range> idxConstraintRangePairs,
+            List<IndexQueryParameters> queryParameters,
             Authorizations auths,
             long earlyReturnThreshold,
             Duration pollingDuration,
-            MetricsStorage metricsStorage,
-            boolean truncateTimestamps)
+            MetricsStorage metricsStorage)
             throws ExecutionException, TableNotFoundException
     {
         requireNonNull(schema, "schema is null");
         requireNonNull(table, "table is null");
-        requireNonNull(idxConstraintRangePairs, "idxConstraintRangePairs is null");
+        requireNonNull(queryParameters, "queryParameters is null");
         requireNonNull(auths, "auths is null");
         requireNonNull(pollingDuration, "pollingDuration is null");
         requireNonNull(metricsStorage, "metricsStorage is null");
 
-        if (idxConstraintRangePairs.isEmpty()) {
+        if (queryParameters.isEmpty()) {
             return ImmutableMultimap.of();
         }
 
         cacheLoader.setMetricsStorage(metricsStorage);
 
         // Submit tasks to the executor to fetch column cardinality, adding it to the Guava cache if necessary
-        CompletionService<Pair<Long, AccumuloColumnConstraint>> executor = new ExecutorCompletionService<>(executorService);
-        idxConstraintRangePairs.asMap().entrySet().forEach(e ->
+        CompletionService<Pair<Long, IndexQueryParameters>> executor = new ExecutorCompletionService<>(executorService);
+        queryParameters.forEach(queryParameter ->
                 executor.submit(() -> {
                             long start = System.currentTimeMillis();
-                            long cardinality = getColumnCardinality(schema, table, e.getKey().getFamily(), e.getKey().getQualifier(), truncateTimestamps && e.getKey().getType() == TimestampType.TIMESTAMP, auths, e.getValue());
-                            LOG.debug("Cardinality for column %s is %s, took %s ms", e.getKey().getName(), cardinality, System.currentTimeMillis() - start);
-                            return Pair.of(cardinality, e.getKey());
+                            long cardinality = getColumnCardinality(schema, table, auths, queryParameter);
+                            LOG.debug("Cardinality for column %s is %s, took %s ms", queryParameter.getIndexColumn(), cardinality, System.currentTimeMillis() - start);
+                            return Pair.of(cardinality, queryParameter);
                         }
                 ));
 
         long pollingMillis = pollingDuration.toMillis();
 
         // Create a multi map sorted by cardinality
-        ListMultimap<Long, AccumuloColumnConstraint> cardinalityToConstraints = MultimapBuilder.treeKeys().arrayListValues().build();
+        ListMultimap<Long, IndexQueryParameters> cardinalityToConstraints = MultimapBuilder.treeKeys().arrayListValues().build();
         try {
             boolean earlyReturn = false;
-            int numTasks = idxConstraintRangePairs.asMap().entrySet().size();
+            int numTasks = queryParameters.size();
             do {
                 // Sleep for the polling duration to allow concurrent tasks to run for this time
                 if (pollingMillis > 0) {
@@ -164,19 +164,19 @@ public class ColumnCardinalityCache
 
                 // Poll each task, retrieving the result if it is done
                 for (int i = 0; i < numTasks; ++i) {
-                    Future<Pair<Long, AccumuloColumnConstraint>> futureCardinality = executor.poll();
+                    Future<Pair<Long, IndexQueryParameters>> futureCardinality = executor.poll();
                     if (futureCardinality != null) {
-                        Pair<Long, AccumuloColumnConstraint> columnCardinality = futureCardinality.get();
+                        Pair<Long, IndexQueryParameters> columnCardinality = futureCardinality.get();
                         cardinalityToConstraints.put(columnCardinality.getLeft(), columnCardinality.getRight());
                     }
                 }
 
                 // If the smallest cardinality is present and below the threshold, set the earlyReturn flag
-                Optional<Entry<Long, AccumuloColumnConstraint>> smallestCardinality = cardinalityToConstraints.entries().stream().findFirst();
+                Optional<Entry<Long, IndexQueryParameters>> smallestCardinality = cardinalityToConstraints.entries().stream().findFirst();
                 if (smallestCardinality.isPresent()) {
                     if (smallestCardinality.get().getKey() <= earlyReturnThreshold) {
                         LOG.debug("Cardinality for column %s is below threshold of %s. Returning early while other tasks finish",
-                                smallestCardinality.get().getValue().getName(), earlyReturnThreshold);
+                                smallestCardinality.get().getValue().getIndexColumn(), earlyReturnThreshold);
                         earlyReturn = true;
                     }
                 }
@@ -197,56 +197,64 @@ public class ColumnCardinalityCache
      *
      * @param schema Table schema
      * @param table Table name
-     * @param family Accumulo column family
-     * @param qualifier Accumulo column qualifier
-     * @param timestampsTruncated True if timestamps are truncated AND this is a Timestamp type, false otherwise
      * @param auths Scan-time authorizations for loading any cardinalities from Accumulo
-     * @param columnRanges All range values to summarize for the cardinality
+     * @param queryParameters Parameters to use for the column cardinality
      * @return The cardinality of the column
      */
-    private long getColumnCardinality(String schema, String table, String family, String qualifier, boolean timestampsTruncated, Authorizations auths, Collection<Range> columnRanges)
+    private long getColumnCardinality(String schema, String table, Authorizations auths, IndexQueryParameters queryParameters)
             throws ExecutionException
     {
-        LOG.debug("Getting cardinality for %s:%s", family, qualifier);
+        LOG.debug("Getting cardinality for " + queryParameters.getIndexColumn());
 
-        // Collect all exact Accumulo Ranges, i.e. single value entries vs. a full scan
-        Collection<MetricCacheKey> exactRanges = columnRanges
-                .stream()
-                .filter(this::isExact)
-                .map(range -> new MetricCacheKey(schema, table, family, qualifier, timestampsTruncated, auths, range))
-                .collect(Collectors.toList());
+        List<Callable<Long>> tasks = new ArrayList<>();
+        for (Entry<Text, Collection<Range>> metricParamEntry : queryParameters.getMetricParameters().asMap().entrySet()) {
+            tasks.add(() -> {
+                // Collect all exact Accumulo Ranges, i.e. single value entries vs. a full scan
+                List<MetricCacheKey> exactRanges = new ArrayList<>();
+                List<MetricCacheKey> nonExactRanges = new ArrayList<>();
+                metricParamEntry.getValue()
+                        .forEach(range -> {
+                            MetricCacheKey key = new MetricCacheKey(schema, table, metricParamEntry.getKey(), auths, range);
+                            if (isExact(range)) {
+                                exactRanges.add(key);
+                            }
+                            else {
+                                nonExactRanges.add(key);
+                            }
+                        });
 
-        LOG.debug("Column values contain %s exact ranges of %s", exactRanges.size(),                columnRanges.size());
+                LOG.debug("Column values contain %s exact ranges and %s non-exact ranges", exactRanges.size(), nonExactRanges.size());
 
-        // Sum the cardinalities for the exact-value Ranges
-        // This is where the reach-out to Accumulo occurs for all Ranges that have not
-        // previously been fetched
-        long sum = 0;
-        if (exactRanges.size() == 1) {
-            sum = cache.get(exactRanges.stream().findAny().get());
-        }
-        else {
-            for (Long value : cache.getAll(exactRanges).values()) {
-                sum += value;
-            }
-        }
-
-        // If these collection sizes are not equal,
-        // then there is at least one non-exact range
-        if (exactRanges.size() != columnRanges.size()) {
-            // for each range in the column value
-            for (Range range : columnRanges) {
-                // if this range is not exact
-                if (!isExact(range)) {
-                    // Then get the value for this range using the single-value cache lookup
-                    MetricCacheKey key = new MetricCacheKey(schema, table, family, qualifier, timestampsTruncated, auths, range);
-                    long value = cache.get(key);
-
-                    // add our value to the cache and our sum
-                    cache.put(key, value);
-                    sum += value;
+                // Sum the cardinalities for the exact-value Ranges
+                // This is where the reach-out to Accumulo occurs for all Ranges that have not
+                // previously been fetched
+                long sum = 0;
+                if (exactRanges.size() == 1) {
+                    sum = cache.get(exactRanges.get(0));
                 }
+                else {
+                    for (Long value : cache.getAll(exactRanges).values()) {
+                        sum += value;
+                    }
+                }
+
+                // for each non-exact range, use the single-value get
+                for (MetricCacheKey key : nonExactRanges) {
+                    sum += cache.get(key);
+                }
+
+                return sum;
+            });
+        }
+
+        int sum = 0;
+        try {
+            for (Future<Long> value : executorService.invokeAll(tasks)) {
+                sum += value.get();
             }
+        }
+        catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
         }
 
         LOG.debug("Cache stats : size=%s, %s", cache.size(), cache.stats());
