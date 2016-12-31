@@ -18,8 +18,6 @@ import com.facebook.presto.accumulo.metadata.AccumuloTable;
 import com.facebook.presto.accumulo.model.AccumuloColumnHandle;
 import com.facebook.presto.accumulo.serializers.LexicoderRowSerializer;
 import com.facebook.presto.spi.PrestoException;
-import com.facebook.presto.spi.type.TimestampType;
-import com.facebook.presto.spi.type.Type;
 import com.facebook.presto.type.ArrayType;
 import com.google.common.collect.ImmutableList;
 import org.apache.accumulo.core.data.Range;
@@ -45,15 +43,7 @@ import static org.testng.Assert.assertNotNull;
 
 public abstract class TestAbstractMetricStorage
 {
-    protected static final Optional<Type> TIMESTAMP_TYPE = Optional.of(TimestampType.TIMESTAMP);
     protected static final DateTimeFormatter PARSER = ISODateTimeFormat.dateTimeParser();
-    protected static final Long START_TIMESTAMP = PARSER.parseDateTime("2001-08-22T00:00:00.000+0000").getMillis();
-    protected static final Long END_TIMESTAMP = PARSER.parseDateTime("2001-08-23T00:00:00.000+0000").getMillis();
-    protected static final Long TIMESTAMP = PARSER.parseDateTime("2001-08-22T03:04:05.321+0000").getMillis();
-    protected static final Long SECOND_TIMESTAMP = PARSER.parseDateTime("2001-08-22T03:04:05.000+0000").getMillis();
-    protected static final Long MINUTE_TIMESTAMP = PARSER.parseDateTime("2001-08-22T03:04:00.000+0000").getMillis();
-    protected static final Long HOUR_TIMESTAMP = PARSER.parseDateTime("2001-08-22T03:00:00.000+0000").getMillis();
-    protected static final Long DAY_TIMESTAMP = PARSER.parseDateTime("2001-08-22T00:00:00.000+0000").getMillis();
 
     protected AccumuloConfig config = new AccumuloConfig();
     protected AccumuloTable table;
@@ -168,12 +158,12 @@ public abstract class TestAbstractMetricStorage
 
         MetricsWriter writer = storage.newWriter(table);
 
-        assertEquals(storage.newReader().getCardinality(mck("abc", "cf", "firstname", false, new Authorizations())), 0);
-        assertEquals(storage.newReader().getCardinality(mck("def", "cf", "firstname", false, new Authorizations())), 0);
-        assertEquals(storage.newReader().getCardinality(mck("ghi", "cf", "firstname", false, new Authorizations())), 0);
-        assertEquals(storage.newReader().getCardinality(mck("1", "cf", "age", false, new Authorizations())), 0);
-        assertEquals(storage.newReader().getCardinality(mck("2", "cf", "age", false, new Authorizations())), 0);
-        assertEquals(storage.newReader().getCardinality(mck("3", "cf", "age", false, new Authorizations())), 0);
+        assertEquals(storage.newReader().getCardinality(mck("abc", "cf_firstname", new Authorizations())), 0);
+        assertEquals(storage.newReader().getCardinality(mck("def", "cf_firstname", new Authorizations())), 0);
+        assertEquals(storage.newReader().getCardinality(mck("ghi", "cf_firstname", new Authorizations())), 0);
+        assertEquals(storage.newReader().getCardinality(mck("1", "cf_age", new Authorizations())), 0);
+        assertEquals(storage.newReader().getCardinality(mck("2", "cf_age", new Authorizations())), 0);
+        assertEquals(storage.newReader().getCardinality(mck("3", "cf_age", new Authorizations())), 0);
 
         writer.incrementCardinality(bb("abc"), bb("cf_firstname"), new ColumnVisibility());
         writer.incrementCardinality(bb("def"), bb("cf_firstname"), new ColumnVisibility());
@@ -183,12 +173,12 @@ public abstract class TestAbstractMetricStorage
         writer.incrementCardinality(bb("3"), bb("cf_age"), new ColumnVisibility());
         writer.flush();
 
-        assertEquals(storage.newReader().getCardinality(mck("abc", "cf", "firstname", false, new Authorizations())), 1);
-        assertEquals(storage.newReader().getCardinality(mck("def", "cf", "firstname", false, new Authorizations())), 1);
-        assertEquals(storage.newReader().getCardinality(mck("ghi", "cf", "firstname", false, new Authorizations())), 1);
-        assertEquals(storage.newReader().getCardinality(mck("1", "cf", "age", false, new Authorizations())), 1);
-        assertEquals(storage.newReader().getCardinality(mck("2", "cf", "age", false, new Authorizations())), 1);
-        assertEquals(storage.newReader().getCardinality(mck("3", "cf", "age", false, new Authorizations())), 1);
+        assertEquals(storage.newReader().getCardinality(mck("abc", "cf_firstname", new Authorizations())), 1);
+        assertEquals(storage.newReader().getCardinality(mck("def", "cf_firstname", new Authorizations())), 1);
+        assertEquals(storage.newReader().getCardinality(mck("ghi", "cf_firstname", new Authorizations())), 1);
+        assertEquals(storage.newReader().getCardinality(mck("1", "cf_age", new Authorizations())), 1);
+        assertEquals(storage.newReader().getCardinality(mck("2", "cf_age", new Authorizations())), 1);
+        assertEquals(storage.newReader().getCardinality(mck("3", "cf_age", new Authorizations())), 1);
 
         writer.incrementCardinality(bb("abc"), bb("cf_firstname"), new ColumnVisibility());
         writer.incrementCardinality(bb("def"), bb("cf_firstname"), new ColumnVisibility());
@@ -198,12 +188,12 @@ public abstract class TestAbstractMetricStorage
         writer.incrementCardinality(bb("3"), bb("cf_age"), new ColumnVisibility());
         writer.flush();
 
-        assertEquals(storage.newReader().getCardinality(mck("abc", "cf", "firstname", false, new Authorizations())), 2);
-        assertEquals(storage.newReader().getCardinality(mck("def", "cf", "firstname", false, new Authorizations())), 2);
-        assertEquals(storage.newReader().getCardinality(mck("ghi", "cf", "firstname", false, new Authorizations())), 2);
-        assertEquals(storage.newReader().getCardinality(mck("1", "cf", "age", false, new Authorizations())), 2);
-        assertEquals(storage.newReader().getCardinality(mck("2", "cf", "age", false, new Authorizations())), 2);
-        assertEquals(storage.newReader().getCardinality(mck("3", "cf", "age", false, new Authorizations())), 2);
+        assertEquals(storage.newReader().getCardinality(mck("abc", "cf_firstname", new Authorizations())), 2);
+        assertEquals(storage.newReader().getCardinality(mck("def", "cf_firstname", new Authorizations())), 2);
+        assertEquals(storage.newReader().getCardinality(mck("ghi", "cf_firstname", new Authorizations())), 2);
+        assertEquals(storage.newReader().getCardinality(mck("1", "cf_age", new Authorizations())), 2);
+        assertEquals(storage.newReader().getCardinality(mck("2", "cf_age", new Authorizations())), 2);
+        assertEquals(storage.newReader().getCardinality(mck("3", "cf_age", new Authorizations())), 2);
 
         writer.incrementCardinality(bb("abc"), bb("cf_firstname"), new ColumnVisibility("foo"));
         writer.incrementCardinality(bb("def"), bb("cf_firstname"), new ColumnVisibility("foo"));
@@ -213,19 +203,19 @@ public abstract class TestAbstractMetricStorage
         writer.incrementCardinality(bb("3"), bb("cf_age"), new ColumnVisibility("foo"));
         writer.flush();
 
-        assertEquals(storage.newReader().getCardinality(mck("abc", "cf", "firstname", false, new Authorizations())), 2);
-        assertEquals(storage.newReader().getCardinality(mck("def", "cf", "firstname", false, new Authorizations())), 2);
-        assertEquals(storage.newReader().getCardinality(mck("ghi", "cf", "firstname", false, new Authorizations())), 2);
-        assertEquals(storage.newReader().getCardinality(mck("1", "cf", "age", false, new Authorizations())), 2);
-        assertEquals(storage.newReader().getCardinality(mck("2", "cf", "age", false, new Authorizations())), 2);
-        assertEquals(storage.newReader().getCardinality(mck("3", "cf", "age", false, new Authorizations())), 2);
+        assertEquals(storage.newReader().getCardinality(mck("abc", "cf_firstname", new Authorizations())), 2);
+        assertEquals(storage.newReader().getCardinality(mck("def", "cf_firstname", new Authorizations())), 2);
+        assertEquals(storage.newReader().getCardinality(mck("ghi", "cf_firstname", new Authorizations())), 2);
+        assertEquals(storage.newReader().getCardinality(mck("1", "cf_age", new Authorizations())), 2);
+        assertEquals(storage.newReader().getCardinality(mck("2", "cf_age", new Authorizations())), 2);
+        assertEquals(storage.newReader().getCardinality(mck("3", "cf_age", new Authorizations())), 2);
 
-        assertEquals(storage.newReader().getCardinality(mck("abc", "cf", "firstname", false, new Authorizations("foo"))), 3);
-        assertEquals(storage.newReader().getCardinality(mck("def", "cf", "firstname", false, new Authorizations("foo"))), 3);
-        assertEquals(storage.newReader().getCardinality(mck("ghi", "cf", "firstname", false, new Authorizations("foo"))), 3);
-        assertEquals(storage.newReader().getCardinality(mck("1", "cf", "age", false, new Authorizations("foo"))), 3);
-        assertEquals(storage.newReader().getCardinality(mck("2", "cf", "age", false, new Authorizations("foo"))), 3);
-        assertEquals(storage.newReader().getCardinality(mck("3", "cf", "age", false, new Authorizations("foo"))), 3);
+        assertEquals(storage.newReader().getCardinality(mck("abc", "cf_firstname", new Authorizations("foo"))), 3);
+        assertEquals(storage.newReader().getCardinality(mck("def", "cf_firstname", new Authorizations("foo"))), 3);
+        assertEquals(storage.newReader().getCardinality(mck("ghi", "cf_firstname", new Authorizations("foo"))), 3);
+        assertEquals(storage.newReader().getCardinality(mck("1", "cf_age", new Authorizations("foo"))), 3);
+        assertEquals(storage.newReader().getCardinality(mck("2", "cf_age", new Authorizations("foo"))), 3);
+        assertEquals(storage.newReader().getCardinality(mck("3", "cf_age", new Authorizations("foo"))), 3);
 
         writer.incrementCardinality(bb("abc"), bb("cf_firstname"), new ColumnVisibility("bar"));
         writer.incrementCardinality(bb("def"), bb("cf_firstname"), new ColumnVisibility("bar"));
@@ -235,26 +225,26 @@ public abstract class TestAbstractMetricStorage
         writer.incrementCardinality(bb("3"), bb("cf_age"), new ColumnVisibility("bar"));
         writer.flush();
 
-        assertEquals(storage.newReader().getCardinality(mck("abc", "cf", "firstname", false, new Authorizations())), 2);
-        assertEquals(storage.newReader().getCardinality(mck("def", "cf", "firstname", false, new Authorizations())), 2);
-        assertEquals(storage.newReader().getCardinality(mck("ghi", "cf", "firstname", false, new Authorizations())), 2);
-        assertEquals(storage.newReader().getCardinality(mck("1", "cf", "age", false, new Authorizations())), 2);
-        assertEquals(storage.newReader().getCardinality(mck("2", "cf", "age", false, new Authorizations())), 2);
-        assertEquals(storage.newReader().getCardinality(mck("3", "cf", "age", false, new Authorizations())), 2);
+        assertEquals(storage.newReader().getCardinality(mck("abc", "cf_firstname", new Authorizations())), 2);
+        assertEquals(storage.newReader().getCardinality(mck("def", "cf_firstname", new Authorizations())), 2);
+        assertEquals(storage.newReader().getCardinality(mck("ghi", "cf_firstname", new Authorizations())), 2);
+        assertEquals(storage.newReader().getCardinality(mck("1", "cf_age", new Authorizations())), 2);
+        assertEquals(storage.newReader().getCardinality(mck("2", "cf_age", new Authorizations())), 2);
+        assertEquals(storage.newReader().getCardinality(mck("3", "cf_age", new Authorizations())), 2);
 
-        assertEquals(storage.newReader().getCardinality(mck("abc", "cf", "firstname", false, new Authorizations("foo"))), 3);
-        assertEquals(storage.newReader().getCardinality(mck("def", "cf", "firstname", false, new Authorizations("foo"))), 3);
-        assertEquals(storage.newReader().getCardinality(mck("ghi", "cf", "firstname", false, new Authorizations("foo"))), 3);
-        assertEquals(storage.newReader().getCardinality(mck("1", "cf", "age", false, new Authorizations("foo"))), 3);
-        assertEquals(storage.newReader().getCardinality(mck("2", "cf", "age", false, new Authorizations("foo"))), 3);
-        assertEquals(storage.newReader().getCardinality(mck("3", "cf", "age", false, new Authorizations("foo"))), 3);
+        assertEquals(storage.newReader().getCardinality(mck("abc", "cf_firstname", new Authorizations("foo"))), 3);
+        assertEquals(storage.newReader().getCardinality(mck("def", "cf_firstname", new Authorizations("foo"))), 3);
+        assertEquals(storage.newReader().getCardinality(mck("ghi", "cf_firstname", new Authorizations("foo"))), 3);
+        assertEquals(storage.newReader().getCardinality(mck("1", "cf_age", new Authorizations("foo"))), 3);
+        assertEquals(storage.newReader().getCardinality(mck("2", "cf_age", new Authorizations("foo"))), 3);
+        assertEquals(storage.newReader().getCardinality(mck("3", "cf_age", new Authorizations("foo"))), 3);
 
-        assertEquals(storage.newReader().getCardinality(mck("abc", "cf", "firstname", false, new Authorizations("foo", "bar"))), 4);
-        assertEquals(storage.newReader().getCardinality(mck("def", "cf", "firstname", false, new Authorizations("foo", "bar"))), 4);
-        assertEquals(storage.newReader().getCardinality(mck("ghi", "cf", "firstname", false, new Authorizations("foo", "bar"))), 4);
-        assertEquals(storage.newReader().getCardinality(mck("1", "cf", "age", false, new Authorizations("foo", "bar"))), 4);
-        assertEquals(storage.newReader().getCardinality(mck("2", "cf", "age", false, new Authorizations("foo", "bar"))), 4);
-        assertEquals(storage.newReader().getCardinality(mck("3", "cf", "age", false, new Authorizations("foo", "bar"))), 4);
+        assertEquals(storage.newReader().getCardinality(mck("abc", "cf_firstname", new Authorizations("foo", "bar"))), 4);
+        assertEquals(storage.newReader().getCardinality(mck("def", "cf_firstname", new Authorizations("foo", "bar"))), 4);
+        assertEquals(storage.newReader().getCardinality(mck("ghi", "cf_firstname", new Authorizations("foo", "bar"))), 4);
+        assertEquals(storage.newReader().getCardinality(mck("1", "cf_age", new Authorizations("foo", "bar"))), 4);
+        assertEquals(storage.newReader().getCardinality(mck("2", "cf_age", new Authorizations("foo", "bar"))), 4);
+        assertEquals(storage.newReader().getCardinality(mck("3", "cf_age", new Authorizations("foo", "bar"))), 4);
     }
 
     @Test
@@ -265,8 +255,8 @@ public abstract class TestAbstractMetricStorage
 
         MetricsWriter writer = storage.newWriter(table);
 
-        assertEquals(storage.newReader().getCardinality(mck("a", "z", "cf", "firstname", false, new Authorizations())), 0);
-        assertEquals(storage.newReader().getCardinality(mck("0", "9", "cf", "age", false, new Authorizations())), 0);
+        assertEquals(storage.newReader().getCardinality(mck("a", "z", "cf_firstname", new Authorizations())), 0);
+        assertEquals(storage.newReader().getCardinality(mck("0", "9", "cf_age", new Authorizations())), 0);
 
         writer.incrementCardinality(bb("abc"), bb("cf_firstname"), new ColumnVisibility());
         writer.incrementCardinality(bb("def"), bb("cf_firstname"), new ColumnVisibility());
@@ -276,8 +266,8 @@ public abstract class TestAbstractMetricStorage
         writer.incrementCardinality(bb("3"), bb("cf_age"), new ColumnVisibility());
         writer.flush();
 
-        assertEquals(storage.newReader().getCardinality(mck("a", "z", "cf", "firstname", false, new Authorizations())), 3);
-        assertEquals(storage.newReader().getCardinality(mck("0", "9", "cf", "age", false, new Authorizations())), 3);
+        assertEquals(storage.newReader().getCardinality(mck("a", "z", "cf_firstname", new Authorizations())), 3);
+        assertEquals(storage.newReader().getCardinality(mck("0", "9", "cf_age", new Authorizations())), 3);
 
         writer.incrementCardinality(bb("abc"), bb("cf_firstname"), new ColumnVisibility());
         writer.incrementCardinality(bb("def"), bb("cf_firstname"), new ColumnVisibility());
@@ -287,8 +277,8 @@ public abstract class TestAbstractMetricStorage
         writer.incrementCardinality(bb("3"), bb("cf_age"), new ColumnVisibility());
         writer.flush();
 
-        assertEquals(storage.newReader().getCardinality(mck("a", "z", "cf", "firstname", false, new Authorizations())), 6);
-        assertEquals(storage.newReader().getCardinality(mck("0", "9", "cf", "age", false, new Authorizations())), 6);
+        assertEquals(storage.newReader().getCardinality(mck("a", "z", "cf_firstname", new Authorizations())), 6);
+        assertEquals(storage.newReader().getCardinality(mck("0", "9", "cf_age", new Authorizations())), 6);
 
         writer.incrementCardinality(bb("abc"), bb("cf_firstname"), new ColumnVisibility("foo"));
         writer.incrementCardinality(bb("def"), bb("cf_firstname"), new ColumnVisibility("foo"));
@@ -298,11 +288,11 @@ public abstract class TestAbstractMetricStorage
         writer.incrementCardinality(bb("3"), bb("cf_age"), new ColumnVisibility("foo"));
         writer.flush();
 
-        assertEquals(storage.newReader().getCardinality(mck("a", "z", "cf", "firstname", false, new Authorizations())), 6);
-        assertEquals(storage.newReader().getCardinality(mck("0", "9", "cf", "age", false, new Authorizations())), 6);
+        assertEquals(storage.newReader().getCardinality(mck("a", "z", "cf_firstname", new Authorizations())), 6);
+        assertEquals(storage.newReader().getCardinality(mck("0", "9", "cf_age", new Authorizations())), 6);
 
-        assertEquals(storage.newReader().getCardinality(mck("a", "z", "cf", "firstname", false, new Authorizations("foo"))), 9);
-        assertEquals(storage.newReader().getCardinality(mck("0", "9", "cf", "age", false, new Authorizations("foo"))), 9);
+        assertEquals(storage.newReader().getCardinality(mck("a", "z", "cf_firstname", new Authorizations("foo"))), 9);
+        assertEquals(storage.newReader().getCardinality(mck("0", "9", "cf_age", new Authorizations("foo"))), 9);
 
         writer.incrementCardinality(bb("abc"), bb("cf_firstname"), new ColumnVisibility("bar"));
         writer.incrementCardinality(bb("def"), bb("cf_firstname"), new ColumnVisibility("bar"));
@@ -312,14 +302,14 @@ public abstract class TestAbstractMetricStorage
         writer.incrementCardinality(bb("3"), bb("cf_age"), new ColumnVisibility("bar"));
         writer.flush();
 
-        assertEquals(storage.newReader().getCardinality(mck("a", "z", "cf", "firstname", false, new Authorizations())), 6);
-        assertEquals(storage.newReader().getCardinality(mck("0", "9", "cf", "age", false, new Authorizations())), 6);
+        assertEquals(storage.newReader().getCardinality(mck("a", "z", "cf_firstname", new Authorizations())), 6);
+        assertEquals(storage.newReader().getCardinality(mck("0", "9", "cf_age", new Authorizations())), 6);
 
-        assertEquals(storage.newReader().getCardinality(mck("a", "z", "cf", "firstname", false, new Authorizations("foo"))), 9);
-        assertEquals(storage.newReader().getCardinality(mck("0", "9", "cf", "age", false, new Authorizations("foo"))), 9);
+        assertEquals(storage.newReader().getCardinality(mck("a", "z", "cf_firstname", new Authorizations("foo"))), 9);
+        assertEquals(storage.newReader().getCardinality(mck("0", "9", "cf_age", new Authorizations("foo"))), 9);
 
-        assertEquals(storage.newReader().getCardinality(mck("a", "z", "cf", "firstname", false, new Authorizations("foo", "bar"))), 12);
-        assertEquals(storage.newReader().getCardinality(mck("0", "9", "cf", "age", false, new Authorizations("foo", "bar"))), 12);
+        assertEquals(storage.newReader().getCardinality(mck("a", "z", "cf_firstname", new Authorizations("foo", "bar"))), 12);
+        assertEquals(storage.newReader().getCardinality(mck("0", "9", "cf_age", new Authorizations("foo", "bar"))), 12);
     }
 
     @Test
@@ -331,27 +321,27 @@ public abstract class TestAbstractMetricStorage
         MetricsWriter writer = storage.newWriter(table);
 
         List<MetricCacheKey> keys = ImmutableList.of(
-                mck("abc", "cf", "firstname", false, new Authorizations()),
-                mck("def", "cf", "firstname", false, new Authorizations()),
-                mck("ghi", "cf", "firstname", false, new Authorizations())
+                mck("abc", "cf_firstname", new Authorizations()),
+                mck("def", "cf_firstname", new Authorizations()),
+                mck("ghi", "cf_firstname", new Authorizations())
         );
 
         List<MetricCacheKey> fooKeys = ImmutableList.of(
-                mck("abc", "cf", "firstname", false, new Authorizations("foo")),
-                mck("def", "cf", "firstname", false, new Authorizations("foo")),
-                mck("ghi", "cf", "firstname", false, new Authorizations("foo"))
+                mck("abc", "cf_firstname", new Authorizations("foo")),
+                mck("def", "cf_firstname", new Authorizations("foo")),
+                mck("ghi", "cf_firstname", new Authorizations("foo"))
         );
 
         List<MetricCacheKey> barKeys = ImmutableList.of(
-                mck("abc", "cf", "firstname", false, new Authorizations("bar")),
-                mck("def", "cf", "firstname", false, new Authorizations("bar")),
-                mck("ghi", "cf", "firstname", false, new Authorizations("bar"))
+                mck("abc", "cf_firstname", new Authorizations("bar")),
+                mck("def", "cf_firstname", new Authorizations("bar")),
+                mck("ghi", "cf_firstname", new Authorizations("bar"))
         );
 
         List<MetricCacheKey> fooBarKeys = ImmutableList.of(
-                mck("abc", "cf", "firstname", false, new Authorizations("foo", "bar")),
-                mck("def", "cf", "firstname", false, new Authorizations("foo", "bar")),
-                mck("ghi", "cf", "firstname", false, new Authorizations("foo", "bar"))
+                mck("abc", "cf_firstname", new Authorizations("foo", "bar")),
+                mck("def", "cf_firstname", new Authorizations("foo", "bar")),
+                mck("ghi", "cf_firstname", new Authorizations("foo", "bar"))
         );
 
         Map<MetricCacheKey, Long> cardinalities = storage.newReader().getCardinalities(keys);
@@ -439,13 +429,13 @@ public abstract class TestAbstractMetricStorage
         return v.getBytes(UTF_8);
     }
 
-    protected MetricCacheKey mck(String value, String family, String qualifier, boolean truncateTimestamp, Authorizations auths)
+    protected MetricCacheKey mck(String value, String family, Authorizations auths)
     {
-        return new MetricCacheKey(table.getSchema(), table.getTable(), family, qualifier, truncateTimestamp, auths, new Range(new Text(value.getBytes(UTF_8))));
+        return new MetricCacheKey(table.getSchema(), table.getTable(), new Text(family), auths, new Range(new Text(value.getBytes(UTF_8))));
     }
 
-    protected MetricCacheKey mck(String begin, String end, String family, String qualifier, boolean truncateTimestamp, Authorizations auths)
+    protected MetricCacheKey mck(String begin, String end, String family, Authorizations auths)
     {
-        return new MetricCacheKey(table.getSchema(), table.getTable(), family, qualifier, truncateTimestamp, auths, new Range(new Text(begin.getBytes(UTF_8)), new Text(end.getBytes(UTF_8))));
+        return new MetricCacheKey(table.getSchema(), table.getTable(), new Text(family), auths, new Range(new Text(begin.getBytes(UTF_8)), new Text(end.getBytes(UTF_8))));
     }
 }

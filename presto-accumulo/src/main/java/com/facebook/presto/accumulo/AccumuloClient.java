@@ -24,6 +24,7 @@ import com.facebook.presto.accumulo.metadata.AccumuloView;
 import com.facebook.presto.accumulo.metadata.ZooKeeperMetadataManager;
 import com.facebook.presto.accumulo.model.AccumuloColumnConstraint;
 import com.facebook.presto.accumulo.model.AccumuloColumnHandle;
+import com.facebook.presto.accumulo.model.AccumuloRange;
 import com.facebook.presto.accumulo.model.TabletSplitMetadata;
 import com.facebook.presto.accumulo.serializers.AccumuloRowSerializer;
 import com.facebook.presto.spi.ColumnMetadata;
@@ -647,7 +648,7 @@ public class AccumuloClient
             LOG.debug("Getting tablet splits for table %s", tableName);
 
             // Get the initial Range based on the row ID domain
-            Collection<Range> rowIdRanges = getRangesFromDomain(rowIdDomain, table.getSerializerInstance());
+            Collection<AccumuloRange> rowIdRanges = getRangesFromDomain(rowIdDomain, table.getSerializerInstance());
             List<TabletSplitMetadata> tabletSplits = new ArrayList<>();
 
             // Use the secondary index, if enabled
@@ -657,7 +658,7 @@ public class AccumuloClient
 
                 // Check the secondary index based on the column constraints
                 // If this returns true, return the tablet splits to Presto
-                if (indexLookup.applyIndex(session, table, constraints, rowIdRanges, tabletSplits,  auths)) {
+                if (indexLookup.applyIndex(session, table, constraints, rowIdRanges, tabletSplits, auths)) {
                     return tabletSplits;
                 }
             }
@@ -667,11 +668,11 @@ public class AccumuloClient
             // Split the ranges on tablet boundaries, if enabled
             Collection<Range> splitRanges;
             if (AccumuloSessionProperties.isOptimizeSplitRangesEnabled(session)) {
-                splitRanges = splitByTabletBoundaries(tableName, rowIdRanges);
+                splitRanges = splitByTabletBoundaries(tableName, rowIdRanges.stream().map(AccumuloRange::getRange).collect(Collectors.toList()));
             }
             else {
                 // if not enabled, just use the same collection
-                splitRanges = rowIdRanges;
+                splitRanges = rowIdRanges.stream().map(AccumuloRange::getRange).collect(Collectors.toList());
             }
 
             // Create TabletSplitMetadata objects for each range
@@ -882,15 +883,15 @@ public class AccumuloClient
      * @return A collection of Accumulo Range objects
      * @throws TableNotFoundException If the Accumulo table is not found
      */
-    public static Collection<Range> getRangesFromDomain(Optional<Domain> domain, AccumuloRowSerializer serializer)
+    public static Collection<AccumuloRange> getRangesFromDomain(Optional<Domain> domain, AccumuloRowSerializer serializer)
             throws TableNotFoundException
     {
         // if we have no predicate pushdown, use the full range
         if (!domain.isPresent()) {
-            return ImmutableSet.of(new Range());
+            return ImmutableSet.of(new AccumuloRange());
         }
 
-        ImmutableSet.Builder<Range> rangeBuilder = ImmutableSet.builder();
+        ImmutableSet.Builder<AccumuloRange> rangeBuilder = ImmutableSet.builder();
         for (com.facebook.presto.spi.predicate.Range range : domain.get().getValues().getRanges().getOrderedRanges()) {
             rangeBuilder.add(getRangeFromPrestoRange(range, serializer));
         }
@@ -898,38 +899,37 @@ public class AccumuloClient
         return rangeBuilder.build();
     }
 
-    public static Range getRangeFromPrestoRange(com.facebook.presto.spi.predicate.Range prestoRange, AccumuloRowSerializer serializer)
+    public static AccumuloRange getRangeFromPrestoRange(com.facebook.presto.spi.predicate.Range prestoRange, AccumuloRowSerializer serializer)
             throws TableNotFoundException
     {
-        Range accumuloRange;
+        AccumuloRange accumuloRange;
         if (prestoRange.isAll()) {
-            accumuloRange = new Range();
+            accumuloRange = new AccumuloRange();
         }
         else if (prestoRange.isSingleValue()) {
-            Text split = new Text(serializer.encode(prestoRange.getType(), prestoRange.getSingleValue()));
-            accumuloRange = new Range(split);
+            accumuloRange = new AccumuloRange(serializer.encode(prestoRange.getType(), prestoRange.getSingleValue()));
         }
         else {
             if (prestoRange.getLow().isLowerUnbounded()) {
                 // If low is unbounded, then create a range from (-inf, value), checking inclusivity
                 boolean inclusive = prestoRange.getHigh().getBound() == Bound.EXACTLY;
-                Text split = new Text(serializer.encode(prestoRange.getType(), prestoRange.getHigh().getValue()));
-                accumuloRange = new Range(null, false, split, inclusive);
+                byte[] split = serializer.encode(prestoRange.getType(), prestoRange.getHigh().getValue());
+                accumuloRange = new AccumuloRange(null, false, split, inclusive);
             }
             else if (prestoRange.getHigh().isUpperUnbounded()) {
                 // If high is unbounded, then create a range from (value, +inf), checking inclusivity
                 boolean inclusive = prestoRange.getLow().getBound() == Bound.EXACTLY;
-                Text split = new Text(serializer.encode(prestoRange.getType(), prestoRange.getLow().getValue()));
-                accumuloRange = new Range(split, inclusive, null, false);
+                byte[] split = serializer.encode(prestoRange.getType(), prestoRange.getLow().getValue());
+                accumuloRange = new AccumuloRange(split, inclusive, null, false);
             }
             else {
                 // If high is unbounded, then create a range from low to high, checking inclusivity
                 boolean startKeyInclusive = prestoRange.getLow().getBound() == Bound.EXACTLY;
-                Text startSplit = new Text(serializer.encode(prestoRange.getType(), prestoRange.getLow().getValue()));
+                byte[] startSplit = serializer.encode(prestoRange.getType(), prestoRange.getLow().getValue());
 
                 boolean endKeyInclusive = prestoRange.getHigh().getBound() == Bound.EXACTLY;
-                Text endSplit = new Text(serializer.encode(prestoRange.getType(), prestoRange.getHigh().getValue()));
-                accumuloRange = new Range(startSplit, startKeyInclusive, endSplit, endKeyInclusive);
+                byte[] endSplit = serializer.encode(prestoRange.getType(), prestoRange.getHigh().getValue());
+                accumuloRange = new AccumuloRange(startSplit, startKeyInclusive, endSplit, endKeyInclusive);
             }
         }
 

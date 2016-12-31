@@ -15,9 +15,9 @@ package com.facebook.presto.accumulo.index.metrics;
 
 import org.apache.accumulo.core.data.Range;
 import org.apache.accumulo.core.security.Authorizations;
+import org.apache.hadoop.io.Text;
 
 import java.util.Objects;
-import java.util.Optional;
 
 import static com.google.common.base.MoreObjects.toStringHelper;
 
@@ -29,9 +29,7 @@ public class MetricCacheKey
 {
     public final String schema;
     public final String table;
-    public final String family;
-    public final Optional<String> qualifier;
-    public final boolean truncateTimestamps;
+    public final Text family;
     public final Authorizations auths;
     public final Range range;
 
@@ -41,18 +39,14 @@ public class MetricCacheKey
      * @param schema Schema name
      * @param table Table name
      * @param family Column family
-     * @param qualifier Column qualifier
-     * @param truncateTimestamps True if timestamps are truncated AND this is a Timestamp type, false otherwise
      * @param auths Authorizations for this metric
      * @param range Range representing the cell value
      */
-    public MetricCacheKey(String schema, String table, String family, String qualifier, boolean truncateTimestamps, Authorizations auths, Range range)
+    public MetricCacheKey(String schema, String table, Text family, Authorizations auths, Range range)
     {
         this.schema = schema;
         this.table = table;
         this.family = family;
-        this.qualifier = Optional.ofNullable(qualifier);
-        this.truncateTimestamps = truncateTimestamps;
         this.auths = auths;
         this.range = range;
     }
@@ -60,7 +54,7 @@ public class MetricCacheKey
     @Override
     public int hashCode()
     {
-        return Objects.hash(schema, table, family, qualifier, truncateTimestamps, auths, range);
+        return Objects.hash(schema, table, family, auths, range);
     }
 
     @Override
@@ -78,9 +72,7 @@ public class MetricCacheKey
                 && Objects.equals(this.schema, other.schema)
                 && Objects.equals(this.table, other.table)
                 && Objects.equals(this.family, other.family)
-                && Objects.equals(this.truncateTimestamps, other.truncateTimestamps)
-                && Objects.equals(this.auths, other.auths)
-                && Objects.equals(this.qualifier, other.qualifier);
+                && Objects.equals(this.auths, other.auths);
     }
 
     @Override
@@ -90,8 +82,6 @@ public class MetricCacheKey
                 .add("schema", schema)
                 .add("table", table)
                 .add("family", family)
-                .add("qualifier", qualifier)
-                .add("truncateTimestamps", truncateTimestamps)
                 .add("auths", auths)
                 .add("range", range)
                 .toString();

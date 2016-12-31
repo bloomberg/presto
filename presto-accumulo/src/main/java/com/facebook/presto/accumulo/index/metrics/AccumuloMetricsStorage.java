@@ -26,7 +26,6 @@ import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.primitives.Bytes;
-import com.google.common.util.concurrent.MoreExecutors;
 import io.airlift.log.Logger;
 import org.apache.accumulo.core.client.BatchScanner;
 import org.apache.accumulo.core.client.BatchWriter;
@@ -51,10 +50,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Future;
-import java.util.concurrent.SynchronousQueue;
-import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 
@@ -64,7 +59,6 @@ import static com.facebook.presto.accumulo.index.Indexer.TIMESTAMP_CARDINALITY_F
 import static com.facebook.presto.spi.StandardErrorCode.FUNCTION_IMPLEMENTATION_ERROR;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static java.util.Objects.requireNonNull;
-import static java.util.concurrent.TimeUnit.SECONDS;
 
 public class AccumuloMetricsStorage
         extends MetricsStorage
@@ -109,7 +103,6 @@ public class AccumuloMetricsStorage
                 byte[] concatFamily = Indexer.getIndexColumnFamily(columnHandle.getFamily().get().getBytes(UTF_8), columnHandle.getQualifier().get().getBytes(UTF_8));
                 if (columnHandle.getType().equals(TimestampType.TIMESTAMP)) {
                     if (families.size() == 0) {
-                        families.add(concatFamily);
                         for (byte[] tsFamily : TIMESTAMP_CARDINALITY_FAMILIES.values()) {
                             families.add(Bytes.concat(concatFamily, tsFamily));
                         }
@@ -117,7 +110,6 @@ public class AccumuloMetricsStorage
                     else {
                         List<byte[]> newFamilies = new ArrayList<>();
                         for (byte[] family : families) {
-                            newFamilies.add(Bytes.concat(family, HYPHEN, concatFamily));
                             for (byte[] tsFamily : TIMESTAMP_CARDINALITY_FAMILIES.values()) {
                                 newFamilies.add(Bytes.concat(family, HYPHEN, Bytes.concat(concatFamily, tsFamily)));
                             }
@@ -309,12 +301,10 @@ public class AccumuloMetricsStorage
         private static final Text CARDINALITY_CQ_TEXT = new Text(CARDINALITY_CQ);
 
         private final Connector connector;
-        private final ExecutorService executorService;
 
         public AccumuloMetricsReader(Connector connector)
         {
             this.connector = requireNonNull(connector, "connector is null");
-            this.executorService = MoreExecutors.getExitingExecutorService(new ThreadPoolExecutor(0, 5, 60L, SECONDS, new SynchronousQueue<>()));
         }
 
         @Override
@@ -324,72 +314,28 @@ public class AccumuloMetricsStorage
             LOG.debug("Loading a non-exact range from Accumulo: %s", key);
             // Get metrics table name and the column family for the scanner
             String metricsTable = getMetricsTableName(key.schema, key.table);
-            Text columnFamily = new Text(super.getColumnFamily(key));
-
             IteratorSetting setting = new IteratorSetting(Integer.MAX_VALUE, "valuesummingcombiner", ValueSummingIterator.class);
             ValueSummingIterator.setEncodingType(setting, ENCODER_TYPE);
 
             // Create scanner for querying the range
-            if (!key.truncateTimestamps) {
-                BatchScanner scanner = null;
-                try {
-                    scanner = connector.createBatchScanner(metricsTable, key.auths, 10);
-                    scanner.setRanges(connector.tableOperations().splitRangeByTablets(metricsTable, key.range, Integer.MAX_VALUE));
-                    scanner.fetchColumn(columnFamily, CARDINALITY_CQ_TEXT);
-                    scanner.addScanIterator(setting);
+            BatchScanner scanner = null;
+            try {
+                scanner = connector.createBatchScanner(metricsTable, key.auths, 10);
+                scanner.setRanges(connector.tableOperations().splitRangeByTablets(metricsTable, key.range, Integer.MAX_VALUE));
+                scanner.fetchColumn(key.family, CARDINALITY_CQ_TEXT);
+                scanner.addScanIterator(setting);
 
-                    // Sum the entries to get the cardinality
-                    long sum = 0;
-                    for (Entry<Key, Value> entry : scanner) {
-                        sum += Long.parseLong(entry.getValue().toString());
-                    }
-                    return sum;
-                }
-                finally {
-                    if (scanner != null) {
-                        scanner.close();
-                    }
-                }
-            }
-            else {
-                // For timestamp columns
-                List<Future<Long>> tasks = Indexer.splitTimestampRange(key.range).asMap().entrySet().stream().map(timestampEntry ->
-                        executorService.submit(() -> {
-                                    long sum = 0;
-                                    BatchScanner scanner = null;
-                                    try {
-                                        scanner = connector.createBatchScanner(metricsTable, key.auths, 10);
-                                        scanner.setRanges(timestampEntry.getValue());
-                                        scanner.addScanIterator(setting);
-
-                                        if (timestampEntry.getKey() == TimestampPrecision.MILLISECOND) {
-                                            scanner.fetchColumn(columnFamily, CARDINALITY_CQ_TEXT);
-                                        }
-                                        else {
-                                            scanner.fetchColumn(new Text(Bytes.concat(columnFamily.copyBytes(), TIMESTAMP_CARDINALITY_FAMILIES.get(timestampEntry.getKey()))), CARDINALITY_CQ_TEXT);
-                                        }
-
-                                        // Sum the entries to get the cardinality
-                                        for (Entry<Key, Value> entry : scanner) {
-                                            sum += Long.parseLong(entry.getValue().toString());
-                                        }
-                                        LOG.debug("Sum for %s is %s, %s ranges", timestampEntry.getKey(), sum, timestampEntry.getValue().size());
-                                        return sum;
-                                    }
-                                    finally {
-                                        if (scanner != null) {
-                                            scanner.close();
-                                        }
-                                    }
-                                }
-                        )).collect(Collectors.toList());
-
+                // Sum the entries to get the cardinality
                 long sum = 0;
-                for (Future<Long> task : tasks) {
-                    sum += task.get();
+                for (Entry<Key, Value> entry : scanner) {
+                    sum += Long.parseLong(entry.getValue().toString());
                 }
-                LOG.debug("Final sum is %s", sum);
                 return sum;
+            }
+            finally {
+                if (scanner != null) {
+                    scanner.close();
+                }
             }
         }
 
@@ -416,7 +362,7 @@ public class AccumuloMetricsStorage
 
             // Get metrics table name and the column family for the scanner
             String metricsTable = getMetricsTableName(anyKey.schema, anyKey.table);
-            Text columnFamily = new Text(super.getColumnFamily(anyKey));
+            Text columnFamily = new Text(anyKey.family);
 
             // Create batch scanner for querying all ranges
             BatchScanner scanner = null;

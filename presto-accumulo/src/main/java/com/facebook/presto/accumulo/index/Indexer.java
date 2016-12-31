@@ -125,15 +125,17 @@ import static java.util.Objects.requireNonNull;
 @NotThreadSafe
 public class Indexer
 {
+    public static final byte[] EMPTY_BYTE = new byte[0];
+    public static final byte[] HYPHEN_BYTE = new byte[] {'-'};
+    public static final byte[] NULL_BYTE = new byte[] {'\0'};
+
     public static final Map<TimestampPrecision, byte[]> TIMESTAMP_CARDINALITY_FAMILIES = ImmutableMap.of(
+            MILLISECOND, "".getBytes(UTF_8),
             SECOND, "_tss".getBytes(UTF_8),
             MINUTE, "_tsm".getBytes(UTF_8),
             HOUR, "_tsh".getBytes(UTF_8),
             DAY, "_tsd".getBytes(UTF_8));
 
-    private static final byte[] EMPTY_BYTES = new byte[0];
-    private static final byte[] HYPHEN = new byte[] {'-'};
-    private static final byte[] NULL_BYTE = new byte[] {'\0'};
     private static final byte UNDERSCORE = '_';
     private static final Logger LOG = Logger.get(Indexer.class);
 
@@ -431,7 +433,7 @@ public class Indexer
                 // Append to the index family family
                 indexFamilyBuilder = indexFamilyBuilder.length == 0
                         ? getIndexColumnFamily(family.array(), qualifier.array())
-                        : Bytes.concat(indexFamilyBuilder, HYPHEN, getIndexColumnFamily(family.array(), qualifier.array()));
+                        : Bytes.concat(indexFamilyBuilder, HYPHEN_BYTE, getIndexColumnFamily(family.array(), qualifier.array()));
 
                 // Populate the map of visibility to the entries containing that visibility
                 updates.get(familyQualifierPair)
@@ -557,7 +559,7 @@ public class Indexer
     {
         // Create the mutation and add it to the batch writer
         Mutation indexMutation = new Mutation(row.array());
-        indexMutation.put(family.array(), qualifier, visibility, timestamp, EMPTY_BYTES);
+        indexMutation.put(family.array(), qualifier, visibility, timestamp, EMPTY_BYTE);
         indexWriter.addMutation(indexMutation);
     }
 
@@ -600,7 +602,7 @@ public class Indexer
                 byte[] concatFamily = getIndexColumnFamily(columnHandle.getFamily().get().getBytes(UTF_8), columnHandle.getQualifier().get().getBytes(UTF_8));
                 family = family.length == 0
                         ? concatFamily
-                        : Bytes.concat(family, HYPHEN, concatFamily);
+                        : Bytes.concat(family, HYPHEN_BYTE, concatFamily);
             }
 
             // Create a Text version of the index column family
