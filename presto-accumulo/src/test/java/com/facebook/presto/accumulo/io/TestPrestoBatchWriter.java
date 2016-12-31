@@ -194,12 +194,12 @@ public class TestPrestoBatchWriter
 
         scan.close();
 
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "age", AGE_VALUE)), 1);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_age", AGE_VALUE)), 1);
         assertEquals(metricsStorage.newReader().getNumRowsInTable(table.getSchema(), table.getTable()), 1);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "arr", "abc")), 1);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "firstname", M1_FNAME_VALUE)), 1);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "arr", "def")), 1);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "arr", "ghi")), 1);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_arr", "abc")), 1);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_firstname", M1_FNAME_VALUE)), 1);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_arr", "def")), 1);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_arr", "ghi")), 1);
 
         prestoBatchWriter.addRow(r2);
         prestoBatchWriter.flush();
@@ -234,14 +234,14 @@ public class TestPrestoBatchWriter
 
         scan.close();
 
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "age", AGE_VALUE)), 2);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_age", AGE_VALUE)), 2);
         assertEquals(metricsStorage.newReader().getNumRowsInTable(table.getSchema(), table.getTable()), 2);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "arr", "abc")), 2);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "firstname", M1_FNAME_VALUE)), 1);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "firstname", M2_FNAME_VALUE)), 1);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "arr", "def")), 1);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "arr", "ghi")), 2);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "arr", "mno")), 1);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_arr", "abc")), 2);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_firstname", M1_FNAME_VALUE)), 1);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_firstname", M2_FNAME_VALUE)), 1);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_arr", "def")), 1);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_arr", "ghi")), 2);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_arr", "mno")), 1);
 
         prestoBatchWriter.addRow(r3);
         prestoBatchWriter.close();
@@ -285,16 +285,16 @@ public class TestPrestoBatchWriter
 
         scan.close();
 
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "age", AGE_VALUE)), 3);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_age", AGE_VALUE)), 3);
         assertEquals(metricsStorage.newReader().getNumRowsInTable(table.getSchema(), table.getTable()), 3);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "arr", "abc")), 2);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "firstname", M1_FNAME_VALUE)), 1);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "firstname", M2_FNAME_VALUE)), 1);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "firstname", M3_FNAME_VALUE)), 1);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "arr", "def")), 2);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "arr", "ghi")), 3);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "arr", "jkl")), 1);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "arr", "mno")), 1);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_arr", "abc")), 2);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_firstname", M1_FNAME_VALUE)), 1);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_firstname", M2_FNAME_VALUE)), 1);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_firstname", M3_FNAME_VALUE)), 1);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_arr", "def")), 2);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_arr", "ghi")), 3);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_arr", "jkl")), 1);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_arr", "mno")), 1);
     }
 
     @Test
@@ -348,16 +348,16 @@ public class TestPrestoBatchWriter
 
         scan.close();
 
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "age", AGE_VALUE)), 3);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_age", AGE_VALUE)), 3);
         assertEquals(metricsStorage.newReader().getNumRowsInTable(table.getSchema(), table.getTable()), 3);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "arr", "abc")), 2);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "firstname", M1_FNAME_VALUE)), 1);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "firstname", M2_FNAME_VALUE)), 1);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "firstname", M3_FNAME_VALUE)), 1);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "arr", "def")), 2);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "arr", "ghi")), 3);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "arr", "jkl")), 1);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "arr", "mno")), 1);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_arr", "abc")), 2);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_firstname", M1_FNAME_VALUE)), 1);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_firstname", M2_FNAME_VALUE)), 1);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_firstname", M3_FNAME_VALUE)), 1);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_arr", "def")), 2);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_arr", "ghi")), 3);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_arr", "jkl")), 1);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_arr", "mno")), 1);
     }
 
     @Test
@@ -396,12 +396,12 @@ public class TestPrestoBatchWriter
 
         scan.close();
 
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "age", AGE_VALUE, "private", "moreprivate")), 1);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_age", AGE_VALUE, "private", "moreprivate")), 1);
         assertEquals(metricsStorage.newReader().getNumRowsInTable(table.getSchema(), table.getTable()), 1);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "arr", "abc", "private", "moreprivate")), 1);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "firstname", M1_FNAME_VALUE, "private", "moreprivate")), 1);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "arr", "def", "private", "moreprivate")), 1);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "arr", "ghi", "private", "moreprivate")), 1);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_arr", "abc", "private", "moreprivate")), 1);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_firstname", M1_FNAME_VALUE, "private", "moreprivate")), 1);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_arr", "def", "private", "moreprivate")), 1);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_arr", "ghi", "private", "moreprivate")), 1);
 
         prestoBatchWriter.addMutation(m2v);
         prestoBatchWriter.flush();
@@ -436,14 +436,14 @@ public class TestPrestoBatchWriter
 
         scan.close();
 
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "age", AGE_VALUE, "private", "moreprivate")), 2);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_age", AGE_VALUE, "private", "moreprivate")), 2);
         assertEquals(metricsStorage.newReader().getNumRowsInTable(table.getSchema(), table.getTable()), 2);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "arr", "abc", "private", "moreprivate")), 2);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "firstname", M1_FNAME_VALUE, "private", "moreprivate")), 1);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "firstname", M2_FNAME_VALUE, "private", "moreprivate")), 1);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "arr", "def", "private", "moreprivate")), 1);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "arr", "ghi", "private", "moreprivate")), 2);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "arr", "mno", "private", "moreprivate")), 1);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_arr", "abc", "private", "moreprivate")), 2);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_firstname", M1_FNAME_VALUE, "private", "moreprivate")), 1);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_firstname", M2_FNAME_VALUE, "private", "moreprivate")), 1);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_arr", "def", "private", "moreprivate")), 1);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_arr", "ghi", "private", "moreprivate")), 2);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_arr", "mno", "private", "moreprivate")), 1);
 
         prestoBatchWriter.addMutation(m3v);
         prestoBatchWriter.close();
@@ -487,16 +487,16 @@ public class TestPrestoBatchWriter
 
         scan.close();
 
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "age", AGE_VALUE, "private", "moreprivate")), 3);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_age", AGE_VALUE, "private", "moreprivate")), 3);
         assertEquals(metricsStorage.newReader().getNumRowsInTable(table.getSchema(), table.getTable()), 3);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "arr", "abc", "private", "moreprivate")), 2);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "firstname", M1_FNAME_VALUE, "private", "moreprivate")), 1);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "firstname", M2_FNAME_VALUE, "private", "moreprivate")), 1);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "firstname", M3_FNAME_VALUE, "private", "moreprivate")), 1);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "arr", "def", "private", "moreprivate")), 2);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "arr", "ghi", "private", "moreprivate")), 3);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "arr", "jkl", "private", "moreprivate")), 1);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "arr", "mno", "private", "moreprivate")), 1);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_arr", "abc", "private", "moreprivate")), 2);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_firstname", M1_FNAME_VALUE, "private", "moreprivate")), 1);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_firstname", M2_FNAME_VALUE, "private", "moreprivate")), 1);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_firstname", M3_FNAME_VALUE, "private", "moreprivate")), 1);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_arr", "def", "private", "moreprivate")), 2);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_arr", "ghi", "private", "moreprivate")), 3);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_arr", "jkl", "private", "moreprivate")), 1);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_arr", "mno", "private", "moreprivate")), 1);
     }
 
     @Test
@@ -550,16 +550,16 @@ public class TestPrestoBatchWriter
 
         scan.close();
 
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "age", AGE_VALUE, "private", "moreprivate")), 3);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_age", AGE_VALUE, "private", "moreprivate")), 3);
         assertEquals(metricsStorage.newReader().getNumRowsInTable(table.getSchema(), table.getTable()), 3);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "arr", "abc", "private", "moreprivate")), 2);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "firstname", M1_FNAME_VALUE, "private", "moreprivate")), 1);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "firstname", M2_FNAME_VALUE, "private", "moreprivate")), 1);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "firstname", M3_FNAME_VALUE, "private", "moreprivate")), 1);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "arr", "def", "private", "moreprivate")), 2);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "arr", "ghi", "private", "moreprivate")), 3);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "arr", "jkl", "private", "moreprivate")), 1);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "arr", "mno", "private", "moreprivate")), 1);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_arr", "abc", "private", "moreprivate")), 2);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_firstname", M1_FNAME_VALUE, "private", "moreprivate")), 1);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_firstname", M2_FNAME_VALUE, "private", "moreprivate")), 1);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_firstname", M3_FNAME_VALUE, "private", "moreprivate")), 1);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_arr", "def", "private", "moreprivate")), 2);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_arr", "ghi", "private", "moreprivate")), 3);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_arr", "jkl", "private", "moreprivate")), 1);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_arr", "mno", "private", "moreprivate")), 1);
     }
 
     @Test
@@ -611,17 +611,17 @@ public class TestPrestoBatchWriter
 
         scan.close();
 
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "age", AGE_VALUE, "private", "moreprivate")), 2);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "age", UPDATED_AGE_VALUE)), 1);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_age", AGE_VALUE, "private", "moreprivate")), 2);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_age", UPDATED_AGE_VALUE)), 1);
         assertEquals(metricsStorage.newReader().getNumRowsInTable(table.getSchema(), table.getTable()), 3);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "arr", "abc", "private", "moreprivate")), 2);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "firstname", M1_FNAME_VALUE, "private", "moreprivate")), 1);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "firstname", M2_FNAME_VALUE, "private", "moreprivate")), 1);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "firstname", M3_FNAME_VALUE, "private", "moreprivate")), 1);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "arr", "def", "private", "moreprivate")), 2);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "arr", "ghi", "private", "moreprivate")), 3);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "arr", "jkl", "private", "moreprivate")), 1);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "arr", "mno", "private", "moreprivate")), 1);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_arr", "abc", "private", "moreprivate")), 2);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_firstname", M1_FNAME_VALUE, "private", "moreprivate")), 1);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_firstname", M2_FNAME_VALUE, "private", "moreprivate")), 1);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_firstname", M3_FNAME_VALUE, "private", "moreprivate")), 1);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_arr", "def", "private", "moreprivate")), 2);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_arr", "ghi", "private", "moreprivate")), 3);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_arr", "jkl", "private", "moreprivate")), 1);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_arr", "mno", "private", "moreprivate")), 1);
 
         prestoBatchWriter.updateColumnByName("row2", "firstname", new ColumnVisibility("moreprivate"), "dave");
         prestoBatchWriter.flush();
@@ -665,19 +665,19 @@ public class TestPrestoBatchWriter
 
         scan.close();
 
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "age", AGE_VALUE, "private", "moreprivate")), 2);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "age", UPDATED_AGE_VALUE)), 1);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_age", AGE_VALUE, "private", "moreprivate")), 2);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_age", UPDATED_AGE_VALUE)), 1);
         assertEquals(metricsStorage.newReader().getNumRowsInTable(table.getSchema(), table.getTable()), 3);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "arr", "abc", "private", "moreprivate")), 2);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "firstname", M1_FNAME_VALUE, "private", "moreprivate")), 1);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "firstname", M2_FNAME_VALUE, "private", "moreprivate")), 0);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "firstname", M3_FNAME_VALUE, "private", "moreprivate")), 1);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "firstname", UPDATED_M2_FNAME_VALUE)), 0);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "firstname", UPDATED_M2_FNAME_VALUE, "private", "moreprivate")), 1);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "arr", "def", "private", "moreprivate")), 2);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "arr", "ghi", "private", "moreprivate")), 3);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "arr", "jkl", "private", "moreprivate")), 1);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "arr", "mno", "private", "moreprivate")), 1);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_arr", "abc", "private", "moreprivate")), 2);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_firstname", M1_FNAME_VALUE, "private", "moreprivate")), 1);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_firstname", M2_FNAME_VALUE, "private", "moreprivate")), 0);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_firstname", M3_FNAME_VALUE, "private", "moreprivate")), 1);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_firstname", UPDATED_M2_FNAME_VALUE)), 0);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_firstname", UPDATED_M2_FNAME_VALUE, "private", "moreprivate")), 1);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_arr", "def", "private", "moreprivate")), 2);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_arr", "ghi", "private", "moreprivate")), 3);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_arr", "jkl", "private", "moreprivate")), 1);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_arr", "mno", "private", "moreprivate")), 1);
 
         prestoBatchWriter.updateColumnByName("row2", "arr", new ColumnVisibility("moreprivate"), ImmutableList.of("jkl", "mno", "pqr"));
         prestoBatchWriter.close();
@@ -721,21 +721,21 @@ public class TestPrestoBatchWriter
 
         scan.close();
 
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "age", AGE_VALUE, "private", "moreprivate")), 2);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "age", UPDATED_AGE_VALUE)), 1);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_age", AGE_VALUE, "private", "moreprivate")), 2);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_age", UPDATED_AGE_VALUE)), 1);
         assertEquals(metricsStorage.newReader().getNumRowsInTable(table.getSchema(), table.getTable()), 3);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "arr", "abc", "private", "moreprivate")), 1);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "firstname", M1_FNAME_VALUE, "private", "moreprivate")), 1);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "firstname", M2_FNAME_VALUE, "private", "moreprivate")), 0);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "firstname", M3_FNAME_VALUE, "private", "moreprivate")), 1);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "firstname", UPDATED_M2_FNAME_VALUE)), 0);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "firstname", UPDATED_M2_FNAME_VALUE, "private", "moreprivate")), 1);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "arr", "def", "private", "moreprivate")), 2);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "arr", "ghi", "private", "moreprivate")), 2);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "arr", "jkl", "private", "moreprivate")), 2);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "arr", "mno", "private", "moreprivate")), 1);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "arr", "mno", "private")), 0);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "arr", "mno", "private", "moreprivate")), 1);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_arr", "abc", "private", "moreprivate")), 1);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_firstname", M1_FNAME_VALUE, "private", "moreprivate")), 1);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_firstname", M2_FNAME_VALUE, "private", "moreprivate")), 0);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_firstname", M3_FNAME_VALUE, "private", "moreprivate")), 1);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_firstname", UPDATED_M2_FNAME_VALUE)), 0);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_firstname", UPDATED_M2_FNAME_VALUE, "private", "moreprivate")), 1);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_arr", "def", "private", "moreprivate")), 2);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_arr", "ghi", "private", "moreprivate")), 2);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_arr", "jkl", "private", "moreprivate")), 2);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_arr", "mno", "private", "moreprivate")), 1);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_arr", "mno", "private")), 0);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_arr", "mno", "private", "moreprivate")), 1);
     }
 
     @Test
@@ -787,18 +787,18 @@ public class TestPrestoBatchWriter
 
         scan.close();
 
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "age", AGE_VALUE, "private", "moreprivate")), 2);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_age", AGE_VALUE, "private", "moreprivate")), 2);
         assertEquals(metricsStorage.newReader().getNumRowsInTable(table.getSchema(), table.getTable()), 3);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "arr", "abc", "private", "moreprivate")), 1);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "firstname", M1_FNAME_VALUE, "private", "moreprivate")), 1);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "firstname", M2_FNAME_VALUE, "private", "moreprivate")), 0);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "firstname", M3_FNAME_VALUE, "private", "moreprivate")), 1);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "firstname", UPDATED_M2_FNAME_VALUE, "private", "moreprivate")), 1);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "arr", "def", "private", "moreprivate")), 2);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "arr", "ghi", "private", "moreprivate")), 2);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "arr", "jkl", "private", "moreprivate")), 2);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "arr", "mno", "private", "moreprivate")), 1);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "arr", "mno", "private", "moreprivate")), 1);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_arr", "abc", "private", "moreprivate")), 1);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_firstname", M1_FNAME_VALUE, "private", "moreprivate")), 1);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_firstname", M2_FNAME_VALUE, "private", "moreprivate")), 0);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_firstname", M3_FNAME_VALUE, "private", "moreprivate")), 1);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_firstname", UPDATED_M2_FNAME_VALUE, "private", "moreprivate")), 1);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_arr", "def", "private", "moreprivate")), 2);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_arr", "ghi", "private", "moreprivate")), 2);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_arr", "jkl", "private", "moreprivate")), 2);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_arr", "mno", "private", "moreprivate")), 1);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_arr", "mno", "private", "moreprivate")), 1);
     }
 
     @Test
@@ -842,16 +842,16 @@ public class TestPrestoBatchWriter
 
         scan.close();
 
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "age", AGE_VALUE, "private", "moreprivate")), 2);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_age", AGE_VALUE, "private", "moreprivate")), 2);
         assertEquals(metricsStorage.newReader().getNumRowsInTable(table.getSchema(), table.getTable()), 2);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "arr", "abc", "private", "moreprivate")), 1);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "firstname", M1_FNAME_VALUE, "private", "moreprivate")), 0);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "firstname", M2_FNAME_VALUE, "private", "moreprivate")), 1);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "firstname", M3_FNAME_VALUE, "private", "moreprivate")), 1);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "arr", "def", "private", "moreprivate")), 1);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "arr", "ghi", "private", "moreprivate")), 2);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "arr", "jkl", "private", "moreprivate")), 1);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "arr", "mno", "private", "moreprivate")), 1);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_arr", "abc", "private", "moreprivate")), 1);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_firstname", M1_FNAME_VALUE, "private", "moreprivate")), 0);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_firstname", M2_FNAME_VALUE, "private", "moreprivate")), 1);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_firstname", M3_FNAME_VALUE, "private", "moreprivate")), 1);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_arr", "def", "private", "moreprivate")), 1);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_arr", "ghi", "private", "moreprivate")), 2);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_arr", "jkl", "private", "moreprivate")), 1);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_arr", "mno", "private", "moreprivate")), 1);
 
         prestoBatchWriter.deleteRow("row2");
         prestoBatchWriter.flush();
@@ -876,16 +876,16 @@ public class TestPrestoBatchWriter
         assertFalse(iter.hasNext());
         scan.close();
 
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "age", AGE_VALUE, "private", "moreprivate")), 1);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_age", AGE_VALUE, "private", "moreprivate")), 1);
         assertEquals(metricsStorage.newReader().getNumRowsInTable(table.getSchema(), table.getTable()), 1);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "arr", "abc", "private", "moreprivate")), 0);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "firstname", M1_FNAME_VALUE, "private", "moreprivate")), 0);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "firstname", M2_FNAME_VALUE, "private", "moreprivate")), 0);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "firstname", M3_FNAME_VALUE, "private", "moreprivate")), 1);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "arr", "def", "private", "moreprivate")), 1);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "arr", "ghi", "private", "moreprivate")), 1);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "arr", "jkl", "private", "moreprivate")), 1);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "arr", "mno", "private", "moreprivate")), 0);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_arr", "abc", "private", "moreprivate")), 0);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_firstname", M1_FNAME_VALUE, "private", "moreprivate")), 0);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_firstname", M2_FNAME_VALUE, "private", "moreprivate")), 0);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_firstname", M3_FNAME_VALUE, "private", "moreprivate")), 1);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_arr", "def", "private", "moreprivate")), 1);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_arr", "ghi", "private", "moreprivate")), 1);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_arr", "jkl", "private", "moreprivate")), 1);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_arr", "mno", "private", "moreprivate")), 0);
 
         prestoBatchWriter.deleteRow("row3");
         prestoBatchWriter.close();
@@ -899,16 +899,16 @@ public class TestPrestoBatchWriter
         assertFalse(iter.hasNext());
         scan.close();
 
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "age", AGE_VALUE, "private", "moreprivate")), 0);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_age", AGE_VALUE, "private", "moreprivate")), 0);
         assertEquals(metricsStorage.newReader().getNumRowsInTable(table.getSchema(), table.getTable()), 0);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "arr", "abc", "private", "moreprivate")), 0);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "firstname", M1_FNAME_VALUE, "private", "moreprivate")), 0);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "firstname", M2_FNAME_VALUE, "private", "moreprivate")), 0);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "firstname", M3_FNAME_VALUE, "private", "moreprivate")), 0);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "arr", "def", "private", "moreprivate")), 0);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "arr", "ghi", "private", "moreprivate")), 0);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "arr", "jkl", "private", "moreprivate")), 0);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "arr", "mno", "private", "moreprivate")), 0);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_arr", "abc", "private", "moreprivate")), 0);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_firstname", M1_FNAME_VALUE, "private", "moreprivate")), 0);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_firstname", M2_FNAME_VALUE, "private", "moreprivate")), 0);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_firstname", M3_FNAME_VALUE, "private", "moreprivate")), 0);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_arr", "def", "private", "moreprivate")), 0);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_arr", "ghi", "private", "moreprivate")), 0);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_arr", "jkl", "private", "moreprivate")), 0);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_arr", "mno", "private", "moreprivate")), 0);
     }
 
     @Test
@@ -930,16 +930,16 @@ public class TestPrestoBatchWriter
         assertFalse(iter.hasNext());
         scan.close();
 
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "age", AGE_VALUE, "private", "moreprivate")), 0);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_age", AGE_VALUE, "private", "moreprivate")), 0);
         assertEquals(metricsStorage.newReader().getNumRowsInTable(table.getSchema(), table.getTable()), 0);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "arr", "abc", "private", "moreprivate")), 0);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "firstname", M1_FNAME_VALUE, "private", "moreprivate")), 0);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "firstname", M2_FNAME_VALUE, "private", "moreprivate")), 0);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "firstname", M3_FNAME_VALUE, "private", "moreprivate")), 0);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "arr", "def", "private", "moreprivate")), 0);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "arr", "ghi", "private", "moreprivate")), 0);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "arr", "jkl", "private", "moreprivate")), 0);
-        assertEquals(metricsStorage.newReader().getCardinality(mck("cf", "arr", "mno", "private", "moreprivate")), 0);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_arr", "abc", "private", "moreprivate")), 0);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_firstname", M1_FNAME_VALUE, "private", "moreprivate")), 0);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_firstname", M2_FNAME_VALUE, "private", "moreprivate")), 0);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_firstname", M3_FNAME_VALUE, "private", "moreprivate")), 0);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_arr", "def", "private", "moreprivate")), 0);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_arr", "ghi", "private", "moreprivate")), 0);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_arr", "jkl", "private", "moreprivate")), 0);
+        assertEquals(metricsStorage.newReader().getCardinality(mck("cf_arr", "mno", "private", "moreprivate")), 0);
     }
 
     private static byte[] encode(Type type, Object v)
@@ -947,14 +947,14 @@ public class TestPrestoBatchWriter
         return SERIALIZER.encode(type, v);
     }
 
-    private MetricCacheKey mck(String family, String qualifier, String range, String... auths)
+    private MetricCacheKey mck(String family, String range, String... auths)
     {
-        return mck(family, qualifier, range.getBytes(UTF_8), auths);
+        return mck(family, range.getBytes(UTF_8), auths);
     }
 
-    private MetricCacheKey mck(String family, String qualifier, byte[] range, String... auths)
+    private MetricCacheKey mck(String family, byte[] range, String... auths)
     {
-        return new MetricCacheKey(table.getSchema(), table.getTable(), family, qualifier, false, new Authorizations(auths), new Range(new Text(range)));
+        return new MetricCacheKey(table.getSchema(), table.getTable(), new Text(family), new Authorizations(auths), new Range(new Text(range)));
     }
 
     private void assertKeyValuePair(Entry<Key, Value> e, byte[] row, String cf, String cq, String value)

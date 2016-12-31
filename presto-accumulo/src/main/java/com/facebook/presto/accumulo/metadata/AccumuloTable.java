@@ -28,10 +28,13 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.google.common.base.Splitter;
 import com.google.common.collect.ImmutableList;
+import com.google.common.collect.ImmutableMap;
 import org.apache.accumulo.core.client.Connector;
+import org.apache.commons.lang3.tuple.Pair;
 
 import java.lang.reflect.InvocationTargetException;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
@@ -62,6 +65,8 @@ public class AccumuloTable
     private final String table;
     private final SchemaTableName schemaTableName;
     private final List<IndexColumn> parsedIndexColumns;
+    private final Map<String, AccumuloColumnHandle> columnNameToHandle;
+    private final Map<Pair<String, String>, AccumuloColumnHandle> columnFamQualToHandle;
 
     @JsonCreator
     public AccumuloTable(
@@ -114,12 +119,21 @@ public class AccumuloTable
         }
 
         // Extract the ColumnMetadata from the handles for faster access
+        ImmutableMap.Builder<String, AccumuloColumnHandle> columnHandleBuilder = ImmutableMap.builder();
+        ImmutableMap.Builder<Pair<String, String>, AccumuloColumnHandle> columnFamQualBuilder = ImmutableMap.builder();
         ImmutableList.Builder<ColumnMetadata> columnMetadataBuilder = ImmutableList.builder();
         for (AccumuloColumnHandle column : this.columns) {
             columnMetadataBuilder.add(column.getColumnMetadata());
+            columnHandleBuilder.put(column.getName(), column);
+
+            if (column.getFamily().isPresent() && column.getQualifier().isPresent()) {
+                columnFamQualBuilder.put(Pair.of(column.getFamily().get(), column.getQualifier().get()), column);
+            }
         }
 
         this.columnsMetadata = columnMetadataBuilder.build();
+        this.columnNameToHandle = columnHandleBuilder.build();
+        this.columnFamQualToHandle = columnFamQualBuilder.build();
         this.schemaTableName = new SchemaTableName(this.schema, this.table);
     }
 
@@ -204,23 +218,22 @@ public class AccumuloTable
     @JsonIgnore
     public AccumuloColumnHandle getColumn(String column)
     {
-        Optional<AccumuloColumnHandle> handle = getColumns().stream().filter(x -> x.getName().equals(column)).findAny();
-        if (handle.isPresent()) {
-            return handle.get();
+        AccumuloColumnHandle handle = columnNameToHandle.get(column);
+        if (handle == null) {
+            throw new PrestoException(FUNCTION_IMPLEMENTATION_ERROR, "Failed to find column: " + column);
         }
-
-        throw new PrestoException(FUNCTION_IMPLEMENTATION_ERROR, "Failed to find column: " + column);
+        return handle;
     }
 
     @JsonIgnore
     public AccumuloColumnHandle getColumn(String family, String qualifier)
     {
-        Optional<AccumuloColumnHandle> handle = getColumns().stream().filter(x -> x.getFamily().isPresent() && x.getFamily().get().equals(family) && x.getQualifier().isPresent() && x.getQualifier().get().equals(qualifier)).findAny();
-        if (handle.isPresent()) {
-            return handle.get();
+        AccumuloColumnHandle handle = columnFamQualToHandle.get(Pair.of(family, qualifier));
+        if (handle == null) {
+            throw new PrestoException(FUNCTION_IMPLEMENTATION_ERROR, "Failed to find column for family/qualifier: " + family + ":" + qualifier);
         }
 
-        throw new PrestoException(FUNCTION_IMPLEMENTATION_ERROR, "Failed to find column for family/qualifier: " + family + ":" + qualifier);
+        return handle;
     }
 
     @JsonIgnore

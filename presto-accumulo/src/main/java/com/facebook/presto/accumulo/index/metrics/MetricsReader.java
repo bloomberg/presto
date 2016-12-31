@@ -13,7 +13,6 @@
  */
 package com.facebook.presto.accumulo.index.metrics;
 
-import com.facebook.presto.accumulo.index.Indexer;
 import com.facebook.presto.spi.PrestoException;
 import org.apache.accumulo.core.data.Range;
 import org.apache.accumulo.core.security.Authorizations;
@@ -25,7 +24,6 @@ import java.util.Map;
 import static com.facebook.presto.accumulo.index.metrics.MetricsStorage.METRICS_TABLE_ROWS_COLUMN;
 import static com.facebook.presto.accumulo.index.metrics.MetricsStorage.METRICS_TABLE_ROW_ID;
 import static com.facebook.presto.spi.StandardErrorCode.FUNCTION_IMPLEMENTATION_ERROR;
-import static java.nio.charset.StandardCharsets.UTF_8;
 
 /**
  * Abstract class used to read metrics regarding the table index.
@@ -34,7 +32,7 @@ public abstract class MetricsReader
         implements AutoCloseable
 {
     private static final Range METRICS_TABLE_ROWID_RANGE = new Range(new Text(METRICS_TABLE_ROW_ID.array()));
-    private static final String METRICS_TABLE_ROWS_COLUMN_STRING = new String(METRICS_TABLE_ROWS_COLUMN.array(), UTF_8);
+    private static final Text METRICS_TABLE_ROWS_COLUMN_TEXT = new Text(METRICS_TABLE_ROWS_COLUMN.array());
     private static final Authorizations EMPTY_AUTHS = new Authorizations();
 
     /**
@@ -47,7 +45,7 @@ public abstract class MetricsReader
     public long getNumRowsInTable(String schema, String table)
             throws Exception
     {
-        return getCardinality(new MetricCacheKey(schema, table, METRICS_TABLE_ROWS_COLUMN_STRING, null, false, EMPTY_AUTHS, METRICS_TABLE_ROWID_RANGE));
+        return getCardinality(new MetricCacheKey(schema, table, METRICS_TABLE_ROWS_COLUMN_TEXT, EMPTY_AUTHS, METRICS_TABLE_ROWID_RANGE));
     }
 
     /**
@@ -81,7 +79,7 @@ public abstract class MetricsReader
      * in the collection are the same (except for the Range in the key).
      * <p>
      * In order to simplify the implementation of {@link MetricsReader#getCardinalities}, we are making a (safe) assumption
-     * that the CacheKeys will all contain the same combination of schema/table/family/qualifier/authorizations.
+     * that the CacheKeys will all contain the same combination of schema/table/familyw/authorizations.
      *
      * @param keys Non-empty collection of keys
      * @return Any key
@@ -90,29 +88,10 @@ public abstract class MetricsReader
     {
         MetricCacheKey anyKey = keys.stream().findAny().get();
         keys.forEach(k -> {
-            if (!k.schema.equals(anyKey.schema) || !k.table.equals(anyKey.table) || !k.family.equals(anyKey.family) || !k.qualifier.equals(anyKey.qualifier) || !k.auths.equals(anyKey.auths)) {
+            if (!k.schema.equals(anyKey.schema) || !k.table.equals(anyKey.table) || !k.family.equals(anyKey.family) || !k.auths.equals(anyKey.auths)) {
                 throw new PrestoException(FUNCTION_IMPLEMENTATION_ERROR, "loadAll called with a non-homogeneous collection of cache keys");
             }
         });
         return anyKey;
-    }
-
-    /**
-     * Gets the column family of the given cache key, accounting for the optional qualifier.
-     * <p>
-     * If qualifier is null, the key's column family is returned.  Else, the family is concatenated with the
-     * qualifier, split by an underscore, i.e. &lt;family&gt;_&lt;qualifier&gt;
-     *
-     * @param key Metric cache key
-     * @return Text object of the column family
-     */
-    public String getColumnFamily(MetricCacheKey key)
-    {
-        if (key.qualifier.isPresent()) {
-            return new String(Indexer.getIndexColumnFamily(key.family.getBytes(UTF_8), key.qualifier.get().getBytes(UTF_8)), UTF_8);
-        }
-        else {
-            return key.family;
-        }
     }
 }
