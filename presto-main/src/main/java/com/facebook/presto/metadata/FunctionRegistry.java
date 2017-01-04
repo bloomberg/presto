@@ -69,6 +69,7 @@ import com.facebook.presto.operator.scalar.ArrayShuffleFunction;
 import com.facebook.presto.operator.scalar.ArraySliceFunction;
 import com.facebook.presto.operator.scalar.ArraySortFunction;
 import com.facebook.presto.operator.scalar.ArrayUnionFunction;
+import com.facebook.presto.operator.scalar.ArrayOverlapFunction;
 import com.facebook.presto.operator.scalar.BitwiseFunctions;
 import com.facebook.presto.operator.scalar.CharacterStringCasts;
 import com.facebook.presto.operator.scalar.ColorFunctions;
@@ -471,6 +472,7 @@ public class FunctionRegistry
                 .scalar(ArrayDistinctFromOperator.class)
                 .scalar(ArrayUnionFunction.class)
                 .scalar(ArraySliceFunction.class)
+                .scalar(ArrayOverlapFunction.class)
                 .scalar(MapDistinctFromOperator.class)
                 .scalar(MapEqualOperator.class)
                 .scalar(MapNotEqualOperator.class)

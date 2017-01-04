@@ -28,7 +28,6 @@ import it.unimi.dsi.fastutil.ints.IntComparator;
 import java.lang.invoke.MethodHandle;
 
 import static com.facebook.presto.spi.function.OperatorType.LESS_THAN;
-import static com.sun.tools.javac.jvm.ByteCodes.swap;
 
 @ScalarFunction("array_overlap")
 @Description("Check whether elements of the two given arrays overlap")
@@ -85,7 +84,7 @@ public final class ArrayOverlapFunction
         if (leftPositionCount < rightPositionCount) {
             positions = new int[leftPositionCount];
         }
-        else{
+        else {
             positions = new int[rightPositionCount];
             Block temp = leftArray;
             leftArray = rightArray;
