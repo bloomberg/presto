@@ -28,6 +28,7 @@ import com.facebook.presto.spi.NodeManager;
 import com.facebook.presto.spi.PrestoException;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Multimap;
+import com.google.common.collect.Sets;
 import com.google.common.util.concurrent.MoreExecutors;
 import io.airlift.log.Logger;
 import io.airlift.units.Duration;
@@ -146,7 +147,7 @@ public class IndexLookup
         LOG.debug("Secondary index is enabled");
 
         // Collect Accumulo ranges for each indexed column constraint
-        List<IndexQueryParameters> indexParameters = getIndexedConstraintRanges(table, constraints);
+        List<IndexQueryParameters> indexParameters = getIndexQueryParameters(table, constraints);
 
         // If there is no constraints on an index column, we again will bail out
         if (indexParameters.isEmpty()) {
@@ -307,7 +308,7 @@ public class IndexLookup
         }
     }
 
-    private static List<IndexQueryParameters> getIndexedConstraintRanges(AccumuloTable table, Collection<AccumuloColumnConstraint> constraints)
+    private static List<IndexQueryParameters> getIndexQueryParameters(AccumuloTable table, Collection<AccumuloColumnConstraint> constraints)
             throws AccumuloSecurityException, AccumuloException
     {
         if (table.getParsedIndexColumns().size() == 0) {
@@ -346,8 +347,26 @@ public class IndexLookup
             queryParameters.add(parameters);
         }
 
+        // Sweep through index columns to prune subsets
+        ImmutableList.Builder<IndexQueryParameters> prunedQueryParameters = ImmutableList.builder();
+        queryParameters.forEach(queryParameter -> {
+            Optional<IndexQueryParameters> add = queryParameters.stream().filter(x -> !x.equals(queryParameter)).filter(that -> {
+                // To test if we are going to keep this queryParameter, intersect it with 'that' query parameter
+                int numInCommon = Sets.intersection(Sets.newHashSet(queryParameter.getIndexColumn().getColumns()), Sets.newHashSet(that.getIndexColumn().getColumns())).size();
+
+                // If the number of columns this queryParameter has with that query parameter is the same,
+                // then 'that' queryParameter subsumes this one
+                // We return true here to signify that we should *not* add this parameter
+                return numInCommon == queryParameter.getIndexColumn().getNumColumns();
+            }).findAny();
+
+            if (!add.isPresent()) {
+                prunedQueryParameters.add(queryParameter);
+            }
+        });
+
         // return list of index query parameters
-        return ImmutableList.copyOf(queryParameters);
+        return prunedQueryParameters.build();
     }
 
     private static boolean smallestCardAboveThreshold(ConnectorSession session, long numRows, long smallestCardinality)
