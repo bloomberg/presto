@@ -45,14 +45,22 @@ public class IndexQueryParameters
     private final Text indexFamily = new Text();
     private final List<AccumuloRange> ranges = new ArrayList<>();
     private final Multimap<Text, Range> metricParameters = MultimapBuilder.hashKeys().arrayListValues().build();
+    private boolean appendedTimestampColumn = false;
 
     public IndexQueryParameters(IndexColumn column)
     {
         this.column = requireNonNull(column);
     }
 
-    public void appendColumn(byte[] indexFamily, Collection<AccumuloRange> ranges, boolean truncateTimestamp)
+    public void appendColumn(byte[] indexFamily, Collection<AccumuloRange> appendRanges, boolean truncateTimestamp)
     {
+        if (!truncateTimestamp) {
+            checkState(!appendedTimestampColumn, "Cannot append a non-truncated-timestamp-column after a (truncated) timestamp column has been appended");
+        }
+        else {
+            appendedTimestampColumn = true;
+        }
+
         // Append hyphen byte if this is not the first column
         if (this.indexFamily.getLength() > 0) {
             this.indexFamily.append(HYPHEN_BYTE, 0, HYPHEN_BYTE.length);
@@ -61,72 +69,25 @@ public class IndexQueryParameters
         // Append the index family
         this.indexFamily.append(indexFamily, 0, indexFamily.length);
 
+        // Add metric parameters *before* appending the index ranges
+        addMetricParameters(appendRanges, truncateTimestamp);
+
         // Early-out if this is the first column
-        if (this.ranges.size() == 0) {
-            this.ranges.addAll(ranges);
+        if (ranges.size() == 0) {
+            ranges.addAll(appendRanges);
             return;
         }
 
+        // Append the ranges
         List<AccumuloRange> newRanges = new ArrayList<>();
-        for (AccumuloRange previousRange : this.ranges) {
-            for (AccumuloRange newRange : ranges) {
-                // Here, we use an empty string if the start keys for either are empty
-                byte[] newStart = Bytes.concat(
-                        previousRange.isInfiniteStartKey() ? EMPTY_BYTE : previousRange.getStart(),
-                        NULL_BYTE,
-                        newRange.isInfiniteStartKey() ? EMPTY_BYTE : newRange.getStart());
-                byte[] newEnd = Bytes.concat(
-                        previousRange.isInfiniteStopKey() ? EMPTY_BYTE : previousRange.getEnd(),
-                        NULL_BYTE,
-                        newRange.isInfiniteStopKey() ? EMPTY_BYTE : newRange.getEnd());
-
-                // If both are inclusive, then we can maintain inclusivity, else false
-                boolean newStartInclusive = previousRange.isStartKeyInclusive() && newRange.isStartKeyInclusive();
-                boolean newEndInclusive = previousRange.isEndKeyInclusive() && newRange.isEndKeyInclusive();
-
-                newRanges.add(new AccumuloRange(newStart, newStartInclusive, newEnd, newEndInclusive));
+        for (AccumuloRange baseRange : ranges) {
+            for (AccumuloRange appendRange : appendRanges) {
+                newRanges.add(appendRange(baseRange, appendRange));
             }
         }
 
-        if (truncateTimestamp) {
-            checkState(metricParameters.size() == 0, "Multiple calls to appendColumn where truncateTimestamp is true");
-            addMetricParameters(ranges);
-        }
-
-        this.ranges.clear();
-        this.ranges.addAll(newRanges);
-    }
-
-    private void addMetricParameters(Collection<AccumuloRange> ranges)
-    {
-        for (AccumuloRange previousRange : this.ranges) {
-            for (AccumuloRange newRange : ranges) {
-                for (Map.Entry<TimestampPrecision, Collection<Range>> entry : splitTimestampRange(newRange.getRange()).asMap().entrySet()) {
-                    // Append the precision family to the index family
-                    Text precisionIndexFamily = new Text(this.indexFamily);
-                    byte[] precisionFamily = TIMESTAMP_CARDINALITY_FAMILIES.get(entry.getKey());
-                    precisionIndexFamily.append(precisionFamily, 0, precisionFamily.length);
-
-                    for (Range precisionRange : entry.getValue()) {
-                        // Here, we use an empty string if the start keys for either are empty
-                        byte[] newStart = Bytes.concat(
-                                previousRange.isInfiniteStartKey() ? EMPTY_BYTE : previousRange.getStart(),
-                                NULL_BYTE,
-                                precisionRange.isInfiniteStartKey() ? EMPTY_BYTE : Arrays.copyOfRange(precisionRange.getStartKey().getRow().copyBytes(), 0, 9));
-                        byte[] newEnd = Bytes.concat(
-                                previousRange.isInfiniteStopKey() ? EMPTY_BYTE : previousRange.getEnd(),
-                                NULL_BYTE,
-                                precisionRange.isInfiniteStopKey() ? EMPTY_BYTE : Arrays.copyOfRange(precisionRange.getEndKey().getRow().copyBytes(), 0, 9));
-
-                        // If both are inclusive, then we can maintain inclusivity, else false
-                        boolean newStartInclusive = previousRange.isStartKeyInclusive() && newRange.isStartKeyInclusive();
-                        boolean newEndInclusive = previousRange.isEndKeyInclusive() && newRange.isEndKeyInclusive();
-
-                        metricParameters.put(precisionIndexFamily, new Range(new Text(newStart), newStartInclusive, new Text(newEnd), newEndInclusive));
-                    }
-                }
-            }
-        }
+        ranges.clear();
+        ranges.addAll(newRanges);
     }
 
     public IndexColumn getIndexColumn()
@@ -148,14 +109,99 @@ public class IndexQueryParameters
 
     public Multimap<Text, Range> getMetricParameters()
     {
-        // If we have metric parameters, then a Timestamp column was present and we can return it
-        if (metricParameters.size() > 0) {
-            return ImmutableMultimap.copyOf(metricParameters);
-        }
+        checkState(metricParameters.size() > 0, "Call to getMetricParameters without an append operation");
+        return ImmutableMultimap.copyOf(metricParameters);
+    }
 
-        // Else, build the metric parameters from the single entry of family -> ranges
-        ImmutableMultimap.Builder<Text, Range> builder = ImmutableMultimap.builder();
-        builder.putAll(getIndexFamily(), getRanges());
-        return builder.build();
+    private AccumuloRange appendRange(AccumuloRange baseRange, AccumuloRange appendRange)
+    {
+        // Here, we use an empty string if the start keys for either are empty
+        byte[] newStart = Bytes.concat(
+                baseRange.isInfiniteStartKey() ? EMPTY_BYTE : baseRange.getStart(),
+                NULL_BYTE,
+                appendRange.isInfiniteStartKey() ? EMPTY_BYTE : appendRange.getStart());
+        byte[] newEnd = Bytes.concat(
+                baseRange.isInfiniteStopKey() ? EMPTY_BYTE : baseRange.getEnd(),
+                NULL_BYTE,
+                appendRange.isInfiniteStopKey() ? EMPTY_BYTE : appendRange.getEnd());
+
+        // If both are inclusive, then we can maintain inclusivity, else false
+        boolean newStartInclusive = baseRange.isStartKeyInclusive() && appendRange.isStartKeyInclusive();
+        boolean newEndInclusive = baseRange.isEndKeyInclusive() && appendRange.isEndKeyInclusive();
+
+        return new AccumuloRange(newStart, newStartInclusive, newEnd, newEndInclusive);
+    }
+
+    private void addMetricParameters(Collection<AccumuloRange> appendRanges, boolean truncateTimestamp)
+    {
+        // Clear the parameters to append
+        metricParameters.clear();
+
+        // If no ranges are set, then we won't be appending anything to the old ranges
+        if (this.ranges.size() == 0) {
+            // Not a timestamp? The metric parameters are the same
+            if (!truncateTimestamp) {
+                metricParameters.putAll(this.indexFamily, appendRanges.stream().map(AccumuloRange::getRange).collect(Collectors.toList()));
+            }
+            else {
+                // Otherwise, set the metric parameters
+                for (AccumuloRange appendRange : appendRanges) {
+                    for (Map.Entry<TimestampPrecision, Collection<Range>> entry : splitTimestampRange(appendRange.getRange()).asMap().entrySet()) {
+                        // Append the precision family to the index family
+                        Text precisionIndexFamily = new Text(this.indexFamily);
+                        byte[] precisionFamily = TIMESTAMP_CARDINALITY_FAMILIES.get(entry.getKey());
+                        precisionIndexFamily.append(precisionFamily, 0, precisionFamily.length);
+
+                        for (Range precisionRange : entry.getValue()) {
+                            metricParameters.put(precisionIndexFamily, precisionRange);
+                        }
+                    }
+                }
+            }
+        }
+        else {
+            if (!truncateTimestamp) {
+                for (AccumuloRange previousRange : this.ranges) {
+                    for (AccumuloRange newRange : appendRanges) {
+                        metricParameters.put(this.indexFamily, appendRange(previousRange, newRange).getRange());
+                    }
+                }
+            }
+            else {
+                appendTimestampMetricParameters(appendRanges);
+            }
+        }
+    }
+
+    private void appendTimestampMetricParameters(Collection<AccumuloRange> appendRanges)
+    {
+        for (AccumuloRange baseRange : this.ranges) {
+            for (AccumuloRange appendRange : appendRanges) {
+                for (Map.Entry<TimestampPrecision, Collection<Range>> entry : splitTimestampRange(appendRange.getRange()).asMap().entrySet()) {
+                    // Append the precision family to the index family
+                    Text precisionIndexFamily = new Text(this.indexFamily);
+                    byte[] precisionFamily = TIMESTAMP_CARDINALITY_FAMILIES.get(entry.getKey());
+                    precisionIndexFamily.append(precisionFamily, 0, precisionFamily.length);
+
+                    for (Range precisionRange : entry.getValue()) {
+                        // Here, we use an empty string if the start keys for either are empty
+                        byte[] newStart = Bytes.concat(
+                                baseRange.isInfiniteStartKey() ? EMPTY_BYTE : baseRange.getStart(),
+                                NULL_BYTE,
+                                precisionRange.isInfiniteStartKey() ? EMPTY_BYTE : Arrays.copyOfRange(precisionRange.getStartKey().getRow().copyBytes(), 0, 9));
+                        byte[] newEnd = Bytes.concat(
+                                baseRange.isInfiniteStopKey() ? EMPTY_BYTE : baseRange.getEnd(),
+                                NULL_BYTE,
+                                precisionRange.isInfiniteStopKey() ? EMPTY_BYTE : Arrays.copyOfRange(precisionRange.getEndKey().getRow().copyBytes(), 0, 9));
+
+                        // If both are inclusive, then we can maintain inclusivity, else false
+                        boolean newStartInclusive = baseRange.isStartKeyInclusive() && appendRange.isStartKeyInclusive();
+                        boolean newEndInclusive = baseRange.isEndKeyInclusive() && appendRange.isEndKeyInclusive();
+
+                        metricParameters.put(precisionIndexFamily, new Range(new Text(newStart), newStartInclusive, new Text(newEnd), newEndInclusive));
+                    }
+                }
+            }
+        }
     }
 }
