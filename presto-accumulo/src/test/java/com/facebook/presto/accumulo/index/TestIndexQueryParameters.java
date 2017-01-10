@@ -138,6 +138,14 @@ public class TestIndexQueryParameters
         new IndexQueryParameters(INDEX_COLUMN).getMetricParameters();
     }
 
+    @Test(expectedExceptions = IllegalStateException.class)
+    public void testAppendAfterTimestampTruncate()
+    {
+        IndexQueryParameters parameters = new IndexQueryParameters(INDEX_COLUMN);
+        parameters.appendColumn("cf_born".getBytes(UTF_8), ImmutableList.of(new AccumuloRange(MIN_TIMESTAMP_VALUE, MAX_TIMESTAMP_VALUE)), true);
+        parameters.appendColumn("cf_email".getBytes(UTF_8), ImmutableList.of(new AccumuloRange(FOO), new AccumuloRange(BAR)), false);
+    }
+
     @Test
     public void testAppendTwoTimestamps()
     {
