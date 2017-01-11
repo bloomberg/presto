@@ -37,6 +37,7 @@ import io.airlift.log.Logger;
 import org.apache.accumulo.core.client.BatchScanner;
 import org.apache.accumulo.core.client.BatchWriter;
 import org.apache.accumulo.core.client.Connector;
+import org.apache.accumulo.core.client.IteratorSetting;
 import org.apache.accumulo.core.client.MutationsRejectedException;
 import org.apache.accumulo.core.client.Scanner;
 import org.apache.accumulo.core.client.TableNotFoundException;
@@ -46,6 +47,7 @@ import org.apache.accumulo.core.data.Mutation;
 import org.apache.accumulo.core.data.PartialKey;
 import org.apache.accumulo.core.data.Range;
 import org.apache.accumulo.core.data.Value;
+import org.apache.accumulo.core.iterators.user.WholeRowIterator;
 import org.apache.accumulo.core.security.Authorizations;
 import org.apache.accumulo.core.security.ColumnVisibility;
 import org.apache.commons.lang.ArrayUtils;
@@ -55,6 +57,7 @@ import org.apache.hadoop.io.Text;
 
 import javax.annotation.concurrent.NotThreadSafe;
 
+import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.sql.Timestamp;
 import java.util.Arrays;
@@ -62,10 +65,12 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.Optional;
 import java.util.OptionalLong;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+import static com.facebook.presto.accumulo.AccumuloErrorCode.UNEXPECTED_ACCUMULO_ERROR;
 import static com.facebook.presto.accumulo.index.Indexer.Destination.INDEX;
 import static com.facebook.presto.accumulo.index.Indexer.Destination.METRIC;
 import static com.facebook.presto.accumulo.index.metrics.MetricsStorage.TimestampPrecision.DAY;
@@ -138,6 +143,7 @@ public class Indexer
 
     private static final byte UNDERSCORE = '_';
     private static final Logger LOG = Logger.get(Indexer.class);
+    public static final int WHOLE_ROW_ITERATOR_PRIORITY = 21;
 
     private final AccumuloTable table;
     private final BatchWriter indexWriter;
@@ -172,7 +178,7 @@ public class Indexer
     }
 
     /**
-     * Index the given mutation, adding mutations to the index and metrics storage
+     * Index the given mutation, adding mutations to the index and metrics storage and incrementing the number of rows in the table
      * <p>
      * Like typical use of a BatchWriter, this method does not flush mutations to the underlying index table.
      * For higher throughput the modifications to the metrics table are tracked in memory and added to the metrics storage when the indexer is flushed or closed.
@@ -182,11 +188,31 @@ public class Indexer
     public void index(Mutation mutation)
             throws MutationsRejectedException
     {
+        index(mutation, true);
+    }
+
+    /**
+     * Index the given mutation, adding mutations to the index and metrics storage.
+     * This function will reject any mutation that contains any 'delete' updates.
+     * Use {@link Indexer#delete(Authorizations, Mutation)} if you need to delete index entries
+     * or {@link Indexer#delete(Authorizations, byte[])} if you want to delete an entire now.
+     * <p>
+     * Like typical use of a BatchWriter, this method does not flush mutations to the underlying index table.
+     * For higher throughput the modifications to the metrics table are tracked in memory and added to the metrics storage when the indexer is flushed or closed.
+     *
+     * @param mutation Mutation to index
+     * @param increment True to increment the row count in the metrics table
+     */
+    public void index(Mutation mutation, boolean increment)
+            throws MutationsRejectedException
+    {
         checkArgument(mutation.getUpdates().size() > 0, "Mutation must have at least one column update");
         checkArgument(mutation.getUpdates().stream().noneMatch(ColumnUpdate::isDeleted), "Mutation must not contain any delete entries. Use Indexer#delete, then index the Mutation");
 
         // Increment the cardinality for the number of rows in the table
-        metricsWriter.incrementRowCount();
+        if (increment) {
+            metricsWriter.incrementRowCount();
+        }
 
         // Convert the list of updates into a data structure we can use for indexing
         Multimap<Pair<ByteBuffer, ByteBuffer>, Triple<byte[], Long, byte[]>> updates = MultimapBuilder.hashKeys().arrayListValues().build();
@@ -203,7 +229,7 @@ public class Indexer
             throws MutationsRejectedException
     {
         for (Mutation mutation : mutations) {
-            index(mutation);
+            index(mutation, true);
         }
     }
 
@@ -339,34 +365,73 @@ public class Indexer
             scanner = connector.createBatchScanner(table.getFullTableName(), auths, 10);
             scanner.setRanges(ranges);
 
+            IteratorSetting setting = new IteratorSetting(WHOLE_ROW_ITERATOR_PRIORITY, WholeRowIterator.class);
+            scanner.addScanIterator(setting);
+
             long deleteTimestamp = System.currentTimeMillis();
 
             // Scan the table to create a list of items to delete the index entries of
             Text text = new Text();
-            Text previousRowId = null;
+            for (Entry<Key, Value> row : scanner) {
+                byte[] rowId = null;
+                Multimap<Pair<ByteBuffer, ByteBuffer>, Triple<byte[], Long, byte[]>> deleteEntries = MultimapBuilder.hashKeys().arrayListValues().build();
+                for (Entry<Key, Value> entry : WholeRowIterator.decodeRow(row.getKey(), row.getValue()).entrySet()) {
+                    rowId = rowId == null ? entry.getKey().getRow(text).copyBytes() : rowId;
+                    ByteBuffer family = wrap(entry.getKey().getColumnFamily(text).copyBytes());
+                    ByteBuffer qualifier = wrap(entry.getKey().getColumnQualifier(text).copyBytes());
+                    byte[] visibility = entry.getKey().getColumnVisibility(text).copyBytes();
+                    deleteEntries.put(Pair.of(family, qualifier), Triple.of(visibility, deleteTimestamp, entry.getValue().get()));
+                }
+                applyUpdate(rowId, deleteEntries, true);
+                metricsWriter.decrementRowCount();
+            }
+        }
+        catch (IOException e) {
+            throw new PrestoException(UNEXPECTED_ACCUMULO_ERROR, "IOException decoding whole row", e);
+        }
+        finally {
+            if (scanner != null) {
+                scanner.close();
+            }
+        }
+    }
+
+    /**
+     * Deletes the columns within a mutation, as well as decrementing the associated metrics.  The row count is unaffected.
+     * To delete an entire row of indexes and decrement the row metric, use {@link Indexer#delete(Authorizations, byte[])}
+     * <p>
+     * Like the typical use of a BatchWriter, this method does not flush mutations to the underlying index table.
+     * For higher throughput the modifications to the metrics table are tracked in memory and added to the metrics table when the indexer is flushed or closed.
+     *
+     * @param auths Authorizations for scanning and deleting index/metric entries
+     * @param mutation The mutation to delete index entries from
+     */
+    public void delete(Authorizations auths, Mutation mutation)
+            throws MutationsRejectedException, TableNotFoundException
+    {
+        Scanner scanner = null;
+        try {
+            scanner = connector.createScanner(table.getFullTableName(), auths);
+            scanner.setRange(new Range(new Text(mutation.getRow())));
+
+            Text text = new Text();
             Multimap<Pair<ByteBuffer, ByteBuffer>, Triple<byte[], Long, byte[]>> deleteEntries = MultimapBuilder.hashKeys().arrayListValues().build();
+            // Scan the table to create a list of items to delete the index entries of
             for (Entry<Key, Value> entry : scanner) {
                 entry.getKey().getRow(text);
-                if (previousRowId == null) {
-                    metricsWriter.decrementRowCount();
-                    previousRowId = new Text(text);
-                }
-                else if (!previousRowId.equals(text)) {
-                    metricsWriter.decrementRowCount();
-                    applyUpdate(previousRowId.copyBytes(), deleteEntries, true);
-                    previousRowId.set(text);
-                    deleteEntries.clear();
-                }
-
                 ByteBuffer family = wrap(entry.getKey().getColumnFamily(text).copyBytes());
                 ByteBuffer qualifier = wrap(entry.getKey().getColumnQualifier(text).copyBytes());
-                byte[] visibility = entry.getKey().getColumnVisibility(text).copyBytes();
-                deleteEntries.put(Pair.of(family, qualifier), Triple.of(visibility, deleteTimestamp, entry.getValue().get()));
+
+                // If this mutation contains a delete entry for this column
+                Optional<ColumnUpdate> deleteUpdate = mutation.getUpdates().stream().filter(update -> wrap(update.getColumnFamily()).equals(family) && wrap(update.getColumnQualifier()).equals(qualifier) && update.isDeleted()).findAny();
+                if (deleteUpdate.isPresent()) {
+                    byte[] visibility = entry.getKey().getColumnVisibility(text).copyBytes();
+                    deleteEntries.put(Pair.of(family, qualifier), Triple.of(visibility, deleteUpdate.get().getTimestamp(), entry.getValue().get()));
+                }
             }
 
-            // Apply final updates
-            if (previousRowId != null && deleteEntries.size() > 0) {
-                applyUpdate(previousRowId.copyBytes(), deleteEntries, true);
+            if (!deleteEntries.isEmpty()) {
+                applyUpdate(mutation.getRow(), deleteEntries, true);
             }
         }
         finally {
