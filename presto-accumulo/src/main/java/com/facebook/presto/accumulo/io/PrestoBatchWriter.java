@@ -40,6 +40,7 @@ import org.apache.accumulo.core.client.MultiTableBatchWriter;
 import org.apache.accumulo.core.client.MutationsRejectedException;
 import org.apache.accumulo.core.client.Scanner;
 import org.apache.accumulo.core.client.TableNotFoundException;
+import org.apache.accumulo.core.data.ColumnUpdate;
 import org.apache.accumulo.core.data.Key;
 import org.apache.accumulo.core.data.Mutation;
 import org.apache.accumulo.core.data.Range;
@@ -181,7 +182,7 @@ public class PrestoBatchWriter
         Mutation mutation = toMutation(row, rowIdOrdinal, columns, serializer);
         dataWriter.addMutation(mutation);
         if (indexer.isPresent()) {
-            indexer.get().index(mutation);
+            indexer.get().index(mutation, true);
         }
     }
 
@@ -191,7 +192,7 @@ public class PrestoBatchWriter
      * @param rows Rows to write
      */
     public void addRows(Iterable<Row> rows)
-            throws MutationsRejectedException
+            throws MutationsRejectedException, TableNotFoundException
     {
         ImmutableList.Builder<Mutation> mutationBuilder = ImmutableList.builder();
         rows.forEach(row -> mutationBuilder.add(toMutation(row, rowIdOrdinal, columns, serializer)));
@@ -199,30 +200,65 @@ public class PrestoBatchWriter
     }
 
     /**
-     * Add a raw Mutation to the table
+     * Calls {@link PrestoBatchWriter#addMutation(Mutation, boolean)} where the Boolean is true.
      *
      * @param mutation Mutation to write
      */
     public void addMutation(Mutation mutation)
-            throws MutationsRejectedException
+            throws MutationsRejectedException, TableNotFoundException
+    {
+        addMutation(mutation, true);
+    }
+
+    /**
+     * Add a raw Mutation to the table, indexing any additions and deleting any index/metric entries for any deletions.
+     * End users should be aware of how the number of rows metric is affected by this function.
+     * <p>
+     * <ul>
+     * <li>If the Mutation contains only additions, then the number of rows in the table is incremented based on the value of incrementNumRows</li>
+     * <li>If the Mutation contains a mix of additions and deletions, it is assumed this is an 'update' mutation
+     * and the number of rows in the table stays the same.</li>
+     * <li>If the Mutation contains all deletes, the number of rows is unaffected, even if the mutation deletes all columns.
+     * If you want to delete an entire row, it is in your best interest to use {@link PrestoBatchWriter#deleteRow(Object)}
+     * which will correctly decrement the metrics.</li>
+     * </ul>
+     * <p>
+     *
+     * @param mutation Mutation to write
+     * @param incrementNumRows True to increment the number of rows if the mutation contains all 'puts'.  Useful if you are adding columns to a row that you know already exists.
+     */
+    public void addMutation(Mutation mutation, boolean incrementNumRows)
+            throws MutationsRejectedException, TableNotFoundException
     {
         dataWriter.addMutation(mutation);
         if (indexer.isPresent()) {
-            indexer.get().index(mutation);
+            //Split the mutation into Adds and Deletes and then index them both
+            Mutation add = new Mutation(mutation.getRow());
+            Mutation delete = new Mutation(mutation.getRow());
+            splitMutation(mutation, add, delete);
+
+            if (add.size() > 0) {
+                indexer.get().index(add, incrementNumRows && delete.size() == 0);
+            }
+
+            if (delete.size() > 0) {
+                indexer.get().delete(auths, delete);
+            }
         }
     }
 
     /**
-     * Add multiple Mutations to the table
+     * Helper function that delegates all mutations to {@link PrestoBatchWriter#addMutation(Mutation)}.
+     * Note that this will increment the number of rows in the table for each mutation that does not contain
+     * a 'delete' update.
      *
      * @param mutations Mutations to write
      */
     public void addMutations(Iterable<Mutation> mutations)
-            throws MutationsRejectedException
+            throws MutationsRejectedException, TableNotFoundException
     {
-        dataWriter.addMutations(mutations);
-        if (indexer.isPresent()) {
-            indexer.get().index(mutations);
+        for (Mutation mutation : mutations) {
+            addMutation(mutation);
         }
     }
 
@@ -476,19 +512,14 @@ public class PrestoBatchWriter
     public void flush()
             throws MutationsRejectedException
     {
-        if (metricsWriter.isPresent()) {
-            metricsWriter.get().flush();
-        }
+        metricsWriter.ifPresent(MetricsWriter::flush);
         multiTableBatchWriter.flush();
     }
 
     public void close()
             throws MutationsRejectedException
     {
-        if (metricsWriter.isPresent()) {
-            metricsWriter.get().close();
-        }
-
+        metricsWriter.ifPresent(MetricsWriter::close);
         multiTableBatchWriter.close();
     }
 
@@ -615,6 +646,18 @@ public class PrestoBatchWriter
         }
         else {
             throw new PrestoException(INVALID_FUNCTION_ARGUMENT, "Given column name does not exist for the table");
+        }
+    }
+
+    private static void splitMutation(Mutation toSplit, Mutation add, Mutation delete)
+    {
+        for (ColumnUpdate update : toSplit.getUpdates()) {
+            if (update.isDeleted()) {
+                delete.putDelete(update.getColumnFamily(), update.getColumnQualifier(), new ColumnVisibility(update.getColumnVisibility()), update.getTimestamp());
+            }
+            else {
+                add.put(update.getColumnFamily(), update.getColumnQualifier(), new ColumnVisibility(update.getColumnVisibility()), update.getTimestamp(), update.getValue());
+            }
         }
     }
 }
