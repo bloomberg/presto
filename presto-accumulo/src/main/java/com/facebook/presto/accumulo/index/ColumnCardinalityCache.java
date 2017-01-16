@@ -175,8 +175,7 @@ public class ColumnCardinalityCache
                 Optional<Entry<Long, IndexQueryParameters>> smallestCardinality = cardinalityToConstraints.entries().stream().findFirst();
                 if (smallestCardinality.isPresent()) {
                     if (smallestCardinality.get().getKey() <= earlyReturnThreshold) {
-                        LOG.debug("Cardinality for column %s is below threshold of %s. Returning early while other tasks finish",
-                                smallestCardinality.get().getValue().getIndexColumn(), earlyReturnThreshold);
+                        LOG.debug("Cardinality for column %s is below threshold of %s. Returning early while other tasks finish", smallestCardinality.get().getValue().getIndexColumn(), earlyReturnThreshold);
                         earlyReturn = true;
                     }
                 }
@@ -222,8 +221,6 @@ public class ColumnCardinalityCache
                                 nonExactRanges.add(key);
                             }
                         });
-
-                LOG.debug("Column values contain %s exact ranges and %s non-exact ranges", exactRanges.size(), nonExactRanges.size());
 
                 // Sum the cardinalities for the exact-value Ranges
                 // This is where the reach-out to Accumulo occurs for all Ranges that have not
