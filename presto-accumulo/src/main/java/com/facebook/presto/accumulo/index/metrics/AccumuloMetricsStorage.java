@@ -311,7 +311,6 @@ public class AccumuloMetricsStorage
         public long getCardinality(MetricCacheKey key)
                 throws Exception
         {
-            LOG.debug("Loading a non-exact range from Accumulo: %s", key);
             // Get metrics table name and the column family for the scanner
             String metricsTable = getMetricsTableName(key.schema, key.table);
             IteratorSetting setting = new IteratorSetting(Integer.MAX_VALUE, "valuesummingcombiner", ValueSummingIterator.class);
@@ -345,8 +344,6 @@ public class AccumuloMetricsStorage
             if (keys.isEmpty()) {
                 return ImmutableMap.of();
             }
-
-            LOG.debug("Loading %s exact ranges from Accumulo", keys.size());
 
             // Transform the collection into a map of each CacheKey's Range to the key itself
             // This allows us to look up the corresponding CacheKey based on the Row

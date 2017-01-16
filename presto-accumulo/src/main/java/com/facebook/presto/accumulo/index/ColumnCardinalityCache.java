@@ -218,8 +218,6 @@ public class ColumnCardinalityCache
                             }
                         });
 
-                LOG.debug("Column values contain %s exact ranges and %s non-exact ranges", exactRanges.size(), nonExactRanges.size());
-
                 // Sum the cardinalities for the exact-value Ranges
                 // This is where the reach-out to Accumulo occurs for all Ranges that have not
                 // previously been fetched
