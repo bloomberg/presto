@@ -33,7 +33,6 @@ import com.google.common.collect.ListMultimap;
 import com.google.common.collect.Multimap;
 import com.google.common.collect.MultimapBuilder;
 import com.google.common.primitives.Bytes;
-import io.airlift.log.Logger;
 import org.apache.accumulo.core.client.BatchScanner;
 import org.apache.accumulo.core.client.BatchWriter;
 import org.apache.accumulo.core.client.Connector;
@@ -84,7 +83,6 @@ import static com.facebook.presto.spi.StandardErrorCode.NOT_FOUND;
 import static com.facebook.presto.spi.StandardErrorCode.NOT_SUPPORTED;
 import static com.facebook.presto.spi.type.TimestampType.TIMESTAMP;
 import static com.google.common.base.Preconditions.checkArgument;
-import static java.lang.String.format;
 import static java.nio.ByteBuffer.wrap;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static java.util.Objects.requireNonNull;
@@ -142,7 +140,6 @@ public class Indexer
             DAY, "_tsd".getBytes(UTF_8));
 
     private static final byte UNDERSCORE = '_';
-    private static final Logger LOG = Logger.get(Indexer.class);
     public static final int WHOLE_ROW_ITERATOR_PRIORITY = 21;
 
     private final AccumuloTable table;
@@ -745,9 +742,7 @@ public class Indexer
         value.getEndKey().getRow(text);
         Timestamp endTime = new Timestamp(serializer.decode(TIMESTAMP, Arrays.copyOfRange(text.getBytes(), 0, 9)));
         boolean endKeyInclusive = text.getLength() == 10;
-        LOG.debug(format("Start: %s  %s  End: %s %s", startTime, startKeyInclusive, endTime, endKeyInclusive));
         if (startTime.getTime() + 1000L > endTime.getTime()) {
-            LOG.debug(format("%s %s %s", MILLISECOND, new Timestamp(serializer.decode(TIMESTAMP, value.getStartKey().getRow().copyBytes())), new Timestamp(serializer.decode(TIMESTAMP, value.getEndKey().getRow().copyBytes()))));
             return ImmutableMultimap.of(MILLISECOND, value);
         }
 
@@ -821,15 +816,6 @@ public class Indexer
                 }
                 else {
                     // Add range to map and roll over
-                    Timestamp s = new Timestamp(serializer.decode(TIMESTAMP, Arrays.copyOfRange(previousRange.getRight().getStartKey().getRow().getBytes(), 0, 9)));
-                    if (isExact(previousRange.getRight())) {
-                        LOG.debug(format("%s %s", previousRange.getLeft(), s));
-                    }
-                    else {
-                        Timestamp e = new Timestamp(serializer.decode(TIMESTAMP, Arrays.copyOfRange(previousRange.getRight().getEndKey().getRow().getBytes(), 0, 9)));
-                        LOG.debug(format("%s %s %s", previousRange.getLeft(), s, e));
-                    }
-
                     splitTimestampRange.put(previousRange.getLeft(), previousRange.getRight());
                     previousRange = nextRange;
                 }
@@ -841,14 +827,6 @@ public class Indexer
         while (cont && !nextTime.getRight().equals(endTime));
 
         Timestamp s = new Timestamp(serializer.decode(TIMESTAMP, Arrays.copyOfRange(previousRange.getRight().getStartKey().getRow().getBytes(), 0, 9)));
-        if (isExact(previousRange.getRight())) {
-            LOG.debug(format("%s %s", previousRange.getLeft(), s));
-        }
-        else {
-            Timestamp e = new Timestamp(serializer.decode(TIMESTAMP, Arrays.copyOfRange(previousRange.getRight().getEndKey().getRow().getBytes(), 0, 9)));
-            LOG.debug(format("%s %s %s", previousRange.getLeft(), s, e));
-        }
-
         splitTimestampRange.put(previousRange.getLeft(), previousRange.getRight());
         return ImmutableMultimap.copyOf(splitTimestampRange);
     }
