@@ -316,10 +316,6 @@
                     <artifactId>htrace-core</artifactId>
                 </exclusion>
                 <exclusion>
-                    <groupId>org.apache.htrace</groupId>
-                    <artifactId>htrace-core</artifactId>
-                </exclusion>
-                <exclusion>
                     <groupId>com.google.protobuf</groupId>
                     <artifactId>protobuf-java</artifactId>
                 </exclusion>
