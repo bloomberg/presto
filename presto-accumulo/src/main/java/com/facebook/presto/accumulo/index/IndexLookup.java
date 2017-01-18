@@ -14,7 +14,6 @@
 package com.facebook.presto.accumulo.index;
 
 import com.facebook.presto.accumulo.conf.AccumuloConfig;
-import com.facebook.presto.accumulo.conf.AccumuloSessionProperties;
 import com.facebook.presto.accumulo.index.metrics.MetricsReader;
 import com.facebook.presto.accumulo.index.metrics.MetricsStorage;
 import com.facebook.presto.accumulo.metadata.AccumuloTable;
@@ -31,7 +30,6 @@ import com.google.common.collect.Multimap;
 import com.google.common.collect.Sets;
 import io.airlift.concurrent.BoundedExecutor;
 import io.airlift.log.Logger;
-import io.airlift.units.Duration;
 import org.apache.accumulo.core.client.AccumuloException;
 import org.apache.accumulo.core.client.AccumuloSecurityException;
 import org.apache.accumulo.core.client.BatchScanner;
@@ -42,6 +40,9 @@ import org.apache.accumulo.core.data.Range;
 import org.apache.accumulo.core.data.Value;
 import org.apache.accumulo.core.security.Authorizations;
 import org.apache.hadoop.io.Text;
+import org.apache.htrace.Sampler;
+import org.apache.htrace.Trace;
+import org.apache.htrace.TraceScope;
 
 import javax.annotation.PreDestroy;
 import javax.inject.Inject;
@@ -71,6 +72,7 @@ import static com.facebook.presto.accumulo.conf.AccumuloSessionProperties.getSpl
 import static com.facebook.presto.accumulo.conf.AccumuloSessionProperties.isIndexMetricsEnabled;
 import static com.facebook.presto.accumulo.conf.AccumuloSessionProperties.isOptimizeIndexEnabled;
 import static com.facebook.presto.accumulo.conf.AccumuloSessionProperties.isOptimizeNumRowsPerSplitEnabled;
+import static com.facebook.presto.accumulo.conf.AccumuloSessionProperties.isTracingEnabled;
 import static com.facebook.presto.accumulo.index.Indexer.getIndexColumnFamily;
 import static com.facebook.presto.spi.type.TimestampType.TIMESTAMP;
 import static com.google.common.base.Preconditions.checkArgument;
@@ -79,7 +81,6 @@ import static java.lang.String.format;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static java.util.Objects.requireNonNull;
 import static java.util.concurrent.Executors.newCachedThreadPool;
-import static java.util.concurrent.TimeUnit.MILLISECONDS;
 
 /**
  * Class to assist the Presto connector, and maybe external applications,
@@ -166,7 +167,7 @@ public class IndexLookup
         if (!isIndexMetricsEnabled(session)) {
             LOG.debug("Use of index metrics is disabled");
             // Get the ranges via the index table
-            List<Range> indexRanges = getIndexRanges(table.getIndexTableName(), indexParameters, rowIdRanges, auths);
+            List<Range> indexRanges = getIndexRanges(session, table.getIndexTableName(), indexParameters, rowIdRanges, auths);
             if (!indexRanges.isEmpty()) {
                 // Bin the ranges into TabletMetadataSplits and return true to use the tablet splits
                 binRanges(optimizeNumRowsPerSplit(session, indexRanges.size(), nodeManager.getWorkerNodes().size()), indexRanges, tabletSplits);
@@ -220,28 +221,14 @@ public class IndexLookup
         long numRows = reader.getNumRowsInTable(table.getSchema(), table.getTable());
 
         // Get the cardinalities from the metrics table
-        Multimap<Long, IndexQueryParameters> cardinalities;
-        if (AccumuloSessionProperties.isIndexShortCircuitEnabled(session)) {
-            cardinalities = cardinalityCache.getCardinalities(
-                    table.getSchema(),
-                    table.getTable(),
-                    auths,
-                    indexQueryParameters,
-                    getSmallestCardinalityThreshold(session, numRows),
-                    AccumuloSessionProperties.getIndexCardinalityCachePollingDuration(session),
-                    metricsStorage);
-        }
-        else {
-            // disable short circuit using 0
-            cardinalities = cardinalityCache.getCardinalities(
-                    table.getSchema(),
-                    table.getTable(),
-                    auths,
-                    indexQueryParameters,
-                    0,
-                    new Duration(0, MILLISECONDS),
-                    metricsStorage);
-        }
+        Multimap<Long, IndexQueryParameters> cardinalities = cardinalityCache.getCardinalities(
+                session,
+                table.getSchema(),
+                table.getTable(),
+                auths,
+                indexQueryParameters,
+                getSmallestCardinalityThreshold(session, numRows),
+                metricsStorage);
 
         Optional<Entry<Long, IndexQueryParameters>> entry = cardinalities.entries().stream().findFirst();
         if (!entry.isPresent()) {
@@ -277,7 +264,7 @@ public class IndexLookup
             // If there are columns to do row intersection, then do so
             if (intersectionColumns.size() > 0) {
                 LOG.debug("%d indexed columns, intersecting ranges", intersectionColumns.size());
-                indexRanges = getIndexRanges(indexTable, intersectionColumns, rowIdRanges, auths);
+                indexRanges = getIndexRanges(session, indexTable, intersectionColumns, rowIdRanges, auths);
                 LOG.debug("Intersection results in %d ranges from secondary index", indexRanges.size());
             }
             else {
@@ -288,7 +275,7 @@ public class IndexLookup
         else {
             // Else, we don't need to intersect the columns and we can just use the column with the lowest cardinality
             LOG.debug("Not intersecting columns, using column with lowest cardinality: " + lowestCardinality.getValue().getIndexColumn());
-            indexRanges = getIndexRanges(indexTable, ImmutableList.of(lowestCardinality.getValue()), rowIdRanges, auths);
+            indexRanges = getIndexRanges(session, indexTable, ImmutableList.of(lowestCardinality.getValue()), rowIdRanges, auths);
         }
 
         if (indexRanges.isEmpty()) {
@@ -379,7 +366,7 @@ public class IndexLookup
     private static boolean smallestCardAboveThreshold(ConnectorSession session, long numRows, long smallestCardinality)
     {
         long threshold = getSmallestCardinalityThreshold(session, numRows);
-        LOG.info("Smallest cardinality is %s, num rows is %s, threshold is %s", smallestCardinality, numRows, threshold);
+        LOG.debug("Smallest cardinality is %s, num rows is %s, threshold is %s", smallestCardinality, numRows, threshold);
         return smallestCardinality > threshold;
     }
 
@@ -400,7 +387,7 @@ public class IndexLookup
                 getIndexSmallCardRowThreshold(session));
     }
 
-    private List<Range> getIndexRanges(String indexTable, List<IndexQueryParameters> indexParameters, Collection<AccumuloRange> rowIDRanges, Authorizations auths)
+    private List<Range> getIndexRanges(ConnectorSession session, String indexTable, List<IndexQueryParameters> indexParameters, Collection<AccumuloRange> rowIDRanges, Authorizations auths)
             throws TableNotFoundException, InterruptedException
     {
         Set<Range> finalRanges = new HashSet<>();
@@ -409,8 +396,14 @@ public class IndexLookup
         CompletionService<Set<Range>> executor = new ExecutorCompletionService<>(executorService);
         for (IndexQueryParameters queryParameters : indexParameters) {
             tasks.add(executor.submit(() -> {
+                Optional<TraceScope> indexTrace = Optional.empty();
                 BatchScanner scanner = null;
                 try {
+                    if (isTracingEnabled(session)) {
+                        String traceName = String.format("%s:%s_metrics:IndexLookup:%s", session.getQueryId(), indexTable, queryParameters.getIndexFamily());
+                        indexTrace = Optional.of(Trace.startSpan(traceName, Sampler.ALWAYS));
+                    }
+
                     long start = System.currentTimeMillis();
                     // Create a batch scanner against the index table, setting the ranges
                     scanner = connector.createBatchScanner(indexTable, auths, 10);
@@ -431,13 +424,15 @@ public class IndexLookup
                         }
                     }
 
-                    LOG.info("Retrieved %s ranges for index column %s took %s ms", columnRanges.size(), queryParameters.getIndexColumn(), System.currentTimeMillis() - start);
+                    LOG.debug("Retrieved %s ranges for index column %s took %s ms", columnRanges.size(), queryParameters.getIndexColumn(), System.currentTimeMillis() - start);
                     return columnRanges;
                 }
                 finally {
                     if (scanner != null) {
                         scanner.close();
                     }
+
+                    indexTrace.ifPresent(TraceScope::close);
                 }
             }));
         }
