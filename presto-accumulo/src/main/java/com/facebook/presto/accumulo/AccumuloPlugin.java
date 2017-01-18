@@ -16,6 +16,7 @@ package com.facebook.presto.accumulo;
 import com.facebook.presto.accumulo.udf.AccumuloStringFunctions;
 import com.facebook.presto.spi.Plugin;
 import com.facebook.presto.spi.connector.ConnectorFactory;
+import com.facebook.presto.spi.eventlistener.EventListenerFactory;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
 
@@ -34,5 +35,11 @@ public class AccumuloPlugin
     public Iterable<ConnectorFactory> getConnectorFactories()
     {
         return ImmutableList.of(new AccumuloConnectorFactory());
+    }
+
+    @Override
+    public Iterable<EventListenerFactory> getEventListenerFactories()
+    {
+        return ImmutableList.of(new AccumuloEventListenerFactory());
     }
 }

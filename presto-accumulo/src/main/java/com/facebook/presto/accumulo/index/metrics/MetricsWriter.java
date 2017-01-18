@@ -18,6 +18,7 @@ import com.facebook.presto.accumulo.serializers.LexicoderRowSerializer;
 import org.apache.accumulo.core.security.ColumnVisibility;
 
 import java.nio.ByteBuffer;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
@@ -36,7 +37,7 @@ import static java.util.Objects.requireNonNull;
 public abstract class MetricsWriter
         implements AutoCloseable
 {
-    protected final Map<CardinalityKey, AtomicLong> metrics = new HashMap<>();
+    protected final Map<CardinalityKey, AtomicLong> metrics = Collections.synchronizedMap(new HashMap<>());
     protected final AccumuloTable table;
     protected final LexicoderRowSerializer serializer = new LexicoderRowSerializer();
 

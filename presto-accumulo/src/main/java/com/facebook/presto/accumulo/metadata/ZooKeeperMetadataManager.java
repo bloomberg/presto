@@ -133,6 +133,16 @@ public class ZooKeeperMetadataManager
         }
     }
 
+    public boolean exists(SchemaTableName stName)
+    {
+        try {
+            return curator.checkExists().forPath(getTablePath(stName)) != null;
+        }
+        catch (Exception e) {
+            throw new PrestoException(ZOOKEEPER_ERROR, "Error fetching table", e);
+        }
+    }
+
     public AccumuloTable getTable(SchemaTableName stName)
     {
         try {

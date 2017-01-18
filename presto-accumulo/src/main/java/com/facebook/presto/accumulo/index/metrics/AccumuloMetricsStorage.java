@@ -26,7 +26,6 @@ import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.primitives.Bytes;
-import io.airlift.log.Logger;
 import org.apache.accumulo.core.client.BatchScanner;
 import org.apache.accumulo.core.client.BatchWriter;
 import org.apache.accumulo.core.client.BatchWriterConfig;
@@ -251,7 +250,6 @@ public class AccumuloMetricsStorage
                     metricsWriter.addMutations(mutations);
                     metricsWriter.close();
                 }
-                metrics.clear();
             }
             catch (MutationsRejectedException e) {
                 throw new PrestoException(UNEXPECTED_ACCUMULO_ERROR, "Mutation was rejected by server on close", e);
@@ -268,36 +266,39 @@ public class AccumuloMetricsStorage
          */
         private Collection<Mutation> getMetricsMutations()
         {
-            ImmutableList.Builder<Mutation> mutationBuilder = ImmutableList.builder();
-            // Mapping of column value to column to number of row IDs that contain that value
-            for (Map.Entry<CardinalityKey, AtomicLong> entry : metrics.entrySet()) {
-                if (entry.getValue().get() != 0) {
-                    // Row ID: Column value
-                    // Family: columnfamily_columnqualifier
-                    // Qualifier: CARDINALITY_CQ
-                    // Visibility: Inherited from indexed Mutation
-                    // Value: Cardinality
+            // Synchronize here to avoid ConcurrentModificationException while iterating the entries
+            synchronized (metrics) {
+                ImmutableList.Builder<Mutation> mutationBuilder = ImmutableList.builder();
+                // Mapping of column value to column to number of row IDs that contain that value
+                for (Map.Entry<CardinalityKey, AtomicLong> entry : metrics.entrySet()) {
+                    if (entry.getValue().get() != 0) {
+                        // Row ID: Column value
+                        // Family: columnfamily_columnqualifier
+                        // Qualifier: CARDINALITY_CQ
+                        // Visibility: Inherited from indexed Mutation
+                        // Value: Cardinality
 
-                    Mutation mut = new Mutation(entry.getKey().value.array());
-                    mut.put(
-                            entry.getKey().column.array(),
-                            CARDINALITY_CQ,
-                            entry.getKey().visibility,
-                            ENCODER.encode(entry.getValue().get()));
+                        Mutation mut = new Mutation(entry.getKey().value.array());
+                        mut.put(
+                                entry.getKey().column.array(),
+                                CARDINALITY_CQ,
+                                entry.getKey().visibility,
+                                ENCODER.encode(entry.getValue().get()));
 
-                    // Add to our list of mutations
-                    mutationBuilder.add(mut);
+                        // Add to our list of mutations
+                        mutationBuilder.add(mut);
+                    }
                 }
-            }
 
-            return mutationBuilder.build();
+                metrics.clear();
+                return mutationBuilder.build();
+            }
         }
     }
 
     private static class AccumuloMetricsReader
             extends MetricsReader
     {
-        private static final Logger LOG = Logger.get(AccumuloMetricsReader.class);
         private static final Text CARDINALITY_CQ_TEXT = new Text(CARDINALITY_CQ);
 
         private final Connector connector;
