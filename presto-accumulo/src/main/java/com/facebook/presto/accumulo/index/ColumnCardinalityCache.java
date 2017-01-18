@@ -17,6 +17,7 @@ import com.facebook.presto.accumulo.conf.AccumuloConfig;
 import com.facebook.presto.accumulo.index.metrics.MetricCacheKey;
 import com.facebook.presto.accumulo.index.metrics.MetricsStorage;
 import com.facebook.presto.accumulo.model.AccumuloColumnConstraint;
+import com.facebook.presto.spi.ConnectorSession;
 import com.facebook.presto.spi.PrestoException;
 import com.google.common.cache.CacheBuilder;
 import com.google.common.cache.CacheLoader;
@@ -34,6 +35,8 @@ import org.apache.accumulo.core.data.Range;
 import org.apache.accumulo.core.security.Authorizations;
 import org.apache.commons.lang3.tuple.Pair;
 import org.apache.hadoop.io.Text;
+import org.apache.htrace.Sampler;
+import org.apache.htrace.TraceScope;
 
 import javax.annotation.Nonnull;
 import javax.annotation.PreDestroy;
@@ -52,10 +55,15 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
 
 import static com.facebook.presto.accumulo.AccumuloErrorCode.UNEXPECTED_ACCUMULO_ERROR;
+import static com.facebook.presto.accumulo.conf.AccumuloSessionProperties.getIndexCardinalityCachePollingDuration;
+import static com.facebook.presto.accumulo.conf.AccumuloSessionProperties.isIndexShortCircuitEnabled;
+import static com.facebook.presto.accumulo.conf.AccumuloSessionProperties.isTracingEnabled;
+import static com.facebook.presto.accumulo.index.Indexer.getIndexTableName;
 import static io.airlift.concurrent.Threads.daemonThreadsNamed;
 import static java.util.Objects.requireNonNull;
 import static java.util.concurrent.Executors.newCachedThreadPool;
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
+import static org.apache.htrace.Trace.startSpan;
 
 /**
  * This class is an indexing utility to cache the cardinality of a column value for every table.
@@ -97,24 +105,24 @@ public class ColumnCardinalityCache
      * Gets the cardinality for each {@link AccumuloColumnConstraint}.
      * Given constraints are expected to be indexed! Who knows what would happen if they weren't!
      *
+     * @param session Connector session
      * @param schema Schema name
      * @param table Table name
      * @param queryParameters List of index query parameters
      * @param auths Scan-time authorizations for loading any cardinalities from Accumulo
      * @param earlyReturnThreshold Smallest acceptable cardinality to return early while other tasks complete. Use a negative value to disable early return.
-     * @param pollingDuration Duration for polling the cardinality completion service. Use a Duration of zero to disable polling.
      * @param metricsStorage Metrics storage for looking up the cardinality
      * @return An immutable multimap of cardinality to column constraint, sorted by cardinality from smallest to largest
      * @throws TableNotFoundException If the metrics table does not exist
      * @throws ExecutionException If another error occurs; I really don't even know anymore.
      */
     public Multimap<Long, IndexQueryParameters> getCardinalities(
+            ConnectorSession session,
             String schema,
             String table,
             Authorizations auths,
             List<IndexQueryParameters> queryParameters,
             long earlyReturnThreshold,
-            Duration pollingDuration,
             MetricsStorage metricsStorage)
             throws ExecutionException, TableNotFoundException
     {
@@ -122,8 +130,16 @@ public class ColumnCardinalityCache
         requireNonNull(table, "table is null");
         requireNonNull(queryParameters, "queryParameters is null");
         requireNonNull(auths, "auths is null");
-        requireNonNull(pollingDuration, "pollingDuration is null");
         requireNonNull(metricsStorage, "metricsStorage is null");
+
+        Duration pollingDuration;
+        if (isIndexShortCircuitEnabled(session)) {
+            pollingDuration = getIndexCardinalityCachePollingDuration(session);
+        }
+        else {
+            earlyReturnThreshold = 0;
+            pollingDuration = new Duration(0, MILLISECONDS);
+        }
 
         if (queryParameters.isEmpty()) {
             return ImmutableMultimap.of();
@@ -136,7 +152,7 @@ public class ColumnCardinalityCache
         queryParameters.forEach(queryParameter ->
                 executor.submit(() -> {
                             long start = System.currentTimeMillis();
-                            long cardinality = getColumnCardinality(schema, table, auths, queryParameter);
+                            long cardinality = getColumnCardinality(session, schema, table, auths, queryParameter);
                             LOG.debug("Cardinality for column %s is %s, took %s ms", queryParameter.getIndexColumn(), cardinality, System.currentTimeMillis() - start);
                             return Pair.of(cardinality, queryParameter);
                         }
@@ -190,13 +206,14 @@ public class ColumnCardinalityCache
      * Gets the column cardinality for all of the given range values. May reach out to the
      * metrics table in Accumulo to retrieve new cache elements.
      *
+     * @param session Connector session
      * @param schema Table schema
      * @param table Table name
      * @param auths Scan-time authorizations for loading any cardinalities from Accumulo
      * @param queryParameters Parameters to use for the column cardinality
      * @return The cardinality of the column
      */
-    private long getColumnCardinality(String schema, String table, Authorizations auths, IndexQueryParameters queryParameters)
+    private long getColumnCardinality(ConnectorSession session, String schema, String table, Authorizations auths, IndexQueryParameters queryParameters)
             throws ExecutionException
     {
         LOG.debug("Getting cardinality for " + queryParameters.getIndexColumn());
@@ -205,39 +222,50 @@ public class ColumnCardinalityCache
         CompletionService<Long> executor = new ExecutorCompletionService<>(executorService);
         for (Entry<Text, Collection<Range>> metricParamEntry : queryParameters.getMetricParameters().asMap().entrySet()) {
             tasks.add(executor.submit(() -> {
-                // Collect all exact Accumulo Ranges, i.e. single value entries vs. a full scan
-                List<MetricCacheKey> exactRanges = new ArrayList<>();
-                List<MetricCacheKey> nonExactRanges = new ArrayList<>();
-                metricParamEntry.getValue()
-                        .forEach(range -> {
-                            MetricCacheKey key = new MetricCacheKey(schema, table, metricParamEntry.getKey(), auths, range);
-                            if (isExact(range)) {
-                                exactRanges.add(key);
-                            }
-                            else {
-                                nonExactRanges.add(key);
-                            }
-                        });
-
-                // Sum the cardinalities for the exact-value Ranges
-                // This is where the reach-out to Accumulo occurs for all Ranges that have not
-                // previously been fetched
-                long sum = 0;
-                if (exactRanges.size() == 1) {
-                    sum = cache.get(exactRanges.get(0));
-                }
-                else {
-                    for (Long value : cache.getAll(exactRanges).values()) {
-                        sum += value;
+                Optional<TraceScope> cardinalityTrace = Optional.empty();
+                try {
+                    if (isTracingEnabled(session)) {
+                        String traceName = String.format("%s:%s_metrics:ColumnCardinalityCache:%s", session.getQueryId(), getIndexTableName(schema, table), metricParamEntry.getKey());
+                        cardinalityTrace = Optional.of(startSpan(traceName, Sampler.ALWAYS));
                     }
-                }
 
-                // for each non-exact range, use the single-value get
-                for (MetricCacheKey key : nonExactRanges) {
-                    sum += cache.get(key);
-                }
+                    // Collect all exact Accumulo Ranges, i.e. single value entries vs. a full scan
+                    List<MetricCacheKey> exactRanges = new ArrayList<>();
+                    List<MetricCacheKey> nonExactRanges = new ArrayList<>();
+                    metricParamEntry.getValue()
+                            .forEach(range -> {
+                                MetricCacheKey key = new MetricCacheKey(schema, table, metricParamEntry.getKey(), auths, range);
+                                if (isExact(range)) {
+                                    exactRanges.add(key);
+                                }
+                                else {
+                                    nonExactRanges.add(key);
+                                }
+                            });
 
-                return sum;
+                    // Sum the cardinalities for the exact-value Ranges
+                    // This is where the reach-out to Accumulo occurs for all Ranges that have not
+                    // previously been fetched
+                    long sum = 0;
+                    if (exactRanges.size() == 1) {
+                        sum = cache.get(exactRanges.get(0));
+                    }
+                    else {
+                        for (Long value : cache.getAll(exactRanges).values()) {
+                            sum += value;
+                        }
+                    }
+
+                    // for each non-exact range, use the single-value get
+                    for (MetricCacheKey key : nonExactRanges) {
+                        sum += cache.get(key);
+                    }
+
+                    return sum;
+                }
+                finally {
+                    cardinalityTrace.ifPresent(TraceScope::close);
+                }
             }));
         }
 

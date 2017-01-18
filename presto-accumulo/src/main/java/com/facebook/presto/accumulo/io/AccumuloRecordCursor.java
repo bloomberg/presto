@@ -33,11 +33,15 @@ import org.apache.accumulo.core.iterators.FirstEntryInRowIterator;
 import org.apache.accumulo.core.iterators.user.WholeRowIterator;
 import org.apache.commons.lang.StringUtils;
 import org.apache.hadoop.io.Text;
+import org.apache.htrace.Sampler;
+import org.apache.htrace.Trace;
+import org.apache.htrace.TraceScope;
 
 import java.io.IOException;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map.Entry;
+import java.util.Optional;
 
 import static com.facebook.presto.accumulo.AccumuloErrorCode.IO_ERROR;
 import static com.facebook.presto.accumulo.io.PrestoBatchWriter.ROW_ID_COLUMN;
@@ -79,13 +83,15 @@ public class AccumuloRecordCursor
     private long bytesRead;
     private long nanoStart;
     private long nanoEnd;
+    private Optional<TraceScope> scanTrace = Optional.empty();
 
     public AccumuloRecordCursor(
             AccumuloRowSerializer serializer,
             BatchScanner scanner,
             String rowIdName,
             List<AccumuloColumnHandle> columnHandles,
-            List<AccumuloColumnConstraint> constraints)
+            List<AccumuloColumnConstraint> constraints,
+            Optional<String> traceName)
     {
         this.columnHandles = requireNonNull(columnHandles, "columnHandles is null");
         this.scanner = requireNonNull(scanner, "scanner is null");
@@ -135,6 +141,7 @@ public class AccumuloRecordCursor
         }
 
         IteratorSetting setting = new IteratorSetting(WHOLE_ROW_ITERATOR_PRIORITY, WholeRowIterator.class);
+        traceName.ifPresent(name -> scanTrace = Optional.of(Trace.startSpan(name, Sampler.ALWAYS)));
         scanner.addScanIterator(setting);
 
         iterator = this.scanner.iterator();
@@ -283,6 +290,7 @@ public class AccumuloRecordCursor
         scanner.close();
         nanoEnd = System.nanoTime();
         LOG.debug("Retrieving %d bytes took %s ms", getCompletedBytes(), getReadTimeNanos() / 1000000);
+        scanTrace.ifPresent(TraceScope::close);
     }
 
     /**
