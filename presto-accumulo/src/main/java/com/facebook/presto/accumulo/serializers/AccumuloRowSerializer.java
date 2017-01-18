@@ -17,6 +17,7 @@ import com.facebook.presto.accumulo.Types;
 import com.facebook.presto.spi.block.Block;
 import com.facebook.presto.spi.block.BlockBuilder;
 import com.facebook.presto.spi.block.BlockBuilderStatus;
+import com.facebook.presto.spi.block.RowBlockBuilder;
 import com.facebook.presto.spi.type.Type;
 import com.facebook.presto.spi.type.TypeUtils;
 import com.facebook.presto.spi.type.VarcharType;
@@ -563,7 +564,13 @@ public interface AccumuloRowSerializer
         Iterator<Type> typeIter = rowType.getTypeParameters().iterator();
         List<Object> row = new ArrayList<>();
         for (int i = 0; i < block.getPositionCount(); ++i) {
-            row.add(readObject(typeIter.next(), block, i));
+            Type type = typeIter.next();
+            if (block.isNull(i)) {
+                row.add(null);
+            }
+            else {
+                row.add(readObject(type, block, i));
+            }
         }
         return row;
     }
@@ -619,13 +626,27 @@ public interface AccumuloRowSerializer
     {
         checkArgument(fields.size() == rowType.getTypeParameters().size(), "Number of fields does not match number of type parameters");
 
-        BlockBuilder builder = new InterleavedBlockBuilder(rowType.getTypeParameters(), new BlockBuilderStatus(), fields.size());
-        Iterator<Type> typeIter = rowType.getTypeParameters().iterator();
-        for (Object field : fields) {
-            writeObject(builder, typeIter.next(), field);
+        if (fields.size() == 8) {
+            System.out.println(String.format("getBlockFromRow %s", fields));
         }
 
-        return builder.build();
+        BlockBuilder rowBlockBuilder = new RowBlockBuilder(rowType.getTypeParameters(), new BlockBuilderStatus(), 1);
+
+        Iterator<Type> typeIter = rowType.getTypeParameters().iterator();
+        BlockBuilder singleRowBlockWriter = rowBlockBuilder.beginBlockEntry();
+        for (Object field : fields) {
+            Type fieldType = typeIter.next();
+            if (field == null) {
+                singleRowBlockWriter.appendNull();
+            }
+            else {
+                writeObject(singleRowBlockWriter, fieldType, field);
+            }
+        }
+
+        rowBlockBuilder.closeEntry();
+
+        return rowBlockBuilder.build().getObject(0, Block.class);
     }
 
     /**
@@ -658,9 +679,22 @@ public interface AccumuloRowSerializer
         else if (Types.isRowType(type)) {
             BlockBuilder rowBlockBuilder = builder.beginBlockEntry();
             Iterator<Type> typeIter = type.getTypeParameters().iterator();
-            for (Object field : (List) obj) {
-                writeObject(rowBlockBuilder, typeIter.next(), field);
+
+            if (((List) obj).size() == 8) {
+                System.out.println(String.format("writeObject %s", obj));
             }
+            for (Object field : (List) obj) {
+                Type fieldType = typeIter.next();
+                if (field == null) {
+                    rowBlockBuilder.appendNull();
+                }
+                else {
+                    writeObject(rowBlockBuilder, fieldType, field);
+                }
+            }
+
+            //rowBlockBuilder.closeEntry();
+
             builder.closeEntry();
         }
         else {

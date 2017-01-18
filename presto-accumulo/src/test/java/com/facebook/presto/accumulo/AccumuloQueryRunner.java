@@ -14,7 +14,6 @@
 package com.facebook.presto.accumulo;
 
 import com.facebook.presto.Session;
-import com.facebook.presto.accumulo.conf.AccumuloConfig;
 import com.facebook.presto.accumulo.serializers.LexicoderRowSerializer;
 import com.facebook.presto.metadata.QualifiedObjectName;
 import com.facebook.presto.spi.PrestoException;
@@ -32,6 +31,7 @@ import org.apache.accumulo.core.client.Instance;
 import org.apache.accumulo.core.client.ZooKeeperInstance;
 import org.apache.accumulo.core.client.security.tokens.PasswordToken;
 import org.apache.accumulo.minicluster.MiniAccumuloCluster;
+import org.apache.accumulo.minicluster.MiniAccumuloConfig;
 import org.apache.commons.io.FileUtils;
 import org.apache.hadoop.io.Text;
 import org.intellij.lang.annotations.Language;
@@ -43,13 +43,18 @@ import java.util.Map;
 
 import static com.facebook.presto.accumulo.AccumuloErrorCode.MINI_ACCUMULO;
 import static com.facebook.presto.accumulo.AccumuloErrorCode.UNEXPECTED_ACCUMULO_ERROR;
+import static com.facebook.presto.accumulo.conf.AccumuloConfig.INSTANCE;
+import static com.facebook.presto.accumulo.conf.AccumuloConfig.PASSWORD;
+import static com.facebook.presto.accumulo.conf.AccumuloConfig.USERNAME;
+import static com.facebook.presto.accumulo.conf.AccumuloConfig.ZOOKEEPERS;
+import static com.facebook.presto.accumulo.conf.AccumuloConfig.ZOOKEEPER_METADATA_ROOT;
 import static com.facebook.presto.spi.type.BigintType.BIGINT;
 import static com.facebook.presto.testing.TestingSession.testSessionBuilder;
 import static com.facebook.presto.tpch.TpchMetadata.TINY_SCHEMA_NAME;
 import static io.airlift.units.Duration.nanosSince;
 import static java.lang.String.format;
 import static java.util.concurrent.TimeUnit.SECONDS;
-import static org.apache.accumulo.minicluster.MemoryUnit.MEGABYTE;
+import static org.apache.accumulo.minicluster.MemoryUnit.GIGABYTE;
 
 public final class AccumuloQueryRunner
 {
@@ -65,8 +70,14 @@ public final class AccumuloQueryRunner
     public static synchronized DistributedQueryRunner createAccumuloQueryRunner(Map<String, String> extraProperties)
             throws Exception
     {
-        DistributedQueryRunner queryRunner =
-                new DistributedQueryRunner(createSession(), 4, extraProperties);
+        ImmutableMap.Builder<String, String> extraPropertiesBuilder = ImmutableMap.builder();
+        extraPropertiesBuilder.putAll(extraProperties);
+        extraPropertiesBuilder.put(INSTANCE, connector.getInstance().getInstanceName());
+        extraPropertiesBuilder.put(ZOOKEEPERS, connector.getInstance().getZooKeepers());
+        extraPropertiesBuilder.put(USERNAME, MAC_USER);
+        extraPropertiesBuilder.put(PASSWORD, MAC_PASSWORD);
+
+        DistributedQueryRunner queryRunner = new DistributedQueryRunner(createSession(), 4, extraProperties);
 
         queryRunner.installPlugin(new TpchPlugin());
         queryRunner.createCatalog("tpch", "tpch");
@@ -74,11 +85,11 @@ public final class AccumuloQueryRunner
         queryRunner.installPlugin(new AccumuloPlugin());
         Map<String, String> accumuloProperties =
                 ImmutableMap.<String, String>builder()
-                        .put(AccumuloConfig.INSTANCE, connector.getInstance().getInstanceName())
-                        .put(AccumuloConfig.ZOOKEEPERS, connector.getInstance().getZooKeepers())
-                        .put(AccumuloConfig.USERNAME, MAC_USER)
-                        .put(AccumuloConfig.PASSWORD, MAC_PASSWORD)
-                        .put(AccumuloConfig.ZOOKEEPER_METADATA_ROOT, "/presto-accumulo-test")
+                        .put(INSTANCE, connector.getInstance().getInstanceName())
+                        .put(ZOOKEEPERS, connector.getInstance().getZooKeepers())
+                        .put(USERNAME, MAC_USER)
+                        .put(PASSWORD, MAC_PASSWORD)
+                        .put(ZOOKEEPER_METADATA_ROOT, "/presto-accumulo-test")
                         .build();
 
         queryRunner.createCatalog("accumulo", "accumulo", accumuloProperties);
@@ -191,9 +202,12 @@ public final class AccumuloQueryRunner
         File macDir = Files.createTempDirectory("mac-").toFile();
         LOG.info("MAC is enabled, starting MiniAccumuloCluster at %s", macDir);
 
+        MiniAccumuloConfig config = new MiniAccumuloConfig(macDir, MAC_PASSWORD);
+        config.setZooKeeperPort(21810);
+        config.setDefaultMemory(2, GIGABYTE);
+
         // Start MAC and connect to it
-        MiniAccumuloCluster accumulo = new MiniAccumuloCluster(macDir, MAC_PASSWORD);
-        accumulo.getConfig().setDefaultMemory(512, MEGABYTE);
+        MiniAccumuloCluster accumulo = new MiniAccumuloCluster(config);
         accumulo.start();
 
         // Add shutdown hook to stop MAC and cleanup temporary files

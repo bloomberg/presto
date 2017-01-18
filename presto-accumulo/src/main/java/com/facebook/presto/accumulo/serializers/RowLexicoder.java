@@ -60,6 +60,10 @@ public class RowLexicoder
             v = (List) value;
         }
 
+        if (v.size() == 8) {
+            System.out.println(String.format("encode: %s", v));
+        }
+
         byte[] nullElements = new byte[v.size()];
         for (int i = 0; i < v.size(); ++i) {
             nullElements[i] = v.get(i) == null ? (byte) 1 : 0;
@@ -103,6 +107,7 @@ public class RowLexicoder
 
         byte[] nullElements = unescape(escapedElements[0]);
         Iterator<Lexicoder> iterator = lexicoders.iterator();
+
         for (int i = 1; i < escapedElements.length; ++i) {
             Lexicoder lexicoder = iterator.next();
             if (nullElements[i - 1] == 0) {
@@ -111,6 +116,10 @@ public class RowLexicoder
             else {
                 ret.add(null);
             }
+        }
+
+        if (lexicoders.size() == 8) {
+            System.out.println(String.format("decode: %s", ret));
         }
 
         return ret;
