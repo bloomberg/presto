@@ -35,10 +35,12 @@ import io.airlift.json.JsonCodec;
 import io.airlift.log.Logger;
 import org.apache.accumulo.core.client.AccumuloException;
 import org.apache.accumulo.core.client.AccumuloSecurityException;
+import org.apache.accumulo.core.client.ClientConfiguration;
 import org.apache.accumulo.core.client.Connector;
 import org.apache.accumulo.core.client.Instance;
 import org.apache.accumulo.core.client.ZooKeeperInstance;
 import org.apache.accumulo.core.client.security.tokens.PasswordToken;
+import org.apache.accumulo.core.trace.DistributedTrace;
 import org.apache.log4j.JulAppender;
 import org.apache.log4j.Level;
 import org.apache.log4j.PatternLayout;
@@ -150,6 +152,8 @@ public class AccumuloModule
             this.zooKeepers = config.getZooKeepers();
             this.username = config.getUsername();
             this.password = config.getPassword();
+
+            DistributedTrace.enable(null, "presto-accumulo", ClientConfiguration.loadDefault().withInstance(instance).withZkHosts(zooKeepers));
         }
 
         @Override

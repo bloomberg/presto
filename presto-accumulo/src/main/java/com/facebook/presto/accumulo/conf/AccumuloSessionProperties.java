@@ -53,6 +53,7 @@ public final class AccumuloSessionProperties
     private static final String MIN_ROWS_PER_SPLIT = "min_rows_per_split";
     private static final String MAX_ROWS_PER_SPLIT = "max_rows_per_split";
     private static final String SPLITS_PER_WORKER = "splits_per_worker";
+    private static final String TRACING_ENABLED = "tracing_enabled";
 
     private final List<PropertyMetadata<?>> sessionProperties;
 
@@ -148,7 +149,13 @@ public final class AccumuloSessionProperties
                 Math.max(Runtime.getRuntime().availableProcessors() * 2 / 10, 1),
                 false);
 
-        sessionProperties = ImmutableList.of(s1, s2, s3, s4, s5, s6, s7, s8, s9, s10, s11, s12, s13, s14, s15);
+        PropertyMetadata<Boolean> s16 = booleanSessionProperty(
+                TRACING_ENABLED,
+                "True to enable Accumulo tracing on scan. Default false.",
+                false,
+                false);
+
+        sessionProperties = ImmutableList.of(s1, s2, s3, s4, s5, s6, s7, s8, s9, s10, s11, s12, s13, s14, s15, s16);
     }
 
     public List<PropertyMetadata<?>> getSessionProperties()
@@ -267,5 +274,10 @@ public final class AccumuloSessionProperties
     public static int getSplitsPerWorker(ConnectorSession session)
     {
         return session.getProperty(SPLITS_PER_WORKER, Integer.class);
+    }
+
+    public static boolean isTracingEnabled(ConnectorSession session)
+    {
+        return session.getProperty(TRACING_ENABLED, Boolean.class);
     }
 }

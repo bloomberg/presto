@@ -37,6 +37,7 @@ import java.util.List;
 import java.util.Optional;
 
 import static com.facebook.presto.accumulo.AccumuloErrorCode.UNEXPECTED_ACCUMULO_ERROR;
+import static com.facebook.presto.accumulo.conf.AccumuloSessionProperties.isTracingEnabled;
 import static com.facebook.presto.spi.StandardErrorCode.NOT_FOUND;
 import static java.lang.String.format;
 import static java.util.Objects.requireNonNull;
@@ -59,6 +60,8 @@ public class AccumuloRecordSet
     private final AccumuloRowSerializer serializer;
     private final BatchScanner scanner;
     private final String rowIdName;
+
+    private Optional<String> traceName = Optional.empty();
 
     public AccumuloRecordSet(
             Connector connector,
@@ -89,6 +92,10 @@ public class AccumuloRecordSet
             types.add(column.getType());
         }
         this.columnTypes = types.build();
+
+        if (isTracingEnabled(session)) {
+            traceName = Optional.of(format("%s:%s:AccumuloRecordCursor:%s", session.getQueryId(), split.getFullTableName(), split.getRanges().size()));
+        }
 
         try {
             // Create the BatchScanner and set the ranges from the split
@@ -145,6 +152,6 @@ public class AccumuloRecordSet
     @Override
     public RecordCursor cursor()
     {
-        return new AccumuloRecordCursor(serializer, scanner, rowIdName, columnHandles, constraints);
+        return new AccumuloRecordCursor(serializer, scanner, rowIdName, columnHandles, constraints, traceName);
     }
 }

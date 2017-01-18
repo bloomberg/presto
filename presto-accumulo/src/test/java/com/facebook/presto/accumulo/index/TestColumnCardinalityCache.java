@@ -17,6 +17,7 @@ import com.facebook.presto.accumulo.AccumuloClient;
 import com.facebook.presto.accumulo.AccumuloQueryRunner;
 import com.facebook.presto.accumulo.AccumuloTableManager;
 import com.facebook.presto.accumulo.conf.AccumuloConfig;
+import com.facebook.presto.accumulo.conf.AccumuloSessionProperties;
 import com.facebook.presto.accumulo.conf.AccumuloTableProperties;
 import com.facebook.presto.accumulo.index.metrics.MetricsStorage;
 import com.facebook.presto.accumulo.index.metrics.MetricsWriter;
@@ -29,11 +30,15 @@ import com.facebook.presto.accumulo.model.RowSchema;
 import com.facebook.presto.accumulo.serializers.AccumuloRowSerializer;
 import com.facebook.presto.accumulo.serializers.LexicoderRowSerializer;
 import com.facebook.presto.spi.ColumnMetadata;
+import com.facebook.presto.spi.ConnectorSession;
 import com.facebook.presto.spi.ConnectorTableMetadata;
 import com.facebook.presto.spi.SchemaTableName;
 import com.facebook.presto.spi.predicate.Domain;
 import com.facebook.presto.spi.predicate.Range;
 import com.facebook.presto.spi.predicate.ValueSet;
+import com.facebook.presto.spi.session.PropertyMetadata;
+import com.facebook.presto.spi.type.VarcharType;
+import com.facebook.presto.testing.TestingConnectorSession;
 import com.facebook.presto.testing.TestingNodeManager;
 import com.facebook.presto.type.TypeRegistry;
 import com.google.common.collect.ImmutableList;
@@ -56,6 +61,7 @@ import org.joda.time.format.ISODateTimeFormat;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.Test;
 
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -86,9 +92,30 @@ public class TestColumnCardinalityCache
     private static final List<IndexQueryParameters> EMPTY_INDEX_QUERY_PARAMETERS = ImmutableList.of();
     private static final Authorizations AUTHS = new Authorizations();
     private static final long EARLY_RETURN_THRESHOLD = 1000;
-    private static final Duration POLLING_DURATION = new Duration(1, TimeUnit.SECONDS);
     private static final AccumuloRowSerializer SERIALIZER = new LexicoderRowSerializer();
     private static final DateTimeFormatter DATE_FORMATTER = ISODateTimeFormat.date();
+    private static final ConnectorSession SESSION;
+
+    static {
+        List<PropertyMetadata<?>> properties = new ArrayList<>();
+        new AccumuloSessionProperties().getSessionProperties().forEach(property -> {
+            if (property.getName().equals("index_cardinality_cache_polling_duration")) {
+                properties.add(new PropertyMetadata<>(
+                        "index_cardinality_cache_polling_duration",
+                        "Sets the cardinality cache polling duration for short circuit retrieval of index metrics. Default 10ms",
+                        VarcharType.VARCHAR, String.class,
+                        "1s",
+                        false,
+                        x -> Duration.valueOf(x.toString()).toString(),
+                        object -> object));
+            }
+            else {
+                properties.add(property);
+            }
+        });
+
+        SESSION = new TestingConnectorSession(ImmutableList.copyOf(properties));
+    }
 
     private AccumuloClient client;
     private Connector connector;
@@ -186,7 +213,7 @@ public class TestColumnCardinalityCache
             throws Exception
     {
         ColumnCardinalityCache cache = new ColumnCardinalityCache(CONFIG.getCardinalityCacheSize(), CONFIG.getCardinalityCacheExpiration());
-        cache.getCardinalities(null, TABLE, EMPTY_INDEX_QUERY_PARAMETERS, AUTHS, EARLY_RETURN_THRESHOLD, POLLING_DURATION, storage);
+        cache.getCardinalities(SESSION, null, TABLE, EMPTY_INDEX_QUERY_PARAMETERS, AUTHS, EARLY_RETURN_THRESHOLD, storage);
     }
 
     @Test(expectedExceptions = NullPointerException.class)
@@ -194,7 +221,7 @@ public class TestColumnCardinalityCache
             throws Exception
     {
         ColumnCardinalityCache cache = new ColumnCardinalityCache(CONFIG.getCardinalityCacheSize(), CONFIG.getCardinalityCacheExpiration());
-        cache.getCardinalities(SCHEMA, null, EMPTY_INDEX_QUERY_PARAMETERS, AUTHS, EARLY_RETURN_THRESHOLD, POLLING_DURATION, storage);
+        cache.getCardinalities(SESSION, SCHEMA, null, EMPTY_INDEX_QUERY_PARAMETERS, AUTHS, EARLY_RETURN_THRESHOLD, storage);
     }
 
     @Test(expectedExceptions = NullPointerException.class)
@@ -202,7 +229,7 @@ public class TestColumnCardinalityCache
             throws Exception
     {
         ColumnCardinalityCache cache = new ColumnCardinalityCache(CONFIG.getCardinalityCacheSize(), CONFIG.getCardinalityCacheExpiration());
-        cache.getCardinalities(SCHEMA, TABLE, null, AUTHS, EARLY_RETURN_THRESHOLD, POLLING_DURATION, storage);
+        cache.getCardinalities(SESSION, SCHEMA, TABLE, null, AUTHS, EARLY_RETURN_THRESHOLD, storage);
     }
 
     @Test
@@ -210,7 +237,7 @@ public class TestColumnCardinalityCache
             throws Exception
     {
         ColumnCardinalityCache cache = new ColumnCardinalityCache(CONFIG.getCardinalityCacheSize(), CONFIG.getCardinalityCacheExpiration());
-        Multimap<Long, IndexQueryParameters> cardinalities = cache.getCardinalities(SCHEMA, TABLE, EMPTY_INDEX_QUERY_PARAMETERS, AUTHS, EARLY_RETURN_THRESHOLD, POLLING_DURATION, storage);
+        Multimap<Long, IndexQueryParameters> cardinalities = cache.getCardinalities(SESSION, SCHEMA, TABLE, EMPTY_INDEX_QUERY_PARAMETERS, AUTHS, EARLY_RETURN_THRESHOLD, storage);
         assertEquals(cardinalities.size(), 0);
     }
 
@@ -219,15 +246,7 @@ public class TestColumnCardinalityCache
             throws Exception
     {
         ColumnCardinalityCache cache = new ColumnCardinalityCache(CONFIG.getCardinalityCacheSize(), CONFIG.getCardinalityCacheExpiration());
-        cache.getCardinalities(SCHEMA, TABLE, EMPTY_INDEX_QUERY_PARAMETERS, null, EARLY_RETURN_THRESHOLD, POLLING_DURATION, storage);
-    }
-
-    @Test(expectedExceptions = NullPointerException.class)
-    public void testNullPollingDuration()
-            throws Exception
-    {
-        ColumnCardinalityCache cache = new ColumnCardinalityCache(CONFIG.getCardinalityCacheSize(), CONFIG.getCardinalityCacheExpiration());
-        cache.getCardinalities(SCHEMA, TABLE, EMPTY_INDEX_QUERY_PARAMETERS, AUTHS, EARLY_RETURN_THRESHOLD, null, storage);
+        cache.getCardinalities(SESSION, SCHEMA, TABLE, EMPTY_INDEX_QUERY_PARAMETERS, null, EARLY_RETURN_THRESHOLD, storage);
     }
 
     @Test(expectedExceptions = NullPointerException.class)
@@ -235,7 +254,7 @@ public class TestColumnCardinalityCache
             throws Exception
     {
         ColumnCardinalityCache cache = new ColumnCardinalityCache(CONFIG.getCardinalityCacheSize(), CONFIG.getCardinalityCacheExpiration());
-        cache.getCardinalities(SCHEMA, TABLE, EMPTY_INDEX_QUERY_PARAMETERS, AUTHS, EARLY_RETURN_THRESHOLD, POLLING_DURATION, null);
+        cache.getCardinalities(SESSION, SCHEMA, TABLE, EMPTY_INDEX_QUERY_PARAMETERS, AUTHS, EARLY_RETURN_THRESHOLD, null);
     }
 
     @Test
@@ -246,7 +265,7 @@ public class TestColumnCardinalityCache
         Range range = Range.equal(DATE, tld("1998-01-01"));
         List<IndexQueryParameters> queryParameters = ImmutableList.of(iqp("receiptdate_receiptdate", Domain.create(ValueSet.ofRanges(range), false)));
 
-        Multimap<Long, IndexQueryParameters> cardinalities = cache.getCardinalities(SCHEMA, TABLE, queryParameters, AUTHS, EARLY_RETURN_THRESHOLD, POLLING_DURATION, storage);
+        Multimap<Long, IndexQueryParameters> cardinalities = cache.getCardinalities(SESSION, SCHEMA, TABLE, queryParameters, AUTHS, EARLY_RETURN_THRESHOLD, storage);
         assertEquals(cardinalities.size(), 1);
 
         Collection<IndexQueryParameters> card = cardinalities.get(29L);
@@ -264,7 +283,7 @@ public class TestColumnCardinalityCache
         Range range2 = Range.equal(DATE, tld("1998-01-02"));
         List<IndexQueryParameters> queryParameters = ImmutableList.of(iqp("receiptdate_receiptdate", Domain.create(ValueSet.ofRanges(range1, range2), false)));
 
-        Multimap<Long, IndexQueryParameters> cardinalities = cache.getCardinalities(SCHEMA, TABLE, queryParameters, AUTHS, EARLY_RETURN_THRESHOLD, POLLING_DURATION, storage);
+        Multimap<Long, IndexQueryParameters> cardinalities = cache.getCardinalities(SESSION, SCHEMA, TABLE, queryParameters, AUTHS, EARLY_RETURN_THRESHOLD, storage);
         assertEquals(cardinalities.size(), 1);
 
         Collection<IndexQueryParameters> card = cardinalities.get(50L);
@@ -281,7 +300,7 @@ public class TestColumnCardinalityCache
         Range range = Range.range(DATE, tld("1998-01-01"), false, tld("1998-01-03"), false);
         List<IndexQueryParameters> queryParameters = ImmutableList.of(iqp("receiptdate_receiptdate", Domain.create(ValueSet.ofRanges(range), false)));
 
-        Multimap<Long, IndexQueryParameters> cardinalities = cache.getCardinalities(SCHEMA, TABLE, queryParameters, AUTHS, EARLY_RETURN_THRESHOLD, POLLING_DURATION, storage);
+        Multimap<Long, IndexQueryParameters> cardinalities = cache.getCardinalities(SESSION, SCHEMA, TABLE, queryParameters, AUTHS, EARLY_RETURN_THRESHOLD, storage);
         assertEquals(cardinalities.size(), 1);
 
         Collection<IndexQueryParameters> card = cardinalities.get(21L);
@@ -299,7 +318,7 @@ public class TestColumnCardinalityCache
         Range range2 = Range.range(DATE, tld("1998-01-10"), true, tld("1998-01-13"), true);
         List<IndexQueryParameters> queryParameters = ImmutableList.of(iqp("receiptdate_receiptdate", Domain.create(ValueSet.ofRanges(range1, range2), false)));
 
-        Multimap<Long, IndexQueryParameters> cardinalities = cache.getCardinalities(SCHEMA, TABLE, queryParameters, AUTHS, EARLY_RETURN_THRESHOLD, POLLING_DURATION, storage);
+        Multimap<Long, IndexQueryParameters> cardinalities = cache.getCardinalities(SESSION, SCHEMA, TABLE, queryParameters, AUTHS, EARLY_RETURN_THRESHOLD, storage);
         assertEquals(cardinalities.size(), 1);
 
         Collection<IndexQueryParameters> card = cardinalities.get(127L);
@@ -320,7 +339,7 @@ public class TestColumnCardinalityCache
                         iqp("receiptdate_receiptdate", Domain.create(ValueSet.ofRanges(rdRange), false)),
                         iqp("linenumber_linenumber", Domain.create(ValueSet.ofRanges(lnRange), false)));
 
-        Multimap<Long, IndexQueryParameters> cardinalities = cache.getCardinalities(SCHEMA, TABLE, queryParameters, AUTHS, EARLY_RETURN_THRESHOLD, POLLING_DURATION, storage);
+        Multimap<Long, IndexQueryParameters> cardinalities = cache.getCardinalities(SESSION, SCHEMA, TABLE, queryParameters, AUTHS, EARLY_RETURN_THRESHOLD, storage);
         assertEquals(cardinalities.size(), 2);
 
         Iterator<Entry<Long, Collection<IndexQueryParameters>>> iterator = cardinalities.asMap().entrySet().iterator();
@@ -353,7 +372,7 @@ public class TestColumnCardinalityCache
                         iqp("receiptdate_receiptdate", Domain.create(ValueSet.ofRanges(rdRange1, rdRange2), false)),
                         iqp("linenumber_linenumber", Domain.create(ValueSet.ofRanges(lnRange1, lnRange2), false)));
 
-        Multimap<Long, IndexQueryParameters> cardinalities = cache.getCardinalities(SCHEMA, TABLE, queryParameters, AUTHS, EARLY_RETURN_THRESHOLD, POLLING_DURATION, storage);
+        Multimap<Long, IndexQueryParameters> cardinalities = cache.getCardinalities(SESSION, SCHEMA, TABLE, queryParameters, AUTHS, EARLY_RETURN_THRESHOLD, storage);
         assertEquals(cardinalities.size(), 2);
 
         Iterator<Entry<Long, Collection<IndexQueryParameters>>> iterator = cardinalities.asMap().entrySet().iterator();
@@ -384,7 +403,7 @@ public class TestColumnCardinalityCache
                         iqp("receiptdate_receiptdate", Domain.create(ValueSet.ofRanges(rdRange), false)),
                         iqp("linenumber_linenumber", Domain.create(ValueSet.ofRanges(lnRange), false)));
 
-        Multimap<Long, IndexQueryParameters> cardinalities = cache.getCardinalities(SCHEMA, TABLE, queryParameters, AUTHS, EARLY_RETURN_THRESHOLD, POLLING_DURATION, storage);
+        Multimap<Long, IndexQueryParameters> cardinalities = cache.getCardinalities(SESSION, SCHEMA, TABLE, queryParameters, AUTHS, EARLY_RETURN_THRESHOLD, storage);
         assertEquals(cardinalities.size(), 2);
 
         Iterator<Entry<Long, Collection<IndexQueryParameters>>> iterator = cardinalities.asMap().entrySet().iterator();
@@ -417,7 +436,7 @@ public class TestColumnCardinalityCache
                         iqp("receiptdate_receiptdate", Domain.create(ValueSet.ofRanges(rdRange1, rdRange2), false)),
                         iqp("linenumber_linenumber", Domain.create(ValueSet.ofRanges(lnRange1, lnRange2), false)));
 
-        Multimap<Long, IndexQueryParameters> cardinalities = cache.getCardinalities(SCHEMA, TABLE, queryParameters, AUTHS, EARLY_RETURN_THRESHOLD, POLLING_DURATION, storage);
+        Multimap<Long, IndexQueryParameters> cardinalities = cache.getCardinalities(SESSION, SCHEMA, TABLE, queryParameters, AUTHS, EARLY_RETURN_THRESHOLD, storage);
         assertEquals(cardinalities.size(), 2);
 
         Iterator<Entry<Long, Collection<IndexQueryParameters>>> iterator = cardinalities.asMap().entrySet().iterator();
@@ -448,7 +467,7 @@ public class TestColumnCardinalityCache
                         iqp("receiptdate_receiptdate", Domain.create(ValueSet.ofRanges(rdRange), false)),
                         iqp("linenumber_linenumber", Domain.create(ValueSet.ofRanges(lnRange), false)));
 
-        Multimap<Long, IndexQueryParameters> cardinalities = cache.getCardinalities(SCHEMA, TABLE, queryParameters, AUTHS, EARLY_RETURN_THRESHOLD, POLLING_DURATION, storage);
+        Multimap<Long, IndexQueryParameters> cardinalities = cache.getCardinalities(SESSION, SCHEMA, TABLE, queryParameters, AUTHS, EARLY_RETURN_THRESHOLD, storage);
         assertEquals(cardinalities.size(), 2);
 
         Iterator<Entry<Long, Collection<IndexQueryParameters>>> iterator = cardinalities.asMap().entrySet().iterator();
@@ -510,7 +529,7 @@ public class TestColumnCardinalityCache
 
         List<IndexQueryParameters> queryParameters = ImmutableList.of(iqp("b_b", Domain.create(ValueSet.ofRanges(range), false)));
 
-        Multimap<Long, IndexQueryParameters> cardinalities = cache.getCardinalities(tableName.getSchemaName(), tableName.getTableName(), queryParameters, new Authorizations("private"), EARLY_RETURN_THRESHOLD, POLLING_DURATION, storage);
+        Multimap<Long, IndexQueryParameters> cardinalities = cache.getCardinalities(SESSION, tableName.getSchemaName(), tableName.getTableName(), queryParameters, new Authorizations("private"), EARLY_RETURN_THRESHOLD, storage);
         assertEquals(cardinalities.size(), 1);
 
         Iterator<Entry<Long, Collection<IndexQueryParameters>>> iterator = cardinalities.asMap().entrySet().iterator();
