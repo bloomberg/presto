@@ -19,6 +19,7 @@ import com.facebook.presto.spi.block.Block;
 import com.facebook.presto.spi.type.Type;
 import com.facebook.presto.spi.type.TypeSignature;
 import com.facebook.presto.spi.type.VarcharType;
+import com.google.common.collect.ImmutableList;
 import io.airlift.slice.Slice;
 import org.apache.accumulo.core.client.lexicoder.BytesLexicoder;
 import org.apache.accumulo.core.client.lexicoder.DoubleLexicoder;
@@ -63,6 +64,7 @@ public class LexicoderRowSerializer
     private static final Map<Type, Lexicoder> LEXICODER_MAP = new HashMap<>();
     private static final Map<TypeSignature, ListLexicoder<?>> LIST_LEXICODERS = new HashMap<>();
     private static final Map<TypeSignature, MapLexicoder<?, ?>> MAP_LEXICODERS = new HashMap<>();
+    private static final Map<TypeSignature, RowLexicoder> ROW_LEXICODERS = new HashMap<>();
 
     private final Map<String, Map<String, String>> familyQualifierColumnMap = new HashMap<>();
     private final Map<String, byte[]> columnValues = new HashMap<>();
@@ -107,11 +109,7 @@ public class LexicoderRowSerializer
     public void setMapping(String name, String family, String qualifier)
     {
         columnValues.put(name, null);
-        Map<String, String> qualifierToNameMap = familyQualifierColumnMap.get(family);
-        if (qualifierToNameMap == null) {
-            qualifierToNameMap = new HashMap<>();
-            familyQualifierColumnMap.put(family, qualifierToNameMap);
-        }
+        Map<String, String> qualifierToNameMap = familyQualifierColumnMap.computeIfAbsent(family, k -> new HashMap<>());
 
         qualifierToNameMap.put(qualifier, name);
     }
@@ -262,6 +260,18 @@ public class LexicoderRowSerializer
     }
 
     @Override
+    public Block getRow(String name, Type type)
+    {
+        return AccumuloRowSerializer.getBlockFromRow(type, decode(type, getFieldValue(name)));
+    }
+
+    @Override
+    public void setRow(Text text, Type type, Block block)
+    {
+        text.set(encode(type, block));
+    }
+
+    @Override
     public short getShort(String name)
     {
         return ((Long) decode(SMALLINT, getFieldValue(name))).shortValue();
@@ -336,6 +346,9 @@ public class LexicoderRowSerializer
         else if (Types.isMapType(type)) {
             toEncode = AccumuloRowSerializer.getMapFromBlock(type, (Block) value);
         }
+        else if (Types.isRowType(type)) {
+            toEncode = AccumuloRowSerializer.getRowFromBlock(type, (Block) value);
+        }
         else if (type.equals(BIGINT) && value instanceof Integer) {
             toEncode = ((Integer) value).longValue();
         }
@@ -387,6 +400,9 @@ public class LexicoderRowSerializer
         else if (Types.isMapType(type)) {
             return getMapLexicoder(type);
         }
+        else if (Types.isRowType(type)) {
+            return getRowLexicoder(type);
+        }
         else if (type instanceof VarcharType) {
             return LEXICODER_MAP.get(VARCHAR);
         }
@@ -401,23 +417,24 @@ public class LexicoderRowSerializer
 
     private static ListLexicoder getListLexicoder(Type elementType)
     {
-        ListLexicoder<?> listLexicoder = LIST_LEXICODERS.get(elementType.getTypeSignature());
-        if (listLexicoder == null) {
-            listLexicoder = new ListLexicoder(getLexicoder(Types.getElementType(elementType)));
-            LIST_LEXICODERS.put(elementType.getTypeSignature(), listLexicoder);
-        }
-        return listLexicoder;
+        return LIST_LEXICODERS.computeIfAbsent(elementType.getTypeSignature(), k -> new ListLexicoder(getLexicoder(Types.getElementType(elementType))));
     }
 
     private static MapLexicoder getMapLexicoder(Type type)
     {
-        MapLexicoder<?, ?> mapLexicoder = MAP_LEXICODERS.get(type.getTypeSignature());
-        if (mapLexicoder == null) {
-            mapLexicoder = new MapLexicoder(
-                    getLexicoder(Types.getKeyType(type)),
-                    getLexicoder(Types.getValueType(type)));
-            MAP_LEXICODERS.put(type.getTypeSignature(), mapLexicoder);
-        }
-        return mapLexicoder;
+        return MAP_LEXICODERS.computeIfAbsent(type.getTypeSignature(), k -> new MapLexicoder(
+                getLexicoder(Types.getKeyType(type)),
+                getLexicoder(Types.getValueType(type))));
+    }
+
+    private static RowLexicoder getRowLexicoder(Type type)
+    {
+        return ROW_LEXICODERS.computeIfAbsent(type.getTypeSignature(), k -> {
+            ImmutableList.Builder<Lexicoder> lexicoders = ImmutableList.builder();
+            for (Type fieldType : type.getTypeParameters()) {
+                lexicoders.add(getLexicoder(fieldType));
+            }
+            return new RowLexicoder(type, lexicoders.build());
+        });
     }
 }

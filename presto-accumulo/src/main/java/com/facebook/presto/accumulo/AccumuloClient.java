@@ -189,6 +189,15 @@ public class AccumuloClient
                     throw new PrestoException(INVALID_TABLE_PROPERTY, "Key/value types of a MAP column must be plain types");
                 }
             }
+            else if (Types.isRowType(column.getType())) {
+                if (column.getType().getTypeParameters().stream().filter(type -> Types.isArrayType(type) || Types.isRowType(type) || Types.isMapType(type)).count() > 0) {
+                    throw new PrestoException(INVALID_TABLE_PROPERTY, "Fields of a ROW type must be plain types");
+                }
+
+                if (table.getParsedIndexColumns().stream().flatMap(index -> index.getColumns().stream()).filter(name -> name.equals(column.getName())).count() > 0) {
+                    throw new PrestoException(INVALID_TABLE_PROPERTY, "Indexing not supported for ROW types");
+                }
+            }
 
             columnNameBuilder.add(column.getName().toLowerCase(Locale.ENGLISH));
         }

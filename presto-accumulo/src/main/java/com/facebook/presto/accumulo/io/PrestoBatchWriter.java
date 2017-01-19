@@ -573,6 +573,9 @@ public class PrestoBatchWriter
         else if (Types.isMapType(type)) {
             serializer.setMap(destination, type, (Block) fieldValue);
         }
+        else if (Types.isRowType(type)) {
+            serializer.setRow(destination, type, (Block) fieldValue);
+        }
         else {
             if (type.equals(BIGINT)) {
                 serializer.setLong(destination, (Long) fieldValue);

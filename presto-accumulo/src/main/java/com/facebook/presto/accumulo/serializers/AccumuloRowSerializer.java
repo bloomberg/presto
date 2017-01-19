@@ -22,6 +22,7 @@ import com.facebook.presto.spi.type.Type;
 import com.facebook.presto.spi.type.TypeUtils;
 import com.facebook.presto.spi.type.VarcharType;
 import com.google.common.collect.ImmutableList;
+import com.google.common.collect.ImmutableMap;
 import io.airlift.slice.Slice;
 import org.apache.accumulo.core.data.Key;
 import org.apache.accumulo.core.data.Value;
@@ -31,10 +32,13 @@ import java.io.IOException;
 import java.sql.Date;
 import java.sql.Time;
 import java.sql.Timestamp;
-import java.util.HashMap;
+import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
+
+import static com.google.common.base.Preconditions.checkArgument;
 
 /**
  * Interface for deserializing the data in Accumulo into a Presto row.
@@ -264,6 +268,24 @@ public interface AccumuloRowSerializer
      * @param block Map block
      */
     void setMap(Text text, Type type, Block block);
+
+    /**
+     * Gets the Row value of the given Presto column and Row type
+     *
+     * @param name Column name
+     * @param type Row type
+     * @return Row value
+     */
+    Block getRow(String name, Type type);
+
+    /**
+     * Encode the given row Block into the given Text object
+     *
+     * @param text Text object to set
+     * @param type Map type
+     * @param block Map block
+     */
+    void setRow(Text text, Type type, Block block);
 
     /**
      * Gets the Short value of the given Presto column.
@@ -519,13 +541,32 @@ public interface AccumuloRowSerializer
      */
     static Map<Object, Object> getMapFromBlock(Type type, Block block)
     {
-        Map<Object, Object> map = new HashMap<>(block.getPositionCount() / 2);
+        ImmutableMap.Builder<Object, Object> map = ImmutableMap.builder();
         Type keyType = Types.getKeyType(type);
         Type valueType = Types.getValueType(type);
         for (int i = 0; i < block.getPositionCount(); i += 2) {
             map.put(readObject(keyType, block, i), readObject(valueType, block, i + 1));
         }
-        return map;
+        return map.build();
+    }
+
+    /**
+     * Given the row type and Presto Block, decodes the Block into a list of values.
+     *
+     * @param rowType Row type
+     * @param block Array block
+     * @return List of values
+     */
+    static List<Object> getRowFromBlock(Type rowType, Block block)
+    {
+        checkArgument(block.getPositionCount() == rowType.getTypeParameters().size(), "Number of fields does not match number of type parameters");
+
+        Iterator<Type> typeIter = rowType.getTypeParameters().iterator();
+        List<Object> row = new ArrayList<>();
+        for (int i = 0; i < block.getPositionCount(); ++i) {
+            row.add(readObject(typeIter.next(), block, i));
+        }
+        return row;
     }
 
     /**
@@ -566,6 +607,26 @@ public interface AccumuloRowSerializer
     }
 
     /**
+     * Encodes the given list of fields into a Row Block.
+     *
+     * @param rowType Presto type of the map
+     * @param fields Fields of the row to encode
+     * @return Presto Block
+     */
+    static Block getBlockFromRow(Type rowType, List<Object> fields)
+    {
+        checkArgument(fields.size() == rowType.getTypeParameters().size(), "Number of fields does not match number of type parameters");
+
+        BlockBuilder builder = new InterleavedBlockBuilder(rowType.getTypeParameters(), new BlockBuilderStatus(), fields.size());
+        Iterator<Type> typeIter = rowType.getTypeParameters().iterator();
+        for (Object field : fields) {
+            writeObject(builder, typeIter.next(), field);
+        }
+
+        return builder.build();
+    }
+
+    /**
      * Recursive helper function used by {@link AccumuloRowSerializer#getBlockFromArray} and
      * {@link AccumuloRowSerializer#getBlockFromMap} to add the given object to the given block
      * builder. Supports nested complex types!
@@ -577,10 +638,10 @@ public interface AccumuloRowSerializer
     static void writeObject(BlockBuilder builder, Type type, Object obj)
     {
         if (Types.isArrayType(type)) {
-            BlockBuilder arrayBldr = builder.beginBlockEntry();
+            BlockBuilder arrayBuilder = builder.beginBlockEntry();
             Type elementType = Types.getElementType(type);
             for (Object item : (List<?>) obj) {
-                writeObject(arrayBldr, elementType, item);
+                writeObject(arrayBuilder, elementType, item);
             }
             builder.closeEntry();
         }
@@ -589,6 +650,14 @@ public interface AccumuloRowSerializer
             for (Entry<?, ?> entry : ((Map<?, ?>) obj).entrySet()) {
                 writeObject(mapBlockBuilder, Types.getKeyType(type), entry.getKey());
                 writeObject(mapBlockBuilder, Types.getValueType(type), entry.getValue());
+            }
+            builder.closeEntry();
+        }
+        else if (Types.isRowType(type)) {
+            BlockBuilder rowBlockBuilder = builder.beginBlockEntry();
+            Iterator<Type> typeIter = type.getTypeParameters().iterator();
+            for (Object field : (List) obj) {
+                writeObject(rowBlockBuilder, typeIter.next(), field);
             }
             builder.closeEntry();
         }
@@ -618,7 +687,9 @@ public interface AccumuloRowSerializer
         else {
             if (type.getJavaType() == Slice.class) {
                 Slice slice = (Slice) TypeUtils.readNativeValue(type, block, position);
-                return type.equals(VarcharType.VARCHAR) ? slice.toStringUtf8() : slice.getBytes();
+                return slice != null ?
+                        type.equals(VarcharType.VARCHAR) ? slice.toStringUtf8() : slice.getBytes()
+                        : null;
             }
 
             return TypeUtils.readNativeValue(type, block, position);

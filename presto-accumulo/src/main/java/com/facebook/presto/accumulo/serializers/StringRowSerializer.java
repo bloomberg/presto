@@ -233,6 +233,18 @@ public class StringRowSerializer
     }
 
     @Override
+    public Block getRow(String name, Type type)
+    {
+        throw new PrestoException(NOT_SUPPORTED, "rows are not (yet?) supported for StringRowSerializer");
+    }
+
+    @Override
+    public void setRow(Text text, Type type, Block block)
+    {
+        throw new PrestoException(NOT_SUPPORTED, "rows are not (yet?) supported for StringRowSerializer");
+    }
+
+    @Override
     public short getShort(String name)
     {
         return Short.parseShort(getFieldValue(name));

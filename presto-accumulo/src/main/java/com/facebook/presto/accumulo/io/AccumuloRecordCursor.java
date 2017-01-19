@@ -247,10 +247,13 @@ public class AccumuloRecordCursor
     public Object getObject(int field)
     {
         Type type = getType(field);
-        checkArgument(Types.isArrayType(type) || Types.isMapType(type), "Expected field %s to be a type of array or map but is %s", field, type);
+        checkArgument(Types.isArrayType(type) || Types.isMapType(type) || Types.isRowType(type), "Expected field %s to be a type of array or map but is %s", field, type);
 
         if (Types.isArrayType(type)) {
             return serializer.getArray(fieldToColumnName[field], type);
+        }
+        else if (Types.isRowType(type)) {
+            return serializer.getRow(fieldToColumnName[field], type);
         }
 
         return serializer.getMap(fieldToColumnName[field], type);

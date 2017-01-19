@@ -385,16 +385,8 @@ public class Field
             return null;
         }
 
-        // Array? Better be a block!
-        if (Types.isArrayType(type)) {
-            if (!(value instanceof Block)) {
-                throw new PrestoException(FUNCTION_IMPLEMENTATION_ERROR, "Object is not a Block, but " + value.getClass());
-            }
-            return value;
-        }
-
-        // Map? Better be a block!
-        if (Types.isMapType(type)) {
+        // Array? Map? Row? Better be a block!
+        if (Types.isArrayType(type) || Types.isMapType(type) || Types.isRowType(type)) {
             if (!(value instanceof Block)) {
                 throw new PrestoException(FUNCTION_IMPLEMENTATION_ERROR, "Object is not a Block, but " + value.getClass());
             }

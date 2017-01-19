@@ -57,6 +57,11 @@ public final class Types
         return type.getTypeSignature().getBase().equals(StandardTypes.MAP);
     }
 
+    public static boolean isRowType(Type type)
+    {
+        return type.getTypeSignature().getBase().equals(StandardTypes.ROW);
+    }
+
     /**
      * Gets the element type of the given array type. Does not validate that the given type is an array.
      *

@@ -360,4 +360,43 @@ public class TestAccumuloDistributedQueries
             assertUpdate("DROP TABLE test_select_null_value");
         }
     }
+
+    @Test
+    public void testRowStandardTypes()
+            throws Exception
+    {
+        try {
+            assertUpdate("CREATE TABLE test_row_standard_types AS SELECT 1 AS a, CAST(ROW(true, 1, 2, 3, 4, 1.0, 'abc') AS ROW(A BOOLEAN, B TINYINT, C SMALLINT, D INTEGER, E BIGINT, F DOUBLE, G VARCHAR)) AS b", 1);
+            assertQuery("SELECT a, b.a, b.b, b.c, b.d, b.e, b.f, b.g FROM test_row_standard_types", "SELECT 1, true, 1, 2, 3, 4, 1.0, 'abc'");
+        }
+        finally {
+            assertUpdate("DROP TABLE test_row_standard_types");
+        }
+    }
+
+    @Test
+    public void testRowWithNulls()
+            throws Exception
+    {
+        try {
+            assertUpdate("CREATE TABLE test_row_with_nulls AS SELECT 1 AS a, CAST(ROW(true, 1, 2, 3, NULL, 1.0, NULL, 5) AS ROW(A BOOLEAN, B TINYINT, C SMALLINT, D INTEGER, E BIGINT, F DOUBLE, G VARCHAR, H BIGINT)) AS b", 1);
+            assertQuery("SELECT a, b.a, b.b, b.c, b.d, b.e, b.f, b.g, b.h FROM test_row_with_nulls", "SELECT 1, true, 1, 2, 3, NULL, 1.0, NULL, 5");
+        }
+        finally {
+            assertUpdate("DROP TABLE test_row_with_nulls");
+        }
+    }
+
+    @Test
+    public void testArrayOfRows()
+            throws Exception
+    {
+        try {
+            assertUpdate("CREATE TABLE test_array_of_rows AS SELECT 1 AS a, ARRAY[ CAST(ROW(true, 1, 2, 3, 4, 1.0, 'abc') AS ROW(A BOOLEAN, B TINYINT, C SMALLINT, D INTEGER, E BIGINT, F DOUBLE, G VARCHAR)), CAST(ROW(true, 1, 2, 3, 4, 1.0, 'abc') AS ROW(A BOOLEAN, B TINYINT, C SMALLINT, D INTEGER, E BIGINT, F DOUBLE, G VARCHAR)) ] AS b", 1);
+            assertQuery("SELECT a, b[1].a, b[1].b, b[1].c, b[1].d, b[1].e, b[1].f, b[1].g, b[2].a, b[2].b, b[2].c, b[2].d, b[2].e, b[2].f, b[2].g FROM test_array_of_rows", "SELECT 1, true, 1, 2, 3, 4, 1.0, 'abc', true, 1, 2, 3, 4, 1.0, 'abc'");
+        }
+        finally {
+            assertUpdate("DROP TABLE test_array_of_rows");
+        }
+    }
 }
