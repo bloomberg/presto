@@ -21,6 +21,7 @@ import com.facebook.presto.spi.type.TypeManager;
 import com.facebook.presto.spi.type.TypeSignatureParameter;
 import com.facebook.presto.sql.analyzer.FeaturesConfig;
 import com.facebook.presto.type.ArrayType;
+import com.facebook.presto.type.RowType;
 import com.facebook.presto.type.TypeRegistry;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
@@ -37,6 +38,7 @@ import java.sql.Timestamp;
 import java.util.AbstractMap.SimpleImmutableEntry;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 import static com.facebook.presto.spi.type.BigintType.BIGINT;
@@ -203,6 +205,22 @@ public abstract class AbstractTestAccumuloRowSerializer
 
         deserializeData(serializer, data);
         actual = AccumuloRowSerializer.getMapFromBlock(type, serializer.getMap(COLUMN_NAME, type));
+        assertEquals(actual, expected);
+    }
+
+    @Test
+    public void testRow()
+            throws Exception
+    {
+        AccumuloRowSerializer serializer = serializerClass.getConstructor().newInstance();
+        Type type = new RowType(ImmutableList.of(VARCHAR, BIGINT, DOUBLE), Optional.empty());
+        List<Object> expected = ImmutableList.of("a", 1L, 2.0);
+        byte[] data = serializer.encode(type, AccumuloRowSerializer.getBlockFromRow(type, expected));
+        List<Object> actual = serializer.decode(type, data);
+        assertEquals(actual, expected);
+
+        deserializeData(serializer, data);
+        actual = AccumuloRowSerializer.getRowFromBlock(type, serializer.getRow(COLUMN_NAME, type));
         assertEquals(actual, expected);
     }
 

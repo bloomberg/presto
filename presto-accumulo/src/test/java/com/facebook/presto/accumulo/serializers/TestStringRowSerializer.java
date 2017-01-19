@@ -34,4 +34,11 @@ public class TestStringRowSerializer
     {
         // Maps are not supported by StringRowSerializer
     }
+
+    @Override
+    public void testRow()
+            throws Exception
+    {
+        // Rows are not supported by StringRowSerializer
+    }
 }
