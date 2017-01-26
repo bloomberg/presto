@@ -489,7 +489,7 @@ public class AccumuloEventListener
                 }
                 catch (InterruptedException e) {
                     LOG.error("InterruptedException polling for mutation, sleeping for 10s", e);
-                    sleep(10000);
+                    sleep();
                     continue;
                 }
 
@@ -498,7 +498,7 @@ public class AccumuloEventListener
 
                     if (writer == null) {
                         LOG.warn("Writer is still null, skipping this mutation, sleeping for 10s");
-                        sleep(10000);
+                        sleep();
                         continue;
                     }
                 }
@@ -511,7 +511,7 @@ public class AccumuloEventListener
                     }
                     catch (MutationsRejectedException | TableNotFoundException e) {
                         LOG.error("Failed to write mutation, sleeping for 10s", e);
-                        sleep(10000);
+                        sleep();
                         createBatchWriter();
                     }
                 }
@@ -524,17 +524,17 @@ public class AccumuloEventListener
                     }
                     catch (MutationsRejectedException e) {
                         LOG.error("Failed to flush, sleeping for 10s", e);
-                        sleep(10000);
+                        sleep();
                         createBatchWriter();
                     }
                 }
             }
         }
 
-        private void sleep(int millis)
+        private void sleep()
         {
             try {
-                Thread.sleep(millis);
+                Thread.sleep(10000);
             }
             catch (InterruptedException e) {
                 Thread.currentThread().interrupt();

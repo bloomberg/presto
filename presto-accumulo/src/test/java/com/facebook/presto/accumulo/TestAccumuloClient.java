@@ -16,7 +16,6 @@ package com.facebook.presto.accumulo;
 import com.facebook.presto.accumulo.conf.AccumuloConfig;
 import com.facebook.presto.accumulo.conf.AccumuloTableProperties;
 import com.facebook.presto.accumulo.index.ColumnCardinalityCache;
-import com.facebook.presto.accumulo.index.IndexLookup;
 import com.facebook.presto.accumulo.metadata.AccumuloTable;
 import com.facebook.presto.accumulo.metadata.ZooKeeperMetadataManager;
 import com.facebook.presto.spi.ColumnMetadata;
@@ -50,7 +49,7 @@ public class TestAccumuloClient
         Connector connector = AccumuloQueryRunner.getAccumuloConnector();
         config.setZooKeepers(connector.getInstance().getZooKeepers());
         zooKeeperMetadataManager = new ZooKeeperMetadataManager(config, new TypeRegistry());
-        client = new AccumuloClient(connector, config, zooKeeperMetadataManager, new AccumuloTableManager(connector), new IndexLookup(config, connector, new ColumnCardinalityCache(config), new TestingNodeManager()));
+        client = new AccumuloClient(connector, config, zooKeeperMetadataManager, new AccumuloTableManager(connector), new TestingNodeManager(), new TabletSplitGenerationMachine(config, connector, new ColumnCardinalityCache(config)));
     }
 
     @Test
