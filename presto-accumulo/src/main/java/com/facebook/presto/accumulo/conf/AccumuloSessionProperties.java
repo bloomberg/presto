@@ -40,7 +40,6 @@ import static com.facebook.presto.spi.session.PropertyMetadata.stringSessionProp
 public final class AccumuloSessionProperties
 {
     private static final String OPTIMIZE_LOCALITY_ENABLED = "optimize_locality_enabled";
-    private static final String OPTIMIZE_SPLIT_RANGES_ENABLED = "optimize_split_ranges_enabled";
     private static final String OPTIMIZE_INDEX_ENABLED = "optimize_index_enabled";
     private static final String INDEX_ROWS_PER_SPLIT = "index_rows_per_split";
     private static final String INDEX_THRESHOLD = "index_threshold";
@@ -66,58 +65,53 @@ public final class AccumuloSessionProperties
                 "Set to true to enable data locality for non-indexed scans. Default true.", true,
                 false);
 
-        PropertyMetadata<Boolean> s2 = booleanSessionProperty(
-                OPTIMIZE_SPLIT_RANGES_ENABLED,
-                "Set to true to split non-indexed queries by tablet splits. Should generally be true.",
-                true, false);
-
-        PropertyMetadata<String> s3 = stringSessionProperty(
+        PropertyMetadata<String> s2 = stringSessionProperty(
                 SCAN_USERNAME,
                 "User to impersonate when scanning the tables. This property trumps the scan_auths table property. Default is the user in the configuration file.", null, false);
 
-        PropertyMetadata<Boolean> s4 = booleanSessionProperty(
+        PropertyMetadata<Boolean> s3 = booleanSessionProperty(
                 OPTIMIZE_INDEX_ENABLED,
                 "Set to true to enable usage of the secondary index on query. Default true.",
                 true,
                 false);
 
-        PropertyMetadata<Integer> s5 = integerSessionProperty(
+        PropertyMetadata<Integer> s4 = integerSessionProperty(
                 INDEX_ROWS_PER_SPLIT,
                 "The number of Accumulo row IDs that are packed into a single Presto split. Default 10000",
                 10000,
                 false);
 
-        PropertyMetadata<Double> s6 = doubleSessionProperty(
+        PropertyMetadata<Double> s5 = doubleSessionProperty(
                 INDEX_THRESHOLD,
                 "The ratio between number of rows to be scanned based on the index over the total number of rows. If the ratio is below this threshold, the index will be used. Default .2",
                 0.2,
                 false);
 
-        PropertyMetadata<Double> s7 = doubleSessionProperty(
+        PropertyMetadata<Double> s6 = doubleSessionProperty(
                 INDEX_LOWEST_CARDINALITY_THRESHOLD,
                 "The threshold (as a percentage) where the column with the lowest cardinality will be used instead of computing an intersection of ranges in the secondary index. The minimum value of this value times the number of rows in the table and the row threshold will be used. Secondary index must be enabled. Default .01",
                 0.01,
                 false);
 
-        PropertyMetadata<Long> s8 = longSessionProperty(
+        PropertyMetadata<Long> s7 = longSessionProperty(
                 INDEX_LOWEST_CARDINALITY_ROW_THRESHOLD,
                 "The threshold (as number of rows) where the column with the lowest cardinality will be used instead of computing an intersection of ranges in the secondary index. The minimum value of this value and the percentage threshold will be used. Secondary index must be enabled. Default 500000",
                 500_000L,
                 false);
 
-        PropertyMetadata<Boolean> s9 = booleanSessionProperty(
+        PropertyMetadata<Boolean> s8 = booleanSessionProperty(
                 INDEX_METRICS_ENABLED,
                 "Set to true to enable usage of the metrics table to optimize usage of the index. Default true",
                 true,
                 false);
 
-        PropertyMetadata<Boolean> s10 = booleanSessionProperty(
+        PropertyMetadata<Boolean> s9 = booleanSessionProperty(
                 INDEX_SHORT_CIRCUIT_CARDINALITY_FETCH,
                 "Short circuit the retrieval of index metrics once any column is less than the lowest cardinality threshold. Default true",
                 true,
                 false);
 
-        PropertyMetadata<String> s11 = new PropertyMetadata<>(
+        PropertyMetadata<String> s10 = new PropertyMetadata<>(
                 INDEX_CARDINALITY_CACHE_POLLING_DURATION,
                 "Sets the cardinality cache polling duration for short circuit retrieval of index metrics. Default 10ms",
                 VarcharType.VARCHAR, String.class,
@@ -126,37 +120,37 @@ public final class AccumuloSessionProperties
                 x -> Duration.valueOf(x.toString()).toString(),
                 object -> object);
 
-        PropertyMetadata<Boolean> s12 = booleanSessionProperty(
+        PropertyMetadata<Boolean> s11 = booleanSessionProperty(
                 OPTIMIZE_NUM_ROWS_PER_SPLIT,
                 "Set to true to enable the connector's optimizer to determine the number of row IDs to pack into a split.  Default true",
                 true,
                 false);
 
-        PropertyMetadata<Integer> s13 = integerSessionProperty(
+        PropertyMetadata<Integer> s12 = integerSessionProperty(
                 MIN_ROWS_PER_SPLIT,
                 "The minimum number of row IDs that are packed into a single Presto split. Requires optimize.num.rows.per.split to be 'true'. Default 100",
                 100,
                 false);
 
-        PropertyMetadata<Integer> s14 = integerSessionProperty(
+        PropertyMetadata<Integer> s13 = integerSessionProperty(
                 MAX_ROWS_PER_SPLIT,
                 "The maximum number of row IDs that are packed into a single Presto split. Requires optimize.num.rows.per.split to be 'true'. Default 50000",
                 50000,
                 false);
 
-        PropertyMetadata<Integer> s15 = integerSessionProperty(
+        PropertyMetadata<Integer> s14 = integerSessionProperty(
                 SPLITS_PER_WORKER,
                 "The desired number of splits to generate per worker node. Requires optimize.num.rows.per.split to be 'true'. Default is max(1, num CPUs * 2 / 10)",
                 Math.max(Runtime.getRuntime().availableProcessors() * 2 / 10, 1),
                 false);
 
-        PropertyMetadata<Boolean> s16 = booleanSessionProperty(
+        PropertyMetadata<Boolean> s15 = booleanSessionProperty(
                 TRACING_ENABLED,
                 "True to enable Accumulo tracing on scan. Default false.",
                 false,
                 false);
 
-        sessionProperties = ImmutableList.of(s1, s2, s3, s4, s5, s6, s7, s8, s9, s10, s11, s12, s13, s14, s15, s16);
+        sessionProperties = ImmutableList.of(s1, s2, s3, s4, s5, s6, s7, s8, s9, s10, s11, s12, s13, s14, s15);
     }
 
     public List<PropertyMetadata<?>> getSessionProperties()
@@ -167,11 +161,6 @@ public final class AccumuloSessionProperties
     public static boolean isOptimizeLocalityEnabled(ConnectorSession session)
     {
         return session.getProperty(OPTIMIZE_LOCALITY_ENABLED, Boolean.class);
-    }
-
-    public static boolean isOptimizeSplitRangesEnabled(ConnectorSession session)
-    {
-        return session.getProperty(OPTIMIZE_SPLIT_RANGES_ENABLED, Boolean.class);
     }
 
     public static boolean isOptimizeIndexEnabled(ConnectorSession session)
