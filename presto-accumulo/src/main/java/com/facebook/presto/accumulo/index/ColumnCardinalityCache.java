@@ -13,6 +13,7 @@
  */
 package com.facebook.presto.accumulo.index;
 
+import com.facebook.presto.accumulo.conf.AccumuloConfig;
 import com.facebook.presto.accumulo.index.metrics.MetricCacheKey;
 import com.facebook.presto.accumulo.index.metrics.MetricsStorage;
 import com.facebook.presto.accumulo.model.AccumuloColumnConstraint;
@@ -38,6 +39,7 @@ import org.apache.htrace.Sampler;
 import org.apache.htrace.TraceScope;
 
 import javax.annotation.Nonnull;
+import javax.inject.Inject;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -80,9 +82,13 @@ public class ColumnCardinalityCache
     private final LoadingCache<MetricCacheKey, Long> cache;
 
     @SuppressWarnings("unchecked")
-    public ColumnCardinalityCache(int size, Duration expireDuration)
+    @Inject
+    public ColumnCardinalityCache(AccumuloConfig config)
     {
-        requireNonNull(expireDuration, "expireDuration is null");
+        requireNonNull(config, "config is null");
+
+        int size = config.getCardinalityCacheSize();
+        Duration expireDuration = config.getCardinalityCacheExpiration();
 
         // Create executor service with one hot thread, pool size capped at 4x processors,
         // one minute keep alive, and a labeled ThreadFactory
