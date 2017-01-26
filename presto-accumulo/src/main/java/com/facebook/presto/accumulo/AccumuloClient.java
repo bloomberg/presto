@@ -14,9 +14,7 @@
 package com.facebook.presto.accumulo;
 
 import com.facebook.presto.accumulo.conf.AccumuloConfig;
-import com.facebook.presto.accumulo.conf.AccumuloSessionProperties;
 import com.facebook.presto.accumulo.conf.AccumuloTableProperties;
-import com.facebook.presto.accumulo.index.IndexLookup;
 import com.facebook.presto.accumulo.index.Indexer;
 import com.facebook.presto.accumulo.index.metrics.MetricsStorage;
 import com.facebook.presto.accumulo.metadata.AccumuloTable;
@@ -24,31 +22,22 @@ import com.facebook.presto.accumulo.metadata.AccumuloView;
 import com.facebook.presto.accumulo.metadata.ZooKeeperMetadataManager;
 import com.facebook.presto.accumulo.model.AccumuloColumnConstraint;
 import com.facebook.presto.accumulo.model.AccumuloColumnHandle;
-import com.facebook.presto.accumulo.model.AccumuloRange;
 import com.facebook.presto.accumulo.model.TabletSplitMetadata;
-import com.facebook.presto.accumulo.serializers.AccumuloRowSerializer;
 import com.facebook.presto.spi.ColumnMetadata;
 import com.facebook.presto.spi.ConnectorSession;
 import com.facebook.presto.spi.ConnectorTableMetadata;
+import com.facebook.presto.spi.NodeManager;
 import com.facebook.presto.spi.PrestoException;
 import com.facebook.presto.spi.SchemaTableName;
 import com.facebook.presto.spi.TableNotFoundException;
 import com.facebook.presto.spi.predicate.Domain;
-import com.facebook.presto.spi.predicate.Marker.Bound;
-import com.google.common.base.Splitter;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.Iterables;
 import io.airlift.log.Logger;
 import org.apache.accumulo.core.client.AccumuloException;
 import org.apache.accumulo.core.client.AccumuloSecurityException;
 import org.apache.accumulo.core.client.Connector;
-import org.apache.accumulo.core.client.Scanner;
-import org.apache.accumulo.core.data.Key;
-import org.apache.accumulo.core.data.PartialKey;
-import org.apache.accumulo.core.data.Range;
-import org.apache.accumulo.core.data.Value;
 import org.apache.accumulo.core.security.Authorizations;
 import org.apache.commons.lang3.tuple.Pair;
 import org.apache.hadoop.io.Text;
@@ -56,24 +45,18 @@ import org.apache.hadoop.io.Text;
 import javax.inject.Inject;
 
 import java.security.InvalidParameterException;
-import java.util.ArrayList;
-import java.util.Collection;
 import java.util.HashMap;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Map.Entry;
 import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
 import static com.facebook.presto.accumulo.AccumuloErrorCode.ACCUMULO_TABLE_DNE;
 import static com.facebook.presto.accumulo.AccumuloErrorCode.ACCUMULO_TABLE_EXISTS;
-import static com.facebook.presto.accumulo.AccumuloErrorCode.UNEXPECTED_ACCUMULO_ERROR;
 import static com.facebook.presto.accumulo.io.PrestoBatchWriter.ROW_ID_COLUMN;
 import static com.facebook.presto.spi.StandardErrorCode.ALREADY_EXISTS;
-import static com.facebook.presto.spi.StandardErrorCode.FUNCTION_IMPLEMENTATION_ERROR;
 import static com.facebook.presto.spi.StandardErrorCode.INVALID_TABLE_PROPERTY;
 import static com.facebook.presto.spi.StandardErrorCode.INVALID_VIEW;
 import static com.facebook.presto.spi.StandardErrorCode.NOT_FOUND;
@@ -88,14 +71,13 @@ import static java.util.Objects.requireNonNull;
 public class AccumuloClient
 {
     private static final Logger LOG = Logger.get(AccumuloClient.class);
-    private static final Splitter COMMA_SPLITTER = Splitter.on(',').omitEmptyStrings().trimResults();
 
-    private final ZooKeeperMetadataManager metaManager;
-    private final Authorizations auths;
     private final AccumuloTableManager tableManager;
+    private final Authorizations auths;
     private final Connector connector;
-    private final IndexLookup indexLookup;
-    private final String username;
+    private final NodeManager nodeManager;
+    private final TabletSplitGenerationMachine tabletSplitMachine;
+    private final ZooKeeperMetadataManager metaManager;
 
     @Inject
     public AccumuloClient(
@@ -103,15 +85,16 @@ public class AccumuloClient
             AccumuloConfig config,
             ZooKeeperMetadataManager metaManager,
             AccumuloTableManager tableManager,
-            IndexLookup indexLookup)
+            NodeManager nodeManager,
+            TabletSplitGenerationMachine tabletSplitMachine)
             throws AccumuloException, AccumuloSecurityException
     {
         this.connector = requireNonNull(connector, "connector is null");
-        this.username = requireNonNull(config, "config is null").getUsername();
         this.metaManager = requireNonNull(metaManager, "metaManager is null");
         this.tableManager = requireNonNull(tableManager, "tableManager is null");
-        this.indexLookup = requireNonNull(indexLookup, "indexLookup is null");
-        this.auths = connector.securityOperations().getUserAuthorizations(username);
+        this.nodeManager = requireNonNull(nodeManager, "nodeManager is null");
+        this.auths = connector.securityOperations().getUserAuthorizations(requireNonNull(config, "config is null").getUsername());
+        this.tabletSplitMachine = requireNonNull(tabletSplitMachine, "tabletSplitMachine is null");
     }
 
     public AccumuloTable createTable(ConnectorTableMetadata meta)
@@ -652,296 +635,6 @@ public class AccumuloClient
             Optional<Domain> rowIdDomain,
             List<AccumuloColumnConstraint> constraints)
     {
-        try {
-            String tableName = table.getFullTableName();
-            LOG.debug("Getting tablet splits for table %s", tableName);
-
-            // Get the initial Range based on the row ID domain
-            Collection<AccumuloRange> rowIdRanges = getRangesFromDomain(rowIdDomain, table.getSerializerInstance());
-            List<TabletSplitMetadata> tabletSplits = new ArrayList<>();
-
-            // Use the secondary index, if enabled
-            if (AccumuloSessionProperties.isOptimizeIndexEnabled(session)) {
-                // Get the scan authorizations to query the index
-                Authorizations auths = getScanAuthorizations(session, table);
-
-                // Check the secondary index based on the column constraints
-                // If this returns true, return the tablet splits to Presto
-                if (indexLookup.applyIndex(session, table, constraints, rowIdRanges, tabletSplits, auths)) {
-                    return tabletSplits;
-                }
-            }
-
-            // If we can't (or shouldn't) use the secondary index, we will just use the Range from the row ID domain
-
-            // Split the ranges on tablet boundaries, if enabled
-            Collection<Range> splitRanges;
-            if (AccumuloSessionProperties.isOptimizeSplitRangesEnabled(session)) {
-                splitRanges = splitByTabletBoundaries(tableName, rowIdRanges.stream().map(AccumuloRange::getRange).collect(Collectors.toList()));
-            }
-            else {
-                // if not enabled, just use the same collection
-                splitRanges = rowIdRanges.stream().map(AccumuloRange::getRange).collect(Collectors.toList());
-            }
-
-            // Create TabletSplitMetadata objects for each range
-            boolean fetchTabletLocations = AccumuloSessionProperties.isOptimizeLocalityEnabled(session);
-
-            LOG.debug("Fetching tablet locations: %s", fetchTabletLocations);
-
-            for (Range range : splitRanges) {
-                // If locality is enabled, then fetch tablet location
-                if (fetchTabletLocations) {
-                    tabletSplits.add(new TabletSplitMetadata(getTabletLocation(tableName, range.getStartKey()), ImmutableList.of(range)));
-                }
-                else {
-                    // else, just use the default location
-                    tabletSplits.add(new TabletSplitMetadata(Optional.empty(), ImmutableList.of(range)));
-                }
-            }
-
-            // Log some fun stuff and return the tablet splits
-            LOG.debug("Number of splits for table %s is %d with %d ranges", tableName, tabletSplits.size(), splitRanges.size());
-            return tabletSplits;
-        }
-        catch (Exception e) {
-            throw new PrestoException(UNEXPECTED_ACCUMULO_ERROR, "Failed to get splits from Accumulo", e);
-        }
-    }
-
-    /**
-     * Gets the scan authorizations to use for scanning tables.
-     * <p>
-     * In order of priority: session username authorizations, then table property, then the default connector auths.
-     *
-     * @param session Current session
-     * @param table Table metadata
-     * @return Scan authorizations
-     * @throws AccumuloException If a generic Accumulo error occurs
-     * @throws AccumuloSecurityException If a security exception occurs
-     */
-    private Authorizations getScanAuthorizations(ConnectorSession session, AccumuloTable table)
-            throws AccumuloException, AccumuloSecurityException
-    {
-        String sessionScanUser = AccumuloSessionProperties.getScanUsername(session);
-        if (sessionScanUser != null) {
-            Authorizations scanAuths = connector.securityOperations().getUserAuthorizations(sessionScanUser);
-            LOG.debug("Using session scan auths for user %s: %s", sessionScanUser, scanAuths);
-            return scanAuths;
-        }
-
-        Optional<String> strAuths = table.getScanAuthorizations();
-        if (strAuths.isPresent()) {
-            Authorizations scanAuths = new Authorizations(Iterables.toArray(COMMA_SPLITTER.split(strAuths.get()), String.class));
-            LOG.debug("scan_auths table property set, using: %s", scanAuths);
-            return scanAuths;
-        }
-
-        LOG.debug("scan_auths table property not set, using connector auths: %s", this.auths);
-        return this.auths;
-    }
-
-    private Collection<Range> splitByTabletBoundaries(String tableName, Collection<Range> ranges)
-            throws org.apache.accumulo.core.client.TableNotFoundException, AccumuloException, AccumuloSecurityException
-    {
-        ImmutableSet.Builder<Range> rangeBuilder = ImmutableSet.builder();
-        for (Range range : ranges) {
-            // if start and end key are equivalent, no need to split the range
-            if (range.getStartKey() != null && range.getEndKey() != null && range.getStartKey().equals(range.getEndKey())) {
-                rangeBuilder.add(range);
-            }
-            else {
-                // Call out to Accumulo to split the range on tablets
-                rangeBuilder.addAll(connector.tableOperations().splitRangeByTablets(tableName, range, Integer.MAX_VALUE));
-            }
-        }
-        return rangeBuilder.build();
-    }
-
-    /**
-     * Gets the TabletServer hostname for where the given key is located in the given table
-     *
-     * @param table Fully-qualified table name
-     * @param key Key to locate
-     * @return The tablet location, or DUMMY_LOCATION if an error occurs
-     */
-    private Optional<String> getTabletLocation(String table, Key key)
-    {
-        Scanner scanner = null;
-        try {
-            // Get the Accumulo table ID so we can scan some fun stuff
-            String tableId = connector.tableOperations().tableIdMap().get(table);
-
-            // Create our scanner against the metadata table, fetching 'loc' family
-            scanner = connector.createScanner("accumulo.metadata", auths);
-            scanner.fetchColumnFamily(new Text("loc"));
-
-            // Set the scan range to just this table, from the table ID to the default tablet
-            // row, which is the last listed tablet
-            Key defaultTabletRow = new Key(tableId + '<');
-            Key start = new Key(tableId);
-            Key end = defaultTabletRow.followingKey(PartialKey.ROW);
-            scanner.setRange(new Range(start, end));
-
-            Optional<String> location = Optional.empty();
-            if (key == null) {
-                // if the key is null, then it is -inf, so get first tablet location
-                Iterator<Entry<Key, Value>> iter = scanner.iterator();
-                if (iter.hasNext()) {
-                    location = Optional.of(iter.next().getValue().toString());
-                }
-            }
-            else {
-                // Else, we will need to scan through the tablet location data and find the location
-
-                // Create some text objects to do comparison for what we are looking for
-                Text splitCompareKey = new Text();
-                key.getRow(splitCompareKey);
-                Text scannedCompareKey = new Text();
-
-                // Scan the table!
-                for (Entry<Key, Value> entry : scanner) {
-                    // Get the bytes of the key
-                    byte[] keyBytes = entry.getKey().getRow().copyBytes();
-
-                    // If the last byte is <, then we have hit the default tablet, so use this location
-                    if (keyBytes[keyBytes.length - 1] == '<') {
-                        location = Optional.of(entry.getValue().toString());
-                        break;
-                    }
-                    else {
-                        // Chop off some magic nonsense
-                        scannedCompareKey.set(keyBytes, 3, keyBytes.length - 3);
-
-                        // Compare the keys, moving along the tablets until the location is found
-                        if (scannedCompareKey.getLength() > 0) {
-                            int compareTo = splitCompareKey.compareTo(scannedCompareKey);
-                            if (compareTo <= 0) {
-                                location = Optional.of(entry.getValue().toString());
-                            }
-                            else {
-                                // all future tablets will be greater than this key
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
-
-            // If we were unable to find the location for some reason, return the default tablet
-            // location
-            return location.isPresent() ? location : getDefaultTabletLocation(table);
-        }
-        catch (Exception e) {
-            // Swallow this exception so the query does not fail due to being unable
-            // to locate the tablet server for the provided Key.
-            // This is purely an optimization, but we will want to log the error.
-            LOG.error("Failed to get tablet location, returning dummy location", e);
-            return Optional.empty();
-        }
-        finally {
-            if (scanner != null) {
-                scanner.close();
-            }
-        }
-    }
-
-    private Optional<String> getDefaultTabletLocation(String fulltable)
-    {
-        Scanner scanner = null;
-
-        try {
-            String tableId = connector.tableOperations().tableIdMap().get(fulltable);
-
-            // Create a scanner over the metadata table, fetching the 'loc' column of the default tablet row
-            scanner = connector.createScanner("accumulo.metadata", connector.securityOperations().getUserAuthorizations(username));
-            scanner.fetchColumnFamily(new Text("loc"));
-            scanner.setRange(new Range(tableId + '<'));
-
-            // scan the entry
-            Optional<String> location = Optional.empty();
-            for (Entry<Key, Value> entry : scanner) {
-                if (location.isPresent()) {
-                    throw new PrestoException(FUNCTION_IMPLEMENTATION_ERROR, "Scan for default tablet returned more than one entry");
-                }
-
-                location = Optional.of(entry.getValue().toString());
-            }
-
-            return location;
-        }
-        catch (Exception e) {
-            // Swallow this exception so the query does not fail due to being unable to locate the tablet server for the default tablet.
-            // This is purely an optimization, but we will want to log the error.
-            LOG.error("Failed to get tablet location, returning dummy location", e);
-            return Optional.empty();
-        }
-        finally {
-            if (scanner != null) {
-                scanner.close();
-            }
-        }
-    }
-
-    /**
-     * Gets a collection of Accumulo Range objects from the given Presto domain.
-     * This maps the column constraints of the given Domain to an Accumulo Range scan.
-     *
-     * @param domain Domain, can be null (returns (-inf, +inf) Range)
-     * @param serializer Instance of an {@link AccumuloRowSerializer}
-     * @return A collection of Accumulo Range objects
-     * @throws TableNotFoundException If the Accumulo table is not found
-     */
-    public static Collection<AccumuloRange> getRangesFromDomain(Optional<Domain> domain, AccumuloRowSerializer serializer)
-            throws TableNotFoundException
-    {
-        // if we have no predicate pushdown, use the full range
-        if (!domain.isPresent()) {
-            return ImmutableSet.of(new AccumuloRange());
-        }
-
-        ImmutableSet.Builder<AccumuloRange> rangeBuilder = ImmutableSet.builder();
-        for (com.facebook.presto.spi.predicate.Range range : domain.get().getValues().getRanges().getOrderedRanges()) {
-            rangeBuilder.add(getRangeFromPrestoRange(range, serializer));
-        }
-
-        return rangeBuilder.build();
-    }
-
-    public static AccumuloRange getRangeFromPrestoRange(com.facebook.presto.spi.predicate.Range prestoRange, AccumuloRowSerializer serializer)
-            throws TableNotFoundException
-    {
-        AccumuloRange accumuloRange;
-        if (prestoRange.isAll()) {
-            accumuloRange = new AccumuloRange();
-        }
-        else if (prestoRange.isSingleValue()) {
-            accumuloRange = new AccumuloRange(serializer.encode(prestoRange.getType(), prestoRange.getSingleValue()));
-        }
-        else {
-            if (prestoRange.getLow().isLowerUnbounded()) {
-                // If low is unbounded, then create a range from (-inf, value), checking inclusivity
-                boolean inclusive = prestoRange.getHigh().getBound() == Bound.EXACTLY;
-                byte[] split = serializer.encode(prestoRange.getType(), prestoRange.getHigh().getValue());
-                accumuloRange = new AccumuloRange(null, false, split, inclusive);
-            }
-            else if (prestoRange.getHigh().isUpperUnbounded()) {
-                // If high is unbounded, then create a range from (value, +inf), checking inclusivity
-                boolean inclusive = prestoRange.getLow().getBound() == Bound.EXACTLY;
-                byte[] split = serializer.encode(prestoRange.getType(), prestoRange.getLow().getValue());
-                accumuloRange = new AccumuloRange(split, inclusive, null, false);
-            }
-            else {
-                // If high is unbounded, then create a range from low to high, checking inclusivity
-                boolean startKeyInclusive = prestoRange.getLow().getBound() == Bound.EXACTLY;
-                byte[] startSplit = serializer.encode(prestoRange.getType(), prestoRange.getLow().getValue());
-
-                boolean endKeyInclusive = prestoRange.getHigh().getBound() == Bound.EXACTLY;
-                byte[] endSplit = serializer.encode(prestoRange.getType(), prestoRange.getHigh().getValue());
-                accumuloRange = new AccumuloRange(startSplit, startKeyInclusive, endSplit, endKeyInclusive);
-            }
-        }
-
-        return accumuloRange;
+        return tabletSplitMachine.getTabletSplits(session, auths, table, rowIdDomain, constraints, nodeManager.getWorkerNodes().size());
     }
 }

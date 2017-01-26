@@ -38,7 +38,9 @@ import com.facebook.presto.spi.eventlistener.QueryCompletedEvent;
 import com.facebook.presto.spi.eventlistener.QueryCreatedEvent;
 import com.facebook.presto.spi.eventlistener.QueryInputMetadata;
 import com.facebook.presto.spi.eventlistener.SplitCompletedEvent;
+import com.facebook.presto.spi.function.OperatorType;
 import com.facebook.presto.spi.type.AbstractType;
+import com.facebook.presto.spi.type.ParametricType;
 import com.facebook.presto.spi.type.StandardTypes;
 import com.facebook.presto.spi.type.Type;
 import com.facebook.presto.spi.type.TypeManager;
@@ -63,7 +65,9 @@ import org.apache.accumulo.core.client.security.tokens.PasswordToken;
 import org.apache.accumulo.core.data.Mutation;
 import org.apache.accumulo.core.data.Value;
 
+import java.lang.invoke.MethodHandle;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
@@ -470,7 +474,7 @@ public class AccumuloEventListener
                 }
                 catch (InterruptedException e) {
                     LOG.error("InterruptedException polling for mutation, sleeping for 10s", e);
-                    sleep(10000);
+                    sleep();
                     continue;
                 }
 
@@ -479,7 +483,7 @@ public class AccumuloEventListener
 
                     if (writer == null) {
                         LOG.warn("Writer is still null, skipping this mutation, sleeping for 10s");
-                        sleep(10000);
+                        sleep();
                         continue;
                     }
                 }
@@ -492,7 +496,7 @@ public class AccumuloEventListener
                     }
                     catch (MutationsRejectedException | TableNotFoundException e) {
                         LOG.error("Failed to write mutation, sleeping for 10s", e);
-                        sleep(10000);
+                        sleep();
                         createBatchWriter();
                     }
                 }
@@ -505,17 +509,17 @@ public class AccumuloEventListener
                     }
                     catch (MutationsRejectedException e) {
                         LOG.error("Failed to flush, sleeping for 10s", e);
-                        sleep(10000);
+                        sleep();
                         createBatchWriter();
                     }
                 }
             }
         }
 
-        private void sleep(int millis)
+        private void sleep()
         {
             try {
-                Thread.sleep(millis);
+                Thread.sleep(10000);
             }
             catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
@@ -662,7 +666,7 @@ public class AccumuloEventListener
         @Override
         public Slice getSlice(Block block, int position)
         {
-            return block.getSlice(position, 0, block.getLength(position));
+            return block.getSlice(position, 0, block.getSliceLength(position));
         }
 
         @Override
@@ -1097,6 +1101,12 @@ public class AccumuloEventListener
         }
 
         @Override
+        public Collection<ParametricType> getParametricTypes()
+        {
+            return null;
+        }
+
+        @Override
         public Optional<Type> getCommonSuperType(Type firstType, Type secondType)
         {
             return null;
@@ -1110,6 +1120,12 @@ public class AccumuloEventListener
 
         @Override
         public Optional<Type> coerceTypeBase(Type sourceType, String resultTypeBase)
+        {
+            return null;
+        }
+
+        @Override
+        public MethodHandle resolveOperator(OperatorType operatorType, List<? extends Type> argumentTypes)
         {
             return null;
         }

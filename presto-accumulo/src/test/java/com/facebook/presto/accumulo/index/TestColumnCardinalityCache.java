@@ -16,6 +16,7 @@ package com.facebook.presto.accumulo.index;
 import com.facebook.presto.accumulo.AccumuloClient;
 import com.facebook.presto.accumulo.AccumuloQueryRunner;
 import com.facebook.presto.accumulo.AccumuloTableManager;
+import com.facebook.presto.accumulo.TabletSplitGenerationMachine;
 import com.facebook.presto.accumulo.conf.AccumuloConfig;
 import com.facebook.presto.accumulo.conf.AccumuloSessionProperties;
 import com.facebook.presto.accumulo.conf.AccumuloTableProperties;
@@ -83,6 +84,7 @@ import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertFalse;
 import static org.testng.Assert.assertNotNull;
 
+@Test(singleThreaded = true)
 public class TestColumnCardinalityCache
 {
     private static final AccumuloConfig CONFIG = new AccumuloConfig();
@@ -130,7 +132,7 @@ public class TestColumnCardinalityCache
 
         storage = MetricsStorage.getDefault(connector);
 
-        client = new AccumuloClient(connector, CONFIG, new ZooKeeperMetadataManager(CONFIG, new TypeRegistry()), new AccumuloTableManager(connector), new IndexLookup(CONFIG, connector, new ColumnCardinalityCache(CONFIG), new TestingNodeManager()));
+        client = new AccumuloClient(connector, CONFIG, new ZooKeeperMetadataManager(CONFIG, new TypeRegistry()), new AccumuloTableManager(connector), new TestingNodeManager(), new TabletSplitGenerationMachine(CONFIG, connector, new ColumnCardinalityCache(CONFIG)));
         connector.securityOperations().changeUserAuthorizations("root", new Authorizations("private", "moreprivate", "foo", "bar", "xyzzy"));
         writeTestData();
     }
@@ -558,7 +560,7 @@ public class TestColumnCardinalityCache
     private static IndexQueryParameters iqp(String name, Domain domain)
     {
         IndexQueryParameters parameters = new IndexQueryParameters(new IndexColumn(ImmutableList.of(name)));
-        parameters.appendColumn(name.getBytes(UTF_8), AccumuloClient.getRangesFromDomain(Optional.of(domain), SERIALIZER), false);
+        parameters.appendColumn(name.getBytes(UTF_8), TabletSplitGenerationMachine.getRangesFromDomain(Optional.of(domain), SERIALIZER), false);
         return parameters;
     }
 }
