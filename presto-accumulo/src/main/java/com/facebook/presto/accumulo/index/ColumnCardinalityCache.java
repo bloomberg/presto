@@ -152,7 +152,7 @@ public class ColumnCardinalityCache
         queryParameters.forEach(queryParameter ->
                 executor.submit(() -> {
                     long start = System.currentTimeMillis();
-                    long cardinality = getColumnCardinality(session, schema, table, auths, queryParameter);
+                    long cardinality = getColumnCardinality(session, metricsStorage, schema, table, auths, queryParameter);
                     LOG.debug("Cardinality for column %s is %s, took %s ms", queryParameter.getIndexColumn(), cardinality, System.currentTimeMillis() - start);
                     return Pair.of(cardinality, queryParameter);
                 }));
@@ -206,13 +206,14 @@ public class ColumnCardinalityCache
      * metrics table in Accumulo to retrieve new cache elements.
      *
      * @param session Connector session
+     * @param metricsStorage Metrics storage
      * @param schema Table schema
      * @param table Table name
      * @param auths Scan-time authorizations for loading any cardinalities from Accumulo
      * @param queryParameters Parameters to use for the column cardinality
      * @return The cardinality of the column
      */
-    private long getColumnCardinality(ConnectorSession session, String schema, String table, Authorizations auths, IndexQueryParameters queryParameters)
+    private long getColumnCardinality(ConnectorSession session, MetricsStorage metricsStorage, String schema, String table, Authorizations auths, IndexQueryParameters queryParameters)
             throws ExecutionException
     {
         LOG.debug("Getting cardinality for " + queryParameters.getIndexColumn());
@@ -255,10 +256,8 @@ public class ColumnCardinalityCache
                         }
                     }
 
-                    // for each non-exact range, use the single-value get
-                    for (MetricCacheKey key : nonExactRanges) {
-                        sum += cache.get(key);
-                    }
+                    // For the non-exact ranges, call out directly to the metrics storage (no cache)
+                    sum += metricsStorage.newReader().getCardinality(nonExactRanges);
 
                     return sum;
                 }

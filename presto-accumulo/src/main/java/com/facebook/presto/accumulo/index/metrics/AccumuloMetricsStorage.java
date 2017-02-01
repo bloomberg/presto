@@ -366,7 +366,7 @@ public class AccumuloMetricsStorage
             BatchScanner scanner = null;
             try {
                 scanner = connector.createBatchScanner(metricsTable, anyKey.auths, 10);
-                scanner.setRanges(keys.stream().map(k -> k.range).collect(Collectors.toList()));
+                scanner.setRanges(keys.parallelStream().map(k -> k.range).collect(Collectors.toList()));
                 scanner.fetchColumn(columnFamily, CARDINALITY_CQ_TEXT);
 
                 // Create a new map to hold our cardinalities for each range
@@ -384,8 +384,8 @@ public class AccumuloMetricsStorage
                     remainingKeys.remove(range);
 
                     // Sum the values (if a value exists already)
-                    Long value = rangeValues.get(cacheKey);
-                    rangeValues.put(cacheKey, Long.parseLong(entry.getValue().toString()) + (value == null ? 0 : value));
+                    Long value = rangeValues.getOrDefault(cacheKey, 0L);
+                    rangeValues.put(cacheKey, Long.parseLong(entry.getValue().toString()) + value);
                 }
 
                 // Add the remaining cache keys to our return list with a cardinality of zero
@@ -394,6 +394,46 @@ public class AccumuloMetricsStorage
                 }
 
                 return ImmutableMap.copyOf(rangeValues);
+            }
+            catch (TableNotFoundException e) {
+                throw new PrestoException(ACCUMULO_TABLE_DNE, "Accumulo table does not exist", e);
+            }
+            finally {
+                if (scanner != null) {
+                    scanner.close();
+                }
+            }
+        }
+
+        @Override
+        public Long getCardinality(Collection<MetricCacheKey> keys)
+                throws Exception
+        {
+            if (keys.isEmpty()) {
+                return 0L;
+            }
+
+            MetricCacheKey anyKey = super.getAnyKey(keys);
+
+            // Get metrics table name and the column family for the scanner
+            String metricsTable = getMetricsTableName(anyKey.schema, anyKey.table);
+            Text columnFamily = new Text(anyKey.family);
+
+            // Create batch scanner for querying all ranges
+            BatchScanner scanner = null;
+            try {
+                scanner = connector.createBatchScanner(metricsTable, anyKey.auths, 10);
+                scanner.setRanges(keys.parallelStream().map(k -> k.range).collect(Collectors.toList()));
+                scanner.fetchColumn(columnFamily, CARDINALITY_CQ_TEXT);
+
+                // Create a new map to hold our cardinalities for each range
+                // retrieved from the scanner
+                long sum = 0;
+                for (Map.Entry<Key, Value> entry : scanner) {
+                    sum += Long.parseLong(entry.getValue().toString());
+                }
+
+                return sum;
             }
             catch (TableNotFoundException e) {
                 throw new PrestoException(ACCUMULO_TABLE_DNE, "Accumulo table does not exist", e);
