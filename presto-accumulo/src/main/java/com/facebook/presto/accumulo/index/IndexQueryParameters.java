@@ -175,24 +175,25 @@ public class IndexQueryParameters
 
     private void appendTimestampMetricParameters(Collection<AccumuloRange> appendRanges)
     {
-        for (AccumuloRange baseRange : this.ranges) {
-            for (AccumuloRange appendRange : appendRanges) {
-                for (Map.Entry<TimestampPrecision, Collection<Range>> entry : splitTimestampRange(appendRange.getRange()).asMap().entrySet()) {
-                    // Append the precision family to the index family
-                    Text precisionIndexFamily = new Text(this.indexFamily);
-                    byte[] precisionFamily = TIMESTAMP_CARDINALITY_FAMILIES.get(entry.getKey());
-                    precisionIndexFamily.append(precisionFamily, 0, precisionFamily.length);
+        Text tmp = new Text();
+        for (AccumuloRange appendRange : appendRanges) {
+            for (Map.Entry<TimestampPrecision, Collection<Range>> entry : splitTimestampRange(appendRange.getRange()).asMap().entrySet()) {
+                // Append the precision family to the index family
+                byte[] precisionFamily = TIMESTAMP_CARDINALITY_FAMILIES.get(entry.getKey());
+                Text precisionIndexFamily = new Text(this.indexFamily);
+                precisionIndexFamily.append(precisionFamily, 0, precisionFamily.length);
 
+                for (AccumuloRange baseRange : this.ranges) {
                     for (Range precisionRange : entry.getValue()) {
                         // Here, we use an empty string if the start keys for either are empty
                         byte[] newStart = Bytes.concat(
                                 baseRange.isInfiniteStartKey() ? EMPTY_BYTE : baseRange.getStart(),
                                 NULL_BYTE,
-                                precisionRange.isInfiniteStartKey() ? EMPTY_BYTE : Arrays.copyOfRange(precisionRange.getStartKey().getRow().copyBytes(), 0, 9));
+                                precisionRange.isInfiniteStartKey() ? EMPTY_BYTE : Arrays.copyOfRange(precisionRange.getStartKey().getRow(tmp).getBytes(), 0, 9));
                         byte[] newEnd = Bytes.concat(
                                 baseRange.isInfiniteStopKey() ? EMPTY_BYTE : baseRange.getEnd(),
                                 NULL_BYTE,
-                                precisionRange.isInfiniteStopKey() ? EMPTY_BYTE : Arrays.copyOfRange(precisionRange.getEndKey().getRow().copyBytes(), 0, 9));
+                                precisionRange.isInfiniteStopKey() ? EMPTY_BYTE : Arrays.copyOfRange(precisionRange.getEndKey().getRow(tmp).getBytes(), 0, 9));
 
                         // If both are inclusive, then we can maintain inclusivity, else false
                         boolean newStartInclusive = baseRange.isStartKeyInclusive() && appendRange.isStartKeyInclusive();
