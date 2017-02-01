@@ -75,6 +75,18 @@ public abstract class MetricsReader
             throws Exception;
 
     /**
+     * Gets the number of rows in the table where a column contains a series of values,
+     * based on the data in the given collection of {@link MetricCacheKey}.  All Range objects
+     * in the collection of keys contain <b>non-exact</b> Accumulo Range objects, i.e. they are a
+     * range of value (vs. a single range).
+     *
+     * @param keys Collection of metric keys
+     * @return A map containing the cardinality
+     */
+    public abstract Long getCardinality(Collection<MetricCacheKey> keys)
+            throws Exception;
+
+    /**
      * Gets any key from the given non-empty collection, validating that all other keys
      * in the collection are the same (except for the Range in the key).
      * <p>
