@@ -16,6 +16,9 @@ package com.facebook.presto.accumulo.index;
 import com.facebook.presto.accumulo.index.metrics.MetricsStorage.TimestampPrecision;
 import com.facebook.presto.accumulo.model.AccumuloRange;
 import com.facebook.presto.accumulo.model.IndexColumn;
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMultimap;
 import com.google.common.collect.Multimap;
@@ -29,6 +32,7 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 import static com.facebook.presto.accumulo.index.Indexer.EMPTY_BYTE;
@@ -37,19 +41,37 @@ import static com.facebook.presto.accumulo.index.Indexer.NULL_BYTE;
 import static com.facebook.presto.accumulo.index.Indexer.TIMESTAMP_CARDINALITY_FAMILIES;
 import static com.facebook.presto.accumulo.index.Indexer.splitTimestampRange;
 import static com.google.common.base.Preconditions.checkState;
+import static java.nio.charset.StandardCharsets.UTF_8;
 import static java.util.Objects.requireNonNull;
 
 public class IndexQueryParameters
 {
     private final IndexColumn column;
-    private final Text indexFamily = new Text();
-    private final List<AccumuloRange> ranges = new ArrayList<>();
-    private final Multimap<Text, Range> metricParameters = MultimapBuilder.hashKeys().arrayListValues().build();
+    private final Text indexFamily;
+    private final List<AccumuloRange> ranges;
+    private final Multimap<Text, Range> metricParameters;
+
+    private Optional<Long> cardinality = Optional.empty();
     private boolean appendedTimestampColumn = false;
 
     public IndexQueryParameters(IndexColumn column)
     {
         this.column = requireNonNull(column);
+        this.indexFamily = new Text();
+        this.ranges = new ArrayList<>();
+        this.metricParameters = MultimapBuilder.hashKeys().arrayListValues().build();
+    }
+
+    @JsonCreator
+    public IndexQueryParameters(
+            @JsonProperty("column") IndexColumn column,
+            @JsonProperty("indexFamily") String indexFamily,
+            @JsonProperty("ranges") List<AccumuloRange> ranges)
+    {
+        this.column = requireNonNull(column);
+        this.indexFamily = new Text(requireNonNull(indexFamily).getBytes(UTF_8));
+        this.ranges = ImmutableList.copyOf(requireNonNull(ranges));
+        this.metricParameters = ImmutableMultimap.of();
     }
 
     public void appendColumn(byte[] indexFamily, Collection<AccumuloRange> appendRanges, boolean truncateTimestamp)
@@ -90,27 +112,61 @@ public class IndexQueryParameters
         ranges.addAll(newRanges);
     }
 
+    @JsonProperty("column")
     public IndexColumn getIndexColumn()
     {
         return column;
     }
 
+    @JsonIgnore
     public Text getIndexFamily()
     {
         checkState(indexFamily.getLength() > 0, "Call to getIndexFamily without an append operation");
         return indexFamily;
     }
 
-    public Collection<Range> getRanges()
+    @JsonProperty("indexFamily")
+    public String getIndexFamilyAsString()
+    {
+        checkState(indexFamily.getLength() > 0, "Call to getIndexFamily without an append operation");
+        return indexFamily.toString();
+    }
+
+    @JsonProperty("ranges")
+    public List<AccumuloRange> getAccumuloRanges()
+    {
+        return ranges;
+    }
+
+    @JsonIgnore
+    public Multimap<Text, Range> getMetricParameters()
+    {
+        checkState(metricParameters.size() > 0, "Call to getMetricParameters without an append operation");
+        return ImmutableMultimap.copyOf(metricParameters);
+    }
+
+    @JsonIgnore
+    public List<Range> getRanges()
     {
         checkState(ranges.size() > 0, "Call to getRanges without an append operation");
         return ImmutableList.copyOf(ranges.stream().map(AccumuloRange::getRange).collect(Collectors.toList()));
     }
 
-    public Multimap<Text, Range> getMetricParameters()
+    @JsonIgnore
+    public boolean hasCardinality()
     {
-        checkState(metricParameters.size() > 0, "Call to getMetricParameters without an append operation");
-        return ImmutableMultimap.copyOf(metricParameters);
+        return cardinality.isPresent();
+    }
+
+    @JsonIgnore
+    public long getCardinality()
+    {
+        return cardinality.get();
+    }
+
+    public void setCardinality(long cardinality)
+    {
+        this.cardinality = Optional.of(cardinality);
     }
 
     private AccumuloRange appendRange(AccumuloRange baseRange, AccumuloRange appendRange)
