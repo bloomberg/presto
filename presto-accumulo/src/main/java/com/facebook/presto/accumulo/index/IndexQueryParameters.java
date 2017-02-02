@@ -115,15 +115,46 @@ public class IndexQueryParameters
 
     private AccumuloRange appendRange(AccumuloRange baseRange, AccumuloRange appendRange)
     {
-        // Here, we use an empty string if the start keys for either are empty
-        byte[] newStart = Bytes.concat(
-                baseRange.isInfiniteStartKey() ? EMPTY_BYTE : baseRange.getStart(),
-                NULL_BYTE,
-                appendRange.isInfiniteStartKey() ? EMPTY_BYTE : appendRange.getStart());
-        byte[] newEnd = Bytes.concat(
-                baseRange.isInfiniteStopKey() ? EMPTY_BYTE : baseRange.getEnd(),
-                NULL_BYTE,
-                appendRange.isInfiniteStopKey() ? EMPTY_BYTE : appendRange.getEnd());
+        byte[] newStart;
+        if (baseRange.isInfiniteStartKey()) {
+            if (appendRange.isInfiniteStartKey()) {
+                newStart = EMPTY_BYTE;
+            }
+            else {
+                newStart = Bytes.concat(new byte[appendRange.getStart().length + 1], appendRange.getStart());
+            }
+        }
+        else {
+            if (appendRange.isInfiniteStartKey()) {
+                newStart = baseRange.getStart();
+            }
+            else {
+                newStart = Bytes.concat(baseRange.getStart(), NULL_BYTE, appendRange.getStart());
+            }
+        }
+
+        byte[] newEnd;
+        if (baseRange.isInfiniteStopKey()) {
+            if (appendRange.isInfiniteStopKey()) {
+                newEnd = new byte[baseRange.getStart().length + 1 + appendRange.getStart().length];
+                Arrays.fill(newEnd, (byte) -1);
+            }
+            else {
+                byte[] fillBytes = new byte[baseRange.getStart().length];
+                Arrays.fill(fillBytes, (byte) -1);
+                newEnd = Bytes.concat(fillBytes, NULL_BYTE, appendRange.getEnd());
+            }
+        }
+        else {
+            if (appendRange.isInfiniteStopKey()) {
+                byte[] fillBytes = new byte[appendRange.getStart().length];
+                Arrays.fill(fillBytes, (byte) -1);
+                newEnd = Bytes.concat(baseRange.getEnd(), NULL_BYTE, fillBytes);
+            }
+            else {
+                newEnd = Bytes.concat(baseRange.getEnd(), NULL_BYTE, appendRange.getEnd());
+            }
+        }
 
         // If both are inclusive, then we can maintain inclusivity, else false
         boolean newStartInclusive = baseRange.isStartKeyInclusive() && appendRange.isStartKeyInclusive();
@@ -146,6 +177,13 @@ public class IndexQueryParameters
             else {
                 // Otherwise, set the metric parameters
                 for (AccumuloRange appendRange : appendRanges) {
+                    // We can't rollup open-ended timestamps
+                    if (appendRange.isInfiniteStartKey() || appendRange.isInfiniteStopKey()) {
+                        // Append the range as-is for millisecond precision and continue to the next one
+                        metricParameters.put(this.indexFamily, appendRange.getRange());
+                        continue;
+                    }
+
                     for (Map.Entry<TimestampPrecision, Collection<Range>> entry : splitTimestampRange(appendRange.getRange()).asMap().entrySet()) {
                         // Append the precision family to the index family
                         Text precisionIndexFamily = new Text(this.indexFamily);
@@ -177,6 +215,13 @@ public class IndexQueryParameters
     {
         Text tmp = new Text();
         for (AccumuloRange appendRange : appendRanges) {
+            // We can't rollup open-ended timestamps
+            if (appendRange.isInfiniteStartKey() || appendRange.isInfiniteStopKey()) {
+                // Append the range as-is for millisecond precision and continue to the next one
+                metricParameters.put(this.indexFamily, appendRange.getRange());
+                continue;
+            }
+
             for (Map.Entry<TimestampPrecision, Collection<Range>> entry : splitTimestampRange(appendRange.getRange()).asMap().entrySet()) {
                 // Append the precision family to the index family
                 byte[] precisionFamily = TIMESTAMP_CARDINALITY_FAMILIES.get(entry.getKey());
@@ -185,15 +230,49 @@ public class IndexQueryParameters
 
                 for (AccumuloRange baseRange : this.ranges) {
                     for (Range precisionRange : entry.getValue()) {
-                        // Here, we use an empty string if the start keys for either are empty
-                        byte[] newStart = Bytes.concat(
-                                baseRange.isInfiniteStartKey() ? EMPTY_BYTE : baseRange.getStart(),
-                                NULL_BYTE,
-                                precisionRange.isInfiniteStartKey() ? EMPTY_BYTE : Arrays.copyOfRange(precisionRange.getStartKey().getRow(tmp).getBytes(), 0, 9));
-                        byte[] newEnd = Bytes.concat(
-                                baseRange.isInfiniteStopKey() ? EMPTY_BYTE : baseRange.getEnd(),
-                                NULL_BYTE,
-                                precisionRange.isInfiniteStopKey() ? EMPTY_BYTE : Arrays.copyOfRange(precisionRange.getEndKey().getRow(tmp).getBytes(), 0, 9));
+                        byte[] precisionStart = precisionRange.isInfiniteStartKey() ? null : Arrays.copyOfRange(precisionRange.getStartKey().getRow(tmp).getBytes(), 0, 9);
+                        byte[] precisionEnd = precisionRange.isInfiniteStopKey() ? null : Arrays.copyOfRange(precisionRange.getEndKey().getRow(tmp).getBytes(), 0, 9);
+
+                        byte[] newStart;
+                        if (baseRange.isInfiniteStartKey()) {
+                            if (precisionStart == null) {
+                                newStart = EMPTY_BYTE;
+                            }
+                            else {
+                                newStart = Bytes.concat(new byte[precisionStart.length + 1], precisionStart);
+                            }
+                        }
+                        else {
+                            if (precisionRange.isInfiniteStartKey()) {
+                                newStart = baseRange.getStart();
+                            }
+                            else {
+                                newStart = Bytes.concat(baseRange.getStart(), NULL_BYTE, precisionStart);
+                            }
+                        }
+
+                        byte[] newEnd;
+                        if (baseRange.isInfiniteStopKey()) {
+                            if (precisionEnd == null) {
+                                newEnd = new byte[baseRange.getStart().length + 1 + precisionStart.length];
+                                Arrays.fill(newEnd, (byte) -1);
+                            }
+                            else {
+                                byte[] fullBytes = new byte[baseRange.getStart().length];
+                                Arrays.fill(fullBytes, (byte) -1);
+                                newEnd = Bytes.concat(fullBytes, NULL_BYTE, precisionEnd);
+                            }
+                        }
+                        else {
+                            if (precisionEnd == null) {
+                                byte[] fillBytes = new byte[precisionStart.length];
+                                Arrays.fill(fillBytes, (byte) -1);
+                                newEnd = Bytes.concat(baseRange.getEnd(), NULL_BYTE, fillBytes);
+                            }
+                            else {
+                                newEnd = Bytes.concat(baseRange.getEnd(), NULL_BYTE, precisionEnd);
+                            }
+                        }
 
                         // If both are inclusive, then we can maintain inclusivity, else false
                         boolean newStartInclusive = baseRange.isStartKeyInclusive() && appendRange.isStartKeyInclusive();
