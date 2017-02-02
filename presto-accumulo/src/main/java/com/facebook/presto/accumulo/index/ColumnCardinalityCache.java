@@ -154,6 +154,7 @@ public class ColumnCardinalityCache
                     long start = System.currentTimeMillis();
                     long cardinality = getColumnCardinality(session, metricsStorage, schema, table, auths, queryParameter);
                     LOG.debug("Cardinality for column %s is %s, took %s ms", queryParameter.getIndexColumn(), cardinality, System.currentTimeMillis() - start);
+                    queryParameter.setCardinality(cardinality);
                     return Pair.of(cardinality, queryParameter);
                 }));
 

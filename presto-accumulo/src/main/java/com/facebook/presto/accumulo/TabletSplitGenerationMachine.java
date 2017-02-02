@@ -73,6 +73,7 @@ import static com.facebook.presto.accumulo.conf.AccumuloSessionProperties.isOpti
 import static com.facebook.presto.accumulo.conf.AccumuloSessionProperties.isOptimizeNumRowsPerSplitEnabled;
 import static com.facebook.presto.accumulo.index.Indexer.getIndexColumnFamily;
 import static com.facebook.presto.spi.StandardErrorCode.FUNCTION_IMPLEMENTATION_ERROR;
+import static com.facebook.presto.spi.StandardErrorCode.FUNCTION_IMPLEMENTATION_MISSING;
 import static com.facebook.presto.spi.type.TimestampType.TIMESTAMP;
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkState;
@@ -89,6 +90,7 @@ public class TabletSplitGenerationMachine
         NONE,
         METRICS,
         INDEX,
+        DISTRIBUTE,
         FULL,
         DONE
     }
@@ -169,6 +171,9 @@ public class TabletSplitGenerationMachine
                             }
 
                             handleMetricsState();
+                            break;
+                        case DISTRIBUTE:
+                            handleDistributeState();
                             break;
                         case INDEX:
                             if (ensureQueryParameters()) {
@@ -289,7 +294,18 @@ public class TabletSplitGenerationMachine
                     }
                 }
 
-                // Else, remove columns with a large number of rows
+                // Else, we are going to use the index, now we just need to figure out if we are going to distribute it
+
+                // If there is only one intersection column and it is greater than some threshold to distribute it to the workers
+                if (canDistributeIndexLookup(indexQueryParameters)) {
+                    LOG.debug("Distributing index lookup to workers");
+                    state = State.DISTRIBUTE;
+                    return;
+                }
+
+                // Else, we will try row intersection
+
+                // Remove columns with a large number of rows that would otherwise blow up the coordinator JVM
                 ImmutableList.Builder<IndexQueryParameters> builder = ImmutableList.builder();
                 cardinalities.entries().stream().filter(x -> x.getKey() < maxIndexLookup).map(Map.Entry::getValue).forEach(queryParameter -> {
                     LOG.debug(String.format("Cardinality of column %s is below the max index lookup threshold %s, added for intersection", queryParameter.getIndexColumn(), maxIndexLookup));
@@ -314,6 +330,18 @@ public class TabletSplitGenerationMachine
                 indexQueryParameters = ImmutableList.of(lowestCardinality.getValue());
                 state = State.INDEX;
             }
+        }
+
+        private boolean canDistributeIndexLookup(List<IndexQueryParameters> queryParameters)
+        {
+            return false;
+        }
+
+        private void handleDistributeState()
+                throws Exception
+        {
+            // TODO
+            throw new PrestoException(FUNCTION_IMPLEMENTATION_MISSING, "State.DISTRIBUTE is not yet implemented");
         }
 
         private void handleIndexState()
@@ -364,11 +392,11 @@ public class TabletSplitGenerationMachine
             for (Range range : splitRanges) {
                 // If locality is enabled, then fetch tablet location
                 if (fetchTabletLocations) {
-                    tabletSplits.add(new TabletSplitMetadata(getTabletLocation(tableName, range.getStartKey()), ImmutableList.of(range)));
+                    tabletSplits.add(new TabletSplitMetadata(getTabletLocation(tableName, range.getStartKey()), ImmutableList.of(range), Optional.empty()));
                 }
                 else {
                     // else, just use the default location
-                    tabletSplits.add(new TabletSplitMetadata(Optional.empty(), ImmutableList.of(range)));
+                    tabletSplits.add(new TabletSplitMetadata(Optional.empty(), ImmutableList.of(range), Optional.empty()));
                 }
             }
 
@@ -702,7 +730,7 @@ public class TabletSplitGenerationMachine
         do {
             // Add the sublist of range handles
             // Use an empty location because we are binning multiple Ranges spread across many tablet servers
-            prestoSplits.add(new TabletSplitMetadata(Optional.empty(), splitRanges.subList(fromIndex, toIndex)));
+            prestoSplits.add(new TabletSplitMetadata(Optional.empty(), splitRanges.subList(fromIndex, toIndex), Optional.empty()));
             toAdd -= toIndex - fromIndex;
             fromIndex = toIndex;
             toIndex += Math.min(toAdd, numRangesPerBin);
