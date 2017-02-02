@@ -13,8 +13,11 @@
  */
 package com.facebook.presto.accumulo.model;
 
+import com.google.common.primitives.Bytes;
 import org.apache.accumulo.core.data.Range;
 import org.apache.hadoop.io.Text;
+
+import java.util.Arrays;
 
 /**
  * This is a lightweight wrapper for {@link org.apache.accumulo.core.data.Range}
@@ -47,9 +50,45 @@ public class AccumuloRange
 
     public AccumuloRange(byte[] start, boolean isStartKeyInclusive, byte[] end, boolean isEndKeyInclusive)
     {
-        this.start = start;
+        if (start != null) {
+            if (end != null) {
+                if (start.length == end.length) {
+                    this.start = start;
+                    this.end = end;
+                }
+                else if (start.length < end.length) {
+                    byte[] zeroes = new byte[end.length - start.length];
+                    Arrays.fill(zeroes, (byte) 0);
+                    this.start = Bytes.concat(start, zeroes);
+                    this.end = end;
+                }
+                else {
+                    byte[] ffs = new byte[start.length - end.length];
+                    Arrays.fill(ffs, (byte) 255);
+                    this.start = start;
+                    this.end = Bytes.concat(end, ffs);
+                }
+            }
+            else {
+                this.start = start;
+                this.end = new byte[start.length];
+                Arrays.fill(this.end, (byte) 255);
+            }
+        }
+        else {
+            if (end != null) {
+                this.start = new byte[end.length];
+                Arrays.fill(this.start, (byte) 0);
+                this.end = end;
+            }
+            else {
+                // both null
+                this.start = start;
+                this.end = end;
+            }
+        }
+
         this.isStartKeyInclusive = isStartKeyInclusive;
-        this.end = end;
         this.isEndKeyInclusive = isEndKeyInclusive;
 
         this.range = new Range(start != null ? new Text(start) : null, isStartKeyInclusive, end != null ? new Text(end) : null, isEndKeyInclusive);
