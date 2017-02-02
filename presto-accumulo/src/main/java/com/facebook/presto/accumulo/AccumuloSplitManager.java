@@ -98,6 +98,7 @@ public class AccumuloSplitManager
                     rowIdName,
                     tableHandle.getSerializerClassName(),
                     splitMetadata.getRanges().stream().map(WrappedRange::new).collect(Collectors.toList()),
+                    splitMetadata.getIndexQueryParameters(),
                     constraints,
                     tableHandle.getScanAuthorizations(),
                     splitMetadata.getHostPort());

@@ -13,6 +13,7 @@
  */
 package com.facebook.presto.accumulo.model;
 
+import com.facebook.presto.accumulo.index.IndexQueryParameters;
 import com.facebook.presto.accumulo.serializers.AccumuloRowSerializer;
 import com.facebook.presto.spi.ConnectorSplit;
 import com.facebook.presto.spi.HostAddress;
@@ -44,6 +45,7 @@ public class AccumuloSplit
     private final List<HostAddress> addresses;
     private final List<AccumuloColumnConstraint> constraints;
     private final List<WrappedRange> ranges;
+    private final Optional<IndexQueryParameters> indexQueryParameters;
 
     @JsonCreator
     public AccumuloSplit(
@@ -53,6 +55,7 @@ public class AccumuloSplit
             @JsonProperty("rowId") String rowId,
             @JsonProperty("serializerClassName") String serializerClassName,
             @JsonProperty("ranges") List<WrappedRange> ranges,
+            @JsonProperty("indexQueryParameters") Optional<IndexQueryParameters> indexQueryParameters,
             @JsonProperty("constraints") List<AccumuloColumnConstraint> constraints,
             @JsonProperty("scanAuthorizations") Optional<String> scanAuthorizations,
             @JsonProperty("hostPort") Optional<String> hostPort)
@@ -66,14 +69,10 @@ public class AccumuloSplit
         this.scanAuthorizations = requireNonNull(scanAuthorizations, "scanAuthorizations is null");
         this.hostPort = requireNonNull(hostPort, "hostPort is null");
         this.ranges = ImmutableList.copyOf(requireNonNull(ranges, "ranges is null"));
+        this.indexQueryParameters = requireNonNull(indexQueryParameters, "indexQueryParameters is null");
 
         // Parse the host address into a list of addresses, this would be an Accumulo Tablet server or some localhost thing
-        if (hostPort.isPresent()) {
-            addresses = ImmutableList.of(HostAddress.fromString(hostPort.get()));
-        }
-        else {
-            addresses = ImmutableList.of();
-        }
+        addresses = hostPort.map(s -> ImmutableList.of(HostAddress.fromString(s))).orElseGet(ImmutableList::of);
     }
 
     @JsonProperty
@@ -122,6 +121,12 @@ public class AccumuloSplit
     public List<WrappedRange> getWrappedRanges()
     {
         return ranges;
+    }
+
+    @JsonProperty
+    public Optional<IndexQueryParameters> getIndexQueryParameters()
+    {
+        return indexQueryParameters;
     }
 
     @JsonIgnore
@@ -183,6 +188,7 @@ public class AccumuloSplit
                 .add("serializerClassName", serializerClassName)
                 .add("addresses", addresses)
                 .add("numRanges", ranges.size())
+                .add("indexQueryParameters", indexQueryParameters)
                 .add("constraints", constraints)
                 .add("scanAuthorizations", scanAuthorizations)
                 .add("hostPort", hostPort)

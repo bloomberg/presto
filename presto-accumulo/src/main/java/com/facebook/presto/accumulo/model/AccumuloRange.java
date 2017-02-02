@@ -13,11 +13,16 @@
  */
 package com.facebook.presto.accumulo.model;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.google.common.primitives.Bytes;
 import org.apache.accumulo.core.data.Range;
 import org.apache.hadoop.io.Text;
 
 import java.util.Arrays;
+
+import static java.util.Objects.requireNonNull;
 
 /**
  * This is a lightweight wrapper for {@link org.apache.accumulo.core.data.Range}
@@ -48,7 +53,12 @@ public class AccumuloRange
         this(start, true, end, true);
     }
 
-    public AccumuloRange(byte[] start, boolean isStartKeyInclusive, byte[] end, boolean isEndKeyInclusive)
+    @JsonCreator
+    public AccumuloRange(
+            @JsonProperty("start") byte[] start,
+            @JsonProperty("isStartKeyInclusive") boolean isStartKeyInclusive,
+            @JsonProperty("end") byte[] end,
+            @JsonProperty("isEndKeyInclusive") boolean isEndKeyInclusive)
     {
         if (start != null) {
             if (end != null) {
@@ -83,8 +93,8 @@ public class AccumuloRange
             }
             else {
                 // both null
-                this.start = start;
-                this.end = end;
+                this.start = null;
+                this.end = null;
             }
         }
 
@@ -94,36 +104,55 @@ public class AccumuloRange
         this.range = new Range(start != null ? new Text(start) : null, isStartKeyInclusive, end != null ? new Text(end) : null, isEndKeyInclusive);
     }
 
+    public AccumuloRange(Range range)
+    {
+        requireNonNull(range, "range is null");
+
+        this.start = range.getStartKey() != null ? range.getStartKey().getRow().copyBytes() : null;
+        this.isStartKeyInclusive = range.isStartKeyInclusive();
+        this.end = range.getEndKey() != null ? range.getEndKey().getRow().copyBytes() : null;
+        this.isEndKeyInclusive = range.isEndKeyInclusive();
+
+        this.range = range;
+    }
+
+    @JsonIgnore
     public Range getRange()
     {
         return range;
     }
 
+    @JsonProperty
     public byte[] getStart()
     {
         return start;
     }
 
+    @JsonProperty
     public boolean isStartKeyInclusive()
     {
         return isStartKeyInclusive;
     }
 
+    @JsonProperty
     public byte[] getEnd()
     {
         return end;
     }
 
+    @JsonProperty
     public boolean isEndKeyInclusive()
     {
         return isEndKeyInclusive;
     }
 
+    @JsonIgnore
     public boolean isInfiniteStartKey()
     {
         return start == null;
     }
 
+    @JsonIgnore
     public boolean isInfiniteStopKey()
     {
         return end == null;
