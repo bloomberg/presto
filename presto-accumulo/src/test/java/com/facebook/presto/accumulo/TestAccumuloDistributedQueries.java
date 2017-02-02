@@ -412,4 +412,59 @@ public class TestAccumuloDistributedQueries
             assertUpdate("DROP TABLE test_array_of_rows");
         }
     }
+
+    @Test
+    public void testCompositeIndexRangeScans()
+            throws Exception
+    {
+        try {
+            // This test ensure proper conversion of predicate to composite index/metrics Range scans against Accumulo
+            assertUpdate("CREATE TABLE test_open_ended_timestamp_rollup WITH (index_columns='b,c,b:c', truncate_timestamps = true) AS SELECT 1 AS a, 'b' as b, TIMESTAMP '2017-01-31 00:00:00' AS c", 1);
+
+            assertQuery("SELECT * FROM test_open_ended_timestamp_rollup WHERE b < 'c' AND c < TIMESTAMP '2017-02-01'", "SELECT 1, 'b', TIMESTAMP '2017-01-31 05:45:00'");
+            assertQuery("SELECT * FROM test_open_ended_timestamp_rollup WHERE b < 'c' AND c <= TIMESTAMP '2017-01-31'", "SELECT 1, 'b', TIMESTAMP '2017-01-31 05:45:00'");
+            assertQuery("SELECT * FROM test_open_ended_timestamp_rollup WHERE b < 'c' AND c > TIMESTAMP '2017-01-01'", "SELECT 1, 'b', TIMESTAMP '2017-01-31 05:45:00'");
+            assertQuery("SELECT * FROM test_open_ended_timestamp_rollup WHERE b < 'c' AND c >= TIMESTAMP '2017-01-31'", "SELECT 1, 'b', TIMESTAMP '2017-01-31 05:45:00'");
+            assertQuery("SELECT * FROM test_open_ended_timestamp_rollup WHERE b < 'c' AND c = TIMESTAMP '2017-01-31'", "SELECT 1, 'b', TIMESTAMP '2017-01-31 05:45:00'");
+            assertQuery("SELECT * FROM test_open_ended_timestamp_rollup WHERE b < 'c' AND c BETWEEN TIMESTAMP '2017-01-01' AND TIMESTAMP '2017-02-01'", "SELECT 1, 'b', TIMESTAMP '2017-01-31 05:45:00'");
+
+            assertQuery("SELECT * FROM test_open_ended_timestamp_rollup WHERE b <= 'b' AND c < TIMESTAMP '2017-02-01'", "SELECT 1, 'b', TIMESTAMP '2017-01-31 05:45:00'");
+            assertQuery("SELECT * FROM test_open_ended_timestamp_rollup WHERE b <= 'b' AND c <= TIMESTAMP '2017-01-31'", "SELECT 1, 'b', TIMESTAMP '2017-01-31 05:45:00'");
+            assertQuery("SELECT * FROM test_open_ended_timestamp_rollup WHERE b <= 'b' AND c > TIMESTAMP '2017-01-01'", "SELECT 1, 'b', TIMESTAMP '2017-01-31 05:45:00'");
+            assertQuery("SELECT * FROM test_open_ended_timestamp_rollup WHERE b <= 'b' AND c >= TIMESTAMP '2017-01-31'", "SELECT 1, 'b', TIMESTAMP '2017-01-31 05:45:00'");
+            assertQuery("SELECT * FROM test_open_ended_timestamp_rollup WHERE b <= 'b' AND c = TIMESTAMP '2017-01-31'", "SELECT 1, 'b', TIMESTAMP '2017-01-31 05:45:00'");
+            assertQuery("SELECT * FROM test_open_ended_timestamp_rollup WHERE b <= 'b' AND c BETWEEN TIMESTAMP '2017-01-01' AND TIMESTAMP '2017-02-01'", "SELECT 1, 'b', TIMESTAMP '2017-01-31 05:45:00'");
+
+            assertQuery("SELECT * FROM test_open_ended_timestamp_rollup WHERE b > 'a' AND c < TIMESTAMP '2017-02-01'", "SELECT 1, 'b', TIMESTAMP '2017-01-31 05:45:00'");
+            assertQuery("SELECT * FROM test_open_ended_timestamp_rollup WHERE b > 'a' AND c <= TIMESTAMP '2017-01-31'", "SELECT 1, 'b', TIMESTAMP '2017-01-31 05:45:00'");
+            assertQuery("SELECT * FROM test_open_ended_timestamp_rollup WHERE b > 'a' AND c > TIMESTAMP '2017-01-01'", "SELECT 1, 'b', TIMESTAMP '2017-01-31 05:45:00'");
+            assertQuery("SELECT * FROM test_open_ended_timestamp_rollup WHERE b > 'a' AND c >= TIMESTAMP '2017-01-31'", "SELECT 1, 'b', TIMESTAMP '2017-01-31 05:45:00'");
+            assertQuery("SELECT * FROM test_open_ended_timestamp_rollup WHERE b > 'a' AND c = TIMESTAMP '2017-01-31'", "SELECT 1, 'b', TIMESTAMP '2017-01-31 05:45:00'");
+            assertQuery("SELECT * FROM test_open_ended_timestamp_rollup WHERE b > 'a' AND c BETWEEN TIMESTAMP '2017-01-01' AND TIMESTAMP '2017-02-01'", "SELECT 1, 'b', TIMESTAMP '2017-01-31 05:45:00'");
+
+            assertQuery("SELECT * FROM test_open_ended_timestamp_rollup WHERE b >= 'b' AND c < TIMESTAMP '2017-02-01'", "SELECT 1, 'b', TIMESTAMP '2017-01-31 05:45:00'");
+            assertQuery("SELECT * FROM test_open_ended_timestamp_rollup WHERE b >= 'b' AND c <= TIMESTAMP '2017-01-31'", "SELECT 1, 'b', TIMESTAMP '2017-01-31 05:45:00'");
+            assertQuery("SELECT * FROM test_open_ended_timestamp_rollup WHERE b >= 'b' AND c > TIMESTAMP '2017-01-01'", "SELECT 1, 'b', TIMESTAMP '2017-01-31 05:45:00'");
+            assertQuery("SELECT * FROM test_open_ended_timestamp_rollup WHERE b >= 'b' AND c >= TIMESTAMP '2017-01-31'", "SELECT 1, 'b', TIMESTAMP '2017-01-31 05:45:00'");
+            assertQuery("SELECT * FROM test_open_ended_timestamp_rollup WHERE b >= 'b' AND c = TIMESTAMP '2017-01-31'", "SELECT 1, 'b', TIMESTAMP '2017-01-31 05:45:00'");
+            assertQuery("SELECT * FROM test_open_ended_timestamp_rollup WHERE b >= 'b' AND c BETWEEN TIMESTAMP '2017-01-01' AND TIMESTAMP '2017-02-01'", "SELECT 1, 'b', TIMESTAMP '2017-01-31 05:45:00'");
+
+            assertQuery("SELECT * FROM test_open_ended_timestamp_rollup WHERE b = 'b' AND c < TIMESTAMP '2017-02-01'", "SELECT 1, 'b', TIMESTAMP '2017-01-31 05:45:00'");
+            assertQuery("SELECT * FROM test_open_ended_timestamp_rollup WHERE b = 'b' AND c <= TIMESTAMP '2017-01-31'", "SELECT 1, 'b', TIMESTAMP '2017-01-31 05:45:00'");
+            assertQuery("SELECT * FROM test_open_ended_timestamp_rollup WHERE b = 'b' AND c > TIMESTAMP '2017-01-01'", "SELECT 1, 'b', TIMESTAMP '2017-01-31 05:45:00'");
+            assertQuery("SELECT * FROM test_open_ended_timestamp_rollup WHERE b = 'b' AND c >= TIMESTAMP '2017-01-31'", "SELECT 1, 'b', TIMESTAMP '2017-01-31 05:45:00'");
+            assertQuery("SELECT * FROM test_open_ended_timestamp_rollup WHERE b = 'b' AND c = TIMESTAMP '2017-01-31'", "SELECT 1, 'b', TIMESTAMP '2017-01-31 05:45:00'");
+            assertQuery("SELECT * FROM test_open_ended_timestamp_rollup WHERE b = 'b' AND c BETWEEN TIMESTAMP '2017-01-01' AND TIMESTAMP '2017-02-01'", "SELECT 1, 'b', TIMESTAMP '2017-01-31 05:45:00'");
+
+            assertQuery("SELECT * FROM test_open_ended_timestamp_rollup WHERE b BETWEEN 'a' AND 'c' AND c < TIMESTAMP '2017-02-01'", "SELECT 1, 'b', TIMESTAMP '2017-01-31 05:45:00'");
+            assertQuery("SELECT * FROM test_open_ended_timestamp_rollup WHERE b BETWEEN 'a' AND 'c' AND c <= TIMESTAMP '2017-01-31'", "SELECT 1, 'b', TIMESTAMP '2017-01-31 05:45:00'");
+            assertQuery("SELECT * FROM test_open_ended_timestamp_rollup WHERE b BETWEEN 'a' AND 'c' AND c > TIMESTAMP '2017-01-01'", "SELECT 1, 'b', TIMESTAMP '2017-01-31 05:45:00'");
+            assertQuery("SELECT * FROM test_open_ended_timestamp_rollup WHERE b BETWEEN 'a' AND 'c' AND c >= TIMESTAMP '2017-01-31'", "SELECT 1, 'b', TIMESTAMP '2017-01-31 05:45:00'");
+            assertQuery("SELECT * FROM test_open_ended_timestamp_rollup WHERE b BETWEEN 'a' AND 'c' AND c = TIMESTAMP '2017-01-31'", "SELECT 1, 'b', TIMESTAMP '2017-01-31 05:45:00'");
+            assertQuery("SELECT * FROM test_open_ended_timestamp_rollup WHERE b BETWEEN 'a' AND 'c' AND c BETWEEN TIMESTAMP '2017-01-01' AND TIMESTAMP '2017-02-01'", "SELECT 1, 'b', TIMESTAMP '2017-01-31 05:45:00'");
+        }
+        finally {
+            assertUpdate("DROP TABLE test_open_ended_timestamp_rollup");
+        }
+    }
 }
