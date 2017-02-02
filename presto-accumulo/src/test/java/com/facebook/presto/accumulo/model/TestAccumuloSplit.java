@@ -57,6 +57,7 @@ public class TestAccumuloSplit
                 "id",
                 LexicoderRowSerializer.class.getCanonicalName(),
                 ImmutableList.of(new Range(), new Range("bar", "foo"), new Range("bar", false, "baz", false)).stream().map(WrappedRange::new).collect(Collectors.toList()),
+                Optional.empty(), // TODO
                 ImmutableList.of(
                         new AccumuloColumnConstraint(
                                 "id",
@@ -88,6 +89,7 @@ public class TestAccumuloSplit
                 "id",
                 LexicoderRowSerializer.class.getCanonicalName(),
                 ImmutableList.of(),
+                Optional.empty(), // TODO
                 ImmutableList.of(),
                 Optional.empty(),
                 Optional.empty());
