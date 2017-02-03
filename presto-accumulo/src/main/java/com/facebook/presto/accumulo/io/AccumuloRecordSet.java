@@ -27,10 +27,12 @@ import com.google.common.base.Splitter;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Iterables;
 import io.airlift.log.Logger;
+import io.airlift.slice.Slice;
 import org.apache.accumulo.core.client.AccumuloException;
 import org.apache.accumulo.core.client.AccumuloSecurityException;
 import org.apache.accumulo.core.client.BatchScanner;
 import org.apache.accumulo.core.client.Connector;
+import org.apache.accumulo.core.data.Range;
 import org.apache.accumulo.core.security.Authorizations;
 
 import java.util.List;
@@ -38,6 +40,7 @@ import java.util.Optional;
 
 import static com.facebook.presto.accumulo.AccumuloErrorCode.UNEXPECTED_ACCUMULO_ERROR;
 import static com.facebook.presto.accumulo.conf.AccumuloSessionProperties.isTracingEnabled;
+import static com.facebook.presto.accumulo.index.IndexLookup.getIndexRanges;
 import static com.facebook.presto.spi.StandardErrorCode.NOT_FOUND;
 import static java.lang.String.format;
 import static java.util.Objects.requireNonNull;
@@ -60,6 +63,7 @@ public class AccumuloRecordSet
     private final AccumuloRowSerializer serializer;
     private final BatchScanner scanner;
     private final String rowIdName;
+    private boolean useNullScanner = false;
 
     private Optional<String> traceName = Optional.empty();
 
@@ -85,7 +89,7 @@ public class AccumuloRecordSet
             throw new PrestoException(NOT_FOUND, "Failed to factory serializer class.  Is it on the classpath?", e);
         }
 
-        // Save off the column handles and createa list of the Accumulo types
+        // Save off the column handles and create a list of the Accumulo types
         this.columnHandles = requireNonNull(columnHandles, "column handles is null");
         ImmutableList.Builder<Type> types = ImmutableList.builder();
         for (AccumuloColumnHandle column : columnHandles) {
@@ -98,9 +102,31 @@ public class AccumuloRecordSet
         }
 
         try {
-            // Create the BatchScanner and set the ranges from the split
-            scanner = connector.createBatchScanner(split.getFullTableName(), getScanAuthorizations(session, split, connector, username), 10);
-            scanner.setRanges(split.getRanges());
+            if (split.getIndexQueryParameters().isPresent()) {
+                List<Range> ranges = getIndexRanges(
+                        connector,
+                        session,
+                        split.getIndexTableName(),
+                        ImmutableList.of(split.getIndexQueryParameters().get()),
+                        split.getRowIdRanges(),
+                        getScanAuthorizations(session, split, connector, username));
+
+                if (ranges.isEmpty()) {
+                    useNullScanner = true;
+                    scanner = null;
+                }
+                else {
+                    // Create the BatchScanner and set the ranges from the split
+                    scanner = connector.createBatchScanner(split.getFullTableName(), getScanAuthorizations(session, split, connector, username), 10);
+                    scanner.setRanges(ranges);
+                    useNullScanner = false;
+                }
+            }
+            else {
+                useNullScanner = false;
+                scanner = connector.createBatchScanner(split.getFullTableName(), getScanAuthorizations(session, split, connector, username), 10);
+                scanner.setRanges(split.getRanges());
+            }
         }
         catch (Exception e) {
             throw new PrestoException(UNEXPECTED_ACCUMULO_ERROR, format("Failed to create batch scanner for table %s", split.getFullTableName()), e);
@@ -152,6 +178,83 @@ public class AccumuloRecordSet
     @Override
     public RecordCursor cursor()
     {
+        if (useNullScanner) {
+            return new NullRecordCursor();
+        }
+
         return new AccumuloRecordCursor(serializer, scanner, rowIdName, columnHandles, constraints, traceName);
+    }
+
+    private static class NullRecordCursor
+            implements RecordCursor
+    {
+        @Override
+        public long getTotalBytes()
+        {
+            return 0;
+        }
+
+        @Override
+        public long getCompletedBytes()
+        {
+            return 0;
+        }
+
+        @Override
+        public long getReadTimeNanos()
+        {
+            return 0;
+        }
+
+        @Override
+        public Type getType(int field)
+        {
+            return null;
+        }
+
+        @Override
+        public boolean advanceNextPosition()
+        {
+            return false;
+        }
+
+        @Override
+        public boolean getBoolean(int field)
+        {
+            return false;
+        }
+
+        @Override
+        public long getLong(int field)
+        {
+            return 0;
+        }
+
+        @Override
+        public double getDouble(int field)
+        {
+            return 0;
+        }
+
+        @Override
+        public Slice getSlice(int field)
+        {
+            return null;
+        }
+
+        @Override
+        public Object getObject(int field)
+        {
+            return null;
+        }
+
+        @Override
+        public boolean isNull(int field)
+        {
+            return false;
+        }
+
+        @Override
+        public void close() {}
     }
 }

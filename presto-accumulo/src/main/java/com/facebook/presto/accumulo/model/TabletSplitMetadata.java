@@ -15,10 +15,10 @@ package com.facebook.presto.accumulo.model;
 
 import com.facebook.presto.accumulo.index.IndexQueryParameters;
 import com.fasterxml.jackson.annotation.JsonCreator;
-import com.fasterxml.jackson.annotation.JsonProperty;
 import com.google.common.collect.ImmutableList;
 import org.apache.accumulo.core.data.Range;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -31,33 +31,34 @@ public class TabletSplitMetadata
 {
     private final Optional<String> hostPort;
     private final List<Range> ranges;
+    private final Collection<AccumuloRange> rowIdRanges;
     private final Optional<IndexQueryParameters> indexQueryParameters;
 
     @JsonCreator
-    public TabletSplitMetadata(
-            @JsonProperty("hostPort") Optional<String> hostPort,
-            @JsonProperty("ranges") List<Range> ranges,
-            @JsonProperty("indexQueryParameters") Optional<IndexQueryParameters> indexQueryParameters)
+    public TabletSplitMetadata(Optional<String> hostPort, List<Range> ranges, Collection<AccumuloRange> rowIdRanges, Optional<IndexQueryParameters> indexQueryParameters)
     {
         this.hostPort = requireNonNull(hostPort, "hostPort is null");
         this.ranges = ImmutableList.copyOf(requireNonNull(ranges, "ranges is null"));
+        this.rowIdRanges = ImmutableList.copyOf(requireNonNull(rowIdRanges, "rowIdRanges is null"));
         this.indexQueryParameters = requireNonNull(indexQueryParameters, "indexQueryParameters is null");
         checkArgument(ranges.size() > 0 ^ indexQueryParameters.isPresent(), "Both ranges and index query parameters must not be set/empty");
     }
 
-    @JsonProperty
     public Optional<String> getHostPort()
     {
         return hostPort;
     }
 
-    @JsonProperty
     public List<Range> getRanges()
     {
         return ranges;
     }
 
-    @JsonProperty
+    public Collection<AccumuloRange> getRowIdRanges()
+    {
+        return rowIdRanges;
+    }
+
     public Optional<IndexQueryParameters> getIndexQueryParameters()
     {
         return indexQueryParameters;
@@ -66,7 +67,7 @@ public class TabletSplitMetadata
     @Override
     public int hashCode()
     {
-        return Objects.hash(hostPort, ranges, indexQueryParameters);
+        return Objects.hash(hostPort, ranges, rowIdRanges, indexQueryParameters);
     }
 
     @Override
@@ -92,6 +93,7 @@ public class TabletSplitMetadata
         return toStringHelper(this)
                 .add("hostPort", hostPort)
                 .add("numRanges", ranges.size())
+                .add("numRowIdRanges", rowIdRanges.size())
                 .add("indexQueryParameters", indexQueryParameters)
                 .toString();
     }

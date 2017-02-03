@@ -24,6 +24,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.google.common.collect.ImmutableList;
 import org.apache.accumulo.core.data.Range;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
@@ -44,7 +45,8 @@ public class AccumuloSplit
     private final Optional<String> hostPort;
     private final List<HostAddress> addresses;
     private final List<AccumuloColumnConstraint> constraints;
-    private final List<WrappedRange> ranges;
+    private final List<AccumuloRange> ranges;
+    private final Collection<AccumuloRange> rowIdRanges;
     private final Optional<IndexQueryParameters> indexQueryParameters;
 
     @JsonCreator
@@ -54,7 +56,8 @@ public class AccumuloSplit
             @JsonProperty("table") String table,
             @JsonProperty("rowId") String rowId,
             @JsonProperty("serializerClassName") String serializerClassName,
-            @JsonProperty("ranges") List<WrappedRange> ranges,
+            @JsonProperty("ranges") List<AccumuloRange> ranges,
+            @JsonProperty("rowIdRanges") Collection<AccumuloRange> rowIdRanges,
             @JsonProperty("indexQueryParameters") Optional<IndexQueryParameters> indexQueryParameters,
             @JsonProperty("constraints") List<AccumuloColumnConstraint> constraints,
             @JsonProperty("scanAuthorizations") Optional<String> scanAuthorizations,
@@ -69,6 +72,7 @@ public class AccumuloSplit
         this.scanAuthorizations = requireNonNull(scanAuthorizations, "scanAuthorizations is null");
         this.hostPort = requireNonNull(hostPort, "hostPort is null");
         this.ranges = ImmutableList.copyOf(requireNonNull(ranges, "ranges is null"));
+        this.rowIdRanges = ImmutableList.copyOf(requireNonNull(rowIdRanges, "rowIdRanges is null"));
         this.indexQueryParameters = requireNonNull(indexQueryParameters, "indexQueryParameters is null");
 
         // Parse the host address into a list of addresses, this would be an Accumulo Tablet server or some localhost thing
@@ -111,6 +115,12 @@ public class AccumuloSplit
         return (this.getSchema().equals("default") ? "" : this.getSchema() + ".") + this.getTable();
     }
 
+    @JsonIgnore
+    public String getIndexTableName()
+    {
+        return getFullTableName() + "_idx";
+    }
+
     @JsonProperty
     public String getSerializerClassName()
     {
@@ -118,9 +128,15 @@ public class AccumuloSplit
     }
 
     @JsonProperty("ranges")
-    public List<WrappedRange> getWrappedRanges()
+    public List<AccumuloRange> getWrappedRanges()
     {
         return ranges;
+    }
+
+    @JsonProperty
+    public Collection<AccumuloRange> getRowIdRanges()
+    {
+        return rowIdRanges;
     }
 
     @JsonProperty
@@ -132,7 +148,7 @@ public class AccumuloSplit
     @JsonIgnore
     public List<Range> getRanges()
     {
-        return ranges.stream().map(WrappedRange::getRange).collect(Collectors.toList());
+        return ranges.stream().map(AccumuloRange::getRange).collect(Collectors.toList());
     }
 
     @JsonProperty
