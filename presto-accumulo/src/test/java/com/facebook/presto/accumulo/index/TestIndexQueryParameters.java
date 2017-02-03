@@ -45,11 +45,6 @@ public class TestIndexQueryParameters
     private static final DateTimeFormatter PARSER = ISODateTimeFormat.dateTimeParser();
     private static final byte[] MIN_TIMESTAMP_VALUE = SERIALIZER.encode(TIMESTAMP, PARSER.parseDateTime("2001-08-22T03:04:05.321+0000").getMillis());
     private static final byte[] MAX_TIMESTAMP_VALUE = SERIALIZER.encode(TIMESTAMP, PARSER.parseDateTime("2001-09-22T03:04:05.321+0000").getMillis());
-    private static final byte[] MIN_SECOND_TIMESTAMP_VALUE = SERIALIZER.encode(TIMESTAMP, PARSER.parseDateTime("2001-08-22T03:04:05.000+0000").getMillis());
-    private static final byte[] MAX_SECOND_TIMESTAMP_VALUE = SERIALIZER.encode(TIMESTAMP, PARSER.parseDateTime("2001-09-22T03:04:05.000+0000").getMillis());
-    private static final byte[] MINUTE_TIMESTAMP_VALUE = SERIALIZER.encode(TIMESTAMP, PARSER.parseDateTime("2001-08-22T03:04:00.000+0000").getMillis());
-    private static final byte[] HOUR_TIMESTAMP_VALUE = SERIALIZER.encode(TIMESTAMP, PARSER.parseDateTime("2001-08-22T03:00:00.000+0000").getMillis());
-    private static final byte[] DAY_TIMESTAMP_VALUE = SERIALIZER.encode(TIMESTAMP, PARSER.parseDateTime("2001-08-22T00:00:00.000+0000").getMillis());
 
     private static final IndexColumn INDEX_COLUMN = new IndexColumn(ImmutableList.of("email", "age", "born"));
 
@@ -60,21 +55,7 @@ public class TestIndexQueryParameters
         assertEquals(parameters.getIndexColumn(), INDEX_COLUMN);
 
         parameters.appendColumn("cf_email".getBytes(UTF_8), ImmutableList.of(new AccumuloRange(FOO), new AccumuloRange(BAR)), false);
-
-        assertEquals(parameters.getIndexFamily(), new Text("cf_email"));
-        assertEquals(parameters.getMetricParameters().asMap().size(), 1);
-        assertEquals(parameters.getRanges(), ImmutableList.of(new Range(new Text(FOO)), new Range(new Text(BAR))));
-
         parameters.appendColumn("cf_age".getBytes(UTF_8), ImmutableList.of(new AccumuloRange(AGE_5, AGE_10), new AccumuloRange(AGE_50, AGE_100)), false);
-
-        assertEquals(parameters.getIndexFamily(), new Text("cf_email-cf_age"));
-        assertEquals(parameters.getMetricParameters().asMap().size(), 1);
-        assertEquals(parameters.getRanges(), ImmutableList.of(
-                new Range(new Text(Bytes.concat(FOO, NULL_BYTE, AGE_5)), new Text(Bytes.concat(FOO, NULL_BYTE, AGE_10))),
-                new Range(new Text(Bytes.concat(FOO, NULL_BYTE, AGE_50)), new Text(Bytes.concat(FOO, NULL_BYTE, AGE_100))),
-                new Range(new Text(Bytes.concat(BAR, NULL_BYTE, AGE_5)), new Text(Bytes.concat(BAR, NULL_BYTE, AGE_10))),
-                new Range(new Text(Bytes.concat(BAR, NULL_BYTE, AGE_50)), new Text(Bytes.concat(BAR, NULL_BYTE, AGE_100)))));
-
         parameters.appendColumn("cf_born".getBytes(UTF_8), ImmutableList.of(new AccumuloRange(MIN_TIMESTAMP_VALUE, MAX_TIMESTAMP_VALUE)), false);
 
         assertEquals(parameters.getIndexFamily(), new Text("cf_email-cf_age-cf_born"));
@@ -93,21 +74,7 @@ public class TestIndexQueryParameters
         assertEquals(parameters.getIndexColumn(), INDEX_COLUMN);
 
         parameters.appendColumn("cf_email".getBytes(UTF_8), ImmutableList.of(new AccumuloRange(FOO), new AccumuloRange(BAR)), false);
-
-        assertEquals(parameters.getIndexFamily(), new Text("cf_email"));
-        assertEquals(parameters.getMetricParameters().asMap().size(), 1);
-        assertEquals(parameters.getRanges(), ImmutableList.of(new Range(new Text(FOO)), new Range(new Text(BAR))));
-
         parameters.appendColumn("cf_age".getBytes(UTF_8), ImmutableList.of(new AccumuloRange(AGE_5, AGE_10), new AccumuloRange(AGE_50, AGE_100)), false);
-
-        assertEquals(parameters.getIndexFamily(), new Text("cf_email-cf_age"));
-        assertEquals(parameters.getMetricParameters().asMap().size(), 1);
-        assertEquals(parameters.getRanges(), ImmutableList.of(
-                new Range(new Text(Bytes.concat(FOO, NULL_BYTE, AGE_5)), new Text(Bytes.concat(FOO, NULL_BYTE, AGE_10))),
-                new Range(new Text(Bytes.concat(FOO, NULL_BYTE, AGE_50)), new Text(Bytes.concat(FOO, NULL_BYTE, AGE_100))),
-                new Range(new Text(Bytes.concat(BAR, NULL_BYTE, AGE_5)), new Text(Bytes.concat(BAR, NULL_BYTE, AGE_10))),
-                new Range(new Text(Bytes.concat(BAR, NULL_BYTE, AGE_50)), new Text(Bytes.concat(BAR, NULL_BYTE, AGE_100)))));
-
         parameters.appendColumn("cf_born".getBytes(UTF_8), ImmutableList.of(new AccumuloRange(MIN_TIMESTAMP_VALUE, MAX_TIMESTAMP_VALUE)), true);
 
         assertEquals(parameters.getIndexFamily(), new Text("cf_email-cf_age-cf_born"));

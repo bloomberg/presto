@@ -17,11 +17,11 @@ import com.facebook.presto.accumulo.metadata.AccumuloTable;
 import com.facebook.presto.accumulo.metadata.ZooKeeperMetadataManager;
 import com.facebook.presto.accumulo.model.AccumuloColumnConstraint;
 import com.facebook.presto.accumulo.model.AccumuloColumnHandle;
+import com.facebook.presto.accumulo.model.AccumuloRange;
 import com.facebook.presto.accumulo.model.AccumuloSplit;
 import com.facebook.presto.accumulo.model.AccumuloTableHandle;
 import com.facebook.presto.accumulo.model.AccumuloTableLayoutHandle;
 import com.facebook.presto.accumulo.model.TabletSplitMetadata;
-import com.facebook.presto.accumulo.model.WrappedRange;
 import com.facebook.presto.spi.ColumnHandle;
 import com.facebook.presto.spi.ConnectorSession;
 import com.facebook.presto.spi.ConnectorSplit;
@@ -35,7 +35,6 @@ import com.facebook.presto.spi.predicate.Domain;
 import com.facebook.presto.spi.predicate.TupleDomain;
 import com.facebook.presto.spi.predicate.TupleDomain.ColumnDomain;
 import com.google.common.collect.ImmutableList;
-import org.apache.accumulo.core.client.Connector;
 
 import javax.inject.Inject;
 
@@ -50,17 +49,14 @@ public class AccumuloSplitManager
 {
     private final String connectorId;
     private final AccumuloClient client;
-    private final Connector connector;
     private final ZooKeeperMetadataManager metadataManager;
 
     @Inject
     public AccumuloSplitManager(
-            Connector connector,
             AccumuloConnectorId connectorId,
             AccumuloClient client,
             ZooKeeperMetadataManager metadataManager)
     {
-        this.connector = requireNonNull(connector, "connector is null");
         this.connectorId = requireNonNull(connectorId, "connectorId is null").toString();
         this.client = requireNonNull(client, "client is null");
         this.metadataManager = requireNonNull(metadataManager, "metadataManager is null");
@@ -96,7 +92,8 @@ public class AccumuloSplitManager
                     tableName,
                     rowIdName,
                     tableHandle.getSerializerClassName(),
-                    splitMetadata.getRanges().stream().map(WrappedRange::new).collect(Collectors.toList()),
+                    splitMetadata.getRanges().stream().map(AccumuloRange::new).collect(Collectors.toList()),
+                    splitMetadata.getRowIdRanges(),
                     splitMetadata.getIndexQueryParameters(),
                     constraints,
                     tableHandle.getScanAuthorizations(),
