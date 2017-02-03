@@ -16,6 +16,7 @@ package com.facebook.presto.accumulo.model;
 import com.facebook.presto.accumulo.serializers.AccumuloRowSerializer;
 import com.facebook.presto.accumulo.serializers.LexicoderRowSerializer;
 import com.google.common.primitives.Bytes;
+import io.airlift.json.JsonCodec;
 import org.testng.annotations.Test;
 
 import static com.facebook.presto.spi.type.VarcharType.VARCHAR;
@@ -23,12 +24,26 @@ import static org.testng.Assert.assertEquals;
 
 public class TestAccumuloRange
 {
+    private final JsonCodec<AccumuloRange> codec = JsonCodec.jsonCodec(AccumuloRange.class);
+
+    @Test
+    public void testJsonRoundTrip()
+    {
+        AccumuloRowSerializer serializer = new LexicoderRowSerializer();
+        byte[] a = serializer.encode(VARCHAR, "abc");
+        byte[] b = serializer.encode(VARCHAR, "d");
+        AccumuloRange expected = new AccumuloRange(a, b);
+        String json = codec.toJson(expected);
+        AccumuloRange actual = codec.fromJson(json);
+        assertEquals(actual, expected);
+    }
+
     @Test
     public void testStartNullEndNull()
     {
         byte[] a = null;
         byte[] b = null;
-        AccumuloRange range = new AccumuloRange(a, b);
+        AccumuloRange range = new AccumuloRange(a, b).getPaddedRange();
         assertEquals(range.getStart(), null);
         assertEquals(range.getEnd(), null);
         assertEquals(range.isStartKeyInclusive(), true);
@@ -36,7 +51,7 @@ public class TestAccumuloRange
         assertEquals(range.isInfiniteStartKey(), true);
         assertEquals(range.isInfiniteStopKey(), true);
 
-        range = new AccumuloRange(a, false, b, false);
+        range = new AccumuloRange(a, false, b, false).getPaddedRange();
         assertEquals(range.getStart(), null);
         assertEquals(range.getEnd(), null);
         assertEquals(range.isStartKeyInclusive(), false);
@@ -51,7 +66,7 @@ public class TestAccumuloRange
         AccumuloRowSerializer serializer = new LexicoderRowSerializer();
         byte[] a = serializer.encode(VARCHAR, "abc");
         byte[] b = null;
-        AccumuloRange range = new AccumuloRange(a, b);
+        AccumuloRange range = new AccumuloRange(a, b).getPaddedRange();
         assertEquals(range.getStart(), a);
         assertEquals(range.getEnd(), new byte[] {(byte) 255, (byte) 255, (byte) 255});
         assertEquals(range.isStartKeyInclusive(), true);
@@ -59,7 +74,7 @@ public class TestAccumuloRange
         assertEquals(range.isInfiniteStartKey(), false);
         assertEquals(range.isInfiniteStopKey(), false);
 
-        range = new AccumuloRange(a, false, b, false);
+        range = new AccumuloRange(a, false, b, false).getPaddedRange();
         assertEquals(range.getStart(), a);
         assertEquals(range.getEnd(), new byte[] {(byte) 255, (byte) 255, (byte) 255});
         assertEquals(range.isStartKeyInclusive(), false);
@@ -74,7 +89,7 @@ public class TestAccumuloRange
         AccumuloRowSerializer serializer = new LexicoderRowSerializer();
         byte[] a = null;
         byte[] b = serializer.encode(VARCHAR, "def");
-        AccumuloRange range = new AccumuloRange(a, b);
+        AccumuloRange range = new AccumuloRange(a, b).getPaddedRange();
         assertEquals(range.getStart(), new byte[] {0, 0, 0});
         assertEquals(range.getEnd(), b);
         assertEquals(range.isStartKeyInclusive(), true);
@@ -82,7 +97,7 @@ public class TestAccumuloRange
         assertEquals(range.isInfiniteStartKey(), false);
         assertEquals(range.isInfiniteStopKey(), false);
 
-        range = new AccumuloRange(a, false, b, false);
+        range = new AccumuloRange(a, false, b, false).getPaddedRange();
         assertEquals(range.getStart(), new byte[] {0, 0, 0});
         assertEquals(range.getEnd(), b);
         assertEquals(range.isStartKeyInclusive(), false);
@@ -97,7 +112,7 @@ public class TestAccumuloRange
         AccumuloRowSerializer serializer = new LexicoderRowSerializer();
         byte[] a = serializer.encode(VARCHAR, "abc");
         byte[] b = serializer.encode(VARCHAR, "def");
-        AccumuloRange range = new AccumuloRange(a, b);
+        AccumuloRange range = new AccumuloRange(a, b).getPaddedRange();
         assertEquals(range.getStart(), a);
         assertEquals(range.getEnd(), b);
         assertEquals(range.isStartKeyInclusive(), true);
@@ -105,7 +120,7 @@ public class TestAccumuloRange
         assertEquals(range.isInfiniteStartKey(), false);
         assertEquals(range.isInfiniteStopKey(), false);
 
-        range = new AccumuloRange(a, false, b, false);
+        range = new AccumuloRange(a, false, b, false).getPaddedRange();
         assertEquals(range.getStart(), a);
         assertEquals(range.getEnd(), b);
         assertEquals(range.isStartKeyInclusive(), false);
@@ -120,7 +135,7 @@ public class TestAccumuloRange
         AccumuloRowSerializer serializer = new LexicoderRowSerializer();
         byte[] a = serializer.encode(VARCHAR, "a");
         byte[] b = serializer.encode(VARCHAR, "def");
-        AccumuloRange range = new AccumuloRange(a, b);
+        AccumuloRange range = new AccumuloRange(a, b).getPaddedRange();
         assertEquals(range.getStart(), Bytes.concat(a, new byte[] {0, 0}));
         assertEquals(range.getEnd(), b);
         assertEquals(range.isStartKeyInclusive(), true);
@@ -128,7 +143,7 @@ public class TestAccumuloRange
         assertEquals(range.isInfiniteStartKey(), false);
         assertEquals(range.isInfiniteStopKey(), false);
 
-        range = new AccumuloRange(a, false, b, false);
+        range = new AccumuloRange(a, false, b, false).getPaddedRange();
         assertEquals(range.getStart(), Bytes.concat(a, new byte[] {0, 0}));
         assertEquals(range.getEnd(), b);
         assertEquals(range.isStartKeyInclusive(), false);
@@ -143,7 +158,7 @@ public class TestAccumuloRange
         AccumuloRowSerializer serializer = new LexicoderRowSerializer();
         byte[] a = serializer.encode(VARCHAR, "abc");
         byte[] b = serializer.encode(VARCHAR, "d");
-        AccumuloRange range = new AccumuloRange(a, b);
+        AccumuloRange range = new AccumuloRange(a, b).getPaddedRange();
         assertEquals(range.getStart(), a);
         assertEquals(range.getEnd(), Bytes.concat(b, new byte[] {(byte) 255, (byte) 255}));
         assertEquals(range.isStartKeyInclusive(), true);
@@ -151,7 +166,7 @@ public class TestAccumuloRange
         assertEquals(range.isInfiniteStartKey(), false);
         assertEquals(range.isInfiniteStopKey(), false);
 
-        range = new AccumuloRange(a, false, b, false);
+        range = new AccumuloRange(a, false, b, false).getPaddedRange();
         assertEquals(range.getStart(), a);
         assertEquals(range.getEnd(), Bytes.concat(b, new byte[] {(byte) 255, (byte) 255}));
         assertEquals(range.isStartKeyInclusive(), false);

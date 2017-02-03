@@ -54,6 +54,7 @@ public final class AccumuloSessionProperties
     private static final String MAX_ROWS_PER_SPLIT = "max_rows_per_split";
     private static final String SPLITS_PER_WORKER = "splits_per_worker";
     private static final String TRACING_ENABLED = "tracing_enabled";
+    private static final String INDEX_DISTRIBUTION_THRESHOLD = "index_distribution_threshold";
 
     private final List<PropertyMetadata<?>> sessionProperties;
 
@@ -150,7 +151,13 @@ public final class AccumuloSessionProperties
                 false,
                 false);
 
-        sessionProperties = ImmutableList.of(s1, s2, s3, s4, s5, s6, s7, s8, s9, s10, s11, s12, s13, s14, s15);
+        PropertyMetadata<Long> s16 = longSessionProperty(
+                INDEX_DISTRIBUTION_THRESHOLD,
+                "Minimum number of rows that would cause the index lookup to be distributed to the workers, if applicable.  Set to zero to disable.  Default 500_000",
+                500_000L,
+                false);
+
+        sessionProperties = ImmutableList.of(s1, s2, s3, s4, s5, s6, s7, s8, s9, s10, s11, s12, s13, s14, s15, s16);
     }
 
     public List<PropertyMetadata<?>> getSessionProperties()
@@ -269,5 +276,10 @@ public final class AccumuloSessionProperties
     public static boolean isTracingEnabled(ConnectorSession session)
     {
         return session.getProperty(TRACING_ENABLED, Boolean.class);
+    }
+
+    public static long getIndexDistributionThreshold(ConnectorSession session)
+    {
+        return session.getProperty(INDEX_DISTRIBUTION_THRESHOLD, Long.class);
     }
 }

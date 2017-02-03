@@ -13,6 +13,7 @@
  */
 package com.facebook.presto.accumulo.model;
 
+import com.facebook.presto.accumulo.index.IndexQueryParameters;
 import com.facebook.presto.accumulo.serializers.LexicoderRowSerializer;
 import com.facebook.presto.spi.type.StandardTypes;
 import com.facebook.presto.spi.type.Type;
@@ -23,15 +24,14 @@ import com.google.common.collect.ImmutableMap;
 import io.airlift.json.JsonCodec;
 import io.airlift.json.JsonCodecFactory;
 import io.airlift.json.ObjectMapperProvider;
-import org.apache.accumulo.core.data.Range;
 import org.testng.annotations.Test;
 
 import java.util.Map;
 import java.util.Optional;
-import java.util.stream.Collectors;
 
 import static com.facebook.presto.spi.type.VarcharType.VARCHAR;
 import static com.google.common.base.Preconditions.checkArgument;
+import static java.nio.charset.StandardCharsets.UTF_8;
 import static java.util.Locale.ENGLISH;
 import static org.testng.Assert.assertEquals;
 
@@ -56,8 +56,15 @@ public class TestAccumuloSplit
                 "table",
                 "id",
                 LexicoderRowSerializer.class.getCanonicalName(),
-                ImmutableList.of(new Range(), new Range("bar", "foo"), new Range("bar", false, "baz", false)).stream().map(WrappedRange::new).collect(Collectors.toList()),
-                Optional.empty(), // TODO
+                ImmutableList.of(new AccumuloRange(), new AccumuloRange("bar".getBytes(UTF_8), "foo".getBytes(UTF_8)), new AccumuloRange("bar".getBytes(UTF_8), false, "baz".getBytes(UTF_8), false)),
+                ImmutableList.of(new AccumuloRange(), new AccumuloRange("bar".getBytes(UTF_8), "foo".getBytes(UTF_8)), new AccumuloRange("bar".getBytes(UTF_8), false, "baz".getBytes(UTF_8), false)),
+                Optional.of(
+                        new IndexQueryParameters(
+                                new IndexColumn(ImmutableList.of("bar", "baz")),
+                                "index-family",
+                                ImmutableList.of(new AccumuloRange("b".getBytes(UTF_8), "c".getBytes(UTF_8)))
+                        )
+                ),
                 ImmutableList.of(
                         new AccumuloColumnConstraint(
                                 "id",
@@ -89,7 +96,8 @@ public class TestAccumuloSplit
                 "id",
                 LexicoderRowSerializer.class.getCanonicalName(),
                 ImmutableList.of(),
-                Optional.empty(), // TODO
+                ImmutableList.of(),
+                Optional.empty(),
                 ImmutableList.of(),
                 Optional.empty(),
                 Optional.empty());
@@ -106,7 +114,9 @@ public class TestAccumuloSplit
         assertEquals(actual.getConstraints(), expected.getConstraints());
         assertEquals(actual.getRowId(), expected.getRowId());
         assertEquals(actual.getHostPort(), expected.getHostPort());
-        assertEquals(actual.getRanges(), expected.getRanges());
+        assertEquals(actual.getWrappedRanges(), expected.getWrappedRanges());
+        assertEquals(actual.getRowIdRanges(), expected.getRowIdRanges());
+        assertEquals(actual.getIndexQueryParameters(), expected.getIndexQueryParameters());
         assertEquals(actual.getRowId(), expected.getRowId());
         assertEquals(actual.getScanAuthorizations(), expected.getScanAuthorizations());
         assertEquals(actual.getSchema(), expected.getSchema());
