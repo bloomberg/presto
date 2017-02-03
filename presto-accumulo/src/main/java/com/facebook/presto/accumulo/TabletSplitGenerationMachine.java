@@ -59,6 +59,7 @@ import java.util.Optional;
 import java.util.stream.Collectors;
 
 import static com.facebook.presto.accumulo.AccumuloErrorCode.UNEXPECTED_ACCUMULO_ERROR;
+import static com.facebook.presto.accumulo.conf.AccumuloSessionProperties.getIndexDistributionThreshold;
 import static com.facebook.presto.accumulo.conf.AccumuloSessionProperties.getIndexSmallCardRowThreshold;
 import static com.facebook.presto.accumulo.conf.AccumuloSessionProperties.getIndexSmallCardThreshold;
 import static com.facebook.presto.accumulo.conf.AccumuloSessionProperties.getIndexThreshold;
@@ -73,10 +74,10 @@ import static com.facebook.presto.accumulo.conf.AccumuloSessionProperties.isOpti
 import static com.facebook.presto.accumulo.conf.AccumuloSessionProperties.isOptimizeNumRowsPerSplitEnabled;
 import static com.facebook.presto.accumulo.index.Indexer.getIndexColumnFamily;
 import static com.facebook.presto.spi.StandardErrorCode.FUNCTION_IMPLEMENTATION_ERROR;
-import static com.facebook.presto.spi.StandardErrorCode.FUNCTION_IMPLEMENTATION_MISSING;
 import static com.facebook.presto.spi.type.TimestampType.TIMESTAMP;
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkState;
+import static java.lang.String.format;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static java.util.Objects.requireNonNull;
 
@@ -298,7 +299,6 @@ public class TabletSplitGenerationMachine
 
                 // If there is only one intersection column and it is greater than some threshold to distribute it to the workers
                 if (canDistributeIndexLookup(indexQueryParameters)) {
-                    LOG.debug("Distributing index lookup to workers");
                     state = State.DISTRIBUTE;
                     return;
                 }
@@ -308,7 +308,7 @@ public class TabletSplitGenerationMachine
                 // Remove columns with a large number of rows that would otherwise blow up the coordinator JVM
                 ImmutableList.Builder<IndexQueryParameters> builder = ImmutableList.builder();
                 cardinalities.entries().stream().filter(x -> x.getKey() < maxIndexLookup).map(Map.Entry::getValue).forEach(queryParameter -> {
-                    LOG.debug(String.format("Cardinality of column %s is below the max index lookup threshold %s, added for intersection", queryParameter.getIndexColumn(), maxIndexLookup));
+                    LOG.debug(format("Cardinality of column %s is below the max index lookup threshold %s, added for intersection", queryParameter.getIndexColumn(), maxIndexLookup));
                     builder.add(queryParameter);
                 });
                 List<IndexQueryParameters> intersectionColumns = builder.build();
@@ -324,6 +324,9 @@ public class TabletSplitGenerationMachine
                     state = State.FULL;
                 }
             }
+            else if (canDistributeIndexLookup(indexQueryParameters)) {
+                state = State.DISTRIBUTE;
+            }
             else {
                 // Else, we don't need to intersect the columns and we can just use the column with the lowest cardinality
                 LOG.debug("Not intersecting columns, using column with lowest cardinality: " + lowestCardinality.getValue().getIndexColumn());
@@ -334,14 +337,50 @@ public class TabletSplitGenerationMachine
 
         private boolean canDistributeIndexLookup(List<IndexQueryParameters> queryParameters)
         {
-            return false;
+            long threshold = getIndexDistributionThreshold(session);
+            if (threshold == 0) {
+                LOG.debug("Distribution of index is disabled by session property");
+                return false;
+            }
+            else if (queryParameters.size() != 1) {
+                LOG.debug("Distribution of index is disabled, too many query parameters to distribute index.  Expected 1, actual " + queryParameters.size());
+                return false;
+            }
+            else if (queryParameters.get(0).getCardinality() < threshold) {
+                LOG.debug("Distribution of index is disabled, cardinality of query column is too large.  Needs to be greater than or equal to " + threshold);
+                return false;
+            }
+
+            LOG.debug("Distribution of index is a go!");
+            return true;
         }
 
         private void handleDistributeState()
                 throws Exception
         {
-            // TODO
-            throw new PrestoException(FUNCTION_IMPLEMENTATION_MISSING, "State.DISTRIBUTE is not yet implemented");
+            checkState(state == State.DISTRIBUTE, "State machine is not set to DISTRIBUTE");
+            requireNonNull(indexQueryParameters, "Index query parameters are null");
+            checkState(indexQueryParameters.size() == 1, "Size of index query parameters is not one but " + indexQueryParameters.size());
+            checkState(indexQueryParameters.get(0).hasCardinality(), "Index query parameters does not have a cardinality set");
+            requireNonNull(numRows, "Number of rows is null");
+
+            IndexQueryParameters params = indexQueryParameters.get(0);
+            int numSplits = (int) params.getCardinality() / optimizeNumRowsPerSplit(session, params.getCardinality(), numWorkers);
+
+            if (numSplits > 0) {
+                ImmutableList.Builder<TabletSplitMetadata> builder = ImmutableList.builder();
+                for (IndexQueryParameters splitParams : params.split(numSplits)) {
+                    builder.add(new TabletSplitMetadata(Optional.empty(), ImmutableList.of(), rowIdRanges, Optional.of(splitParams)));
+                }
+                tabletSplits = builder.build();
+            }
+            else {
+                tabletSplits = new ArrayList<>();
+                tabletSplits.add(new TabletSplitMetadata(Optional.empty(), ImmutableList.of(), rowIdRanges, Optional.of(params)));
+            }
+
+            LOG.info("Distributing %s tablet splits to worker nodes for index retrieval", tabletSplits.size());
+            state = State.DONE;
         }
 
         private void handleIndexState()
@@ -363,7 +402,7 @@ public class TabletSplitGenerationMachine
                 if (ratio < threshold) {
                     // Bin the ranges into TabletMetadataSplits and return true to use the tablet splits
                     tabletSplits = new ArrayList<>();
-                    binRanges(optimizeNumRowsPerSplit(session, indexRanges.size(), numWorkers), indexRanges, tabletSplits);
+                    binRanges(optimizeNumRowsPerSplit(session, indexRanges.size(), numWorkers), indexRanges, rowIdRanges, tabletSplits);
                     LOG.debug("Number of splits for %s is %d with %d ranges", table.getFullTableName(), tabletSplits.size(), indexRanges.size());
                     state = State.DONE;
                 }
@@ -392,11 +431,11 @@ public class TabletSplitGenerationMachine
             for (Range range : splitRanges) {
                 // If locality is enabled, then fetch tablet location
                 if (fetchTabletLocations) {
-                    tabletSplits.add(new TabletSplitMetadata(getTabletLocation(tableName, range.getStartKey()), ImmutableList.of(range), Optional.empty()));
+                    tabletSplits.add(new TabletSplitMetadata(getTabletLocation(tableName, range.getStartKey()), ImmutableList.of(range), rowIdRanges, Optional.empty()));
                 }
                 else {
                     // else, just use the default location
-                    tabletSplits.add(new TabletSplitMetadata(Optional.empty(), ImmutableList.of(range), Optional.empty()));
+                    tabletSplits.add(new TabletSplitMetadata(Optional.empty(), ImmutableList.of(range), rowIdRanges, Optional.empty()));
                 }
             }
 
@@ -579,14 +618,14 @@ public class TabletSplitGenerationMachine
             }
         }
 
-        private int optimizeNumRowsPerSplit(ConnectorSession session, int numRowIDs, int numWorkers)
+        private int optimizeNumRowsPerSplit(ConnectorSession session, long numRowIDs, int numWorkers)
         {
             if (isOptimizeNumRowsPerSplitEnabled(session)) {
                 int min = getMinRowsPerSplit(session);
 
                 if (numRowIDs <= min) {
                     LOG.debug("RowsPerSplit " + numRowIDs);
-                    return numRowIDs;
+                    return (int) numRowIDs;
                 }
 
                 int max = getMaxRowsPerSplit(session);
@@ -721,7 +760,7 @@ public class TabletSplitGenerationMachine
         return prunedQueryParameters.build();
     }
 
-    private static void binRanges(int numRangesPerBin, List<Range> splitRanges, List<TabletSplitMetadata> prestoSplits)
+    private static void binRanges(int numRangesPerBin, List<Range> splitRanges, Collection<AccumuloRange> rowIdRanges, List<TabletSplitMetadata> prestoSplits)
     {
         checkArgument(numRangesPerBin > 0, "number of ranges per bin must be greater than zero");
         int toAdd = splitRanges.size();
@@ -730,7 +769,7 @@ public class TabletSplitGenerationMachine
         do {
             // Add the sublist of range handles
             // Use an empty location because we are binning multiple Ranges spread across many tablet servers
-            prestoSplits.add(new TabletSplitMetadata(Optional.empty(), splitRanges.subList(fromIndex, toIndex), Optional.empty()));
+            prestoSplits.add(new TabletSplitMetadata(Optional.empty(), splitRanges.subList(fromIndex, toIndex), rowIdRanges, Optional.empty()));
             toAdd -= toIndex - fromIndex;
             fromIndex = toIndex;
             toIndex += Math.min(toAdd, numRangesPerBin);

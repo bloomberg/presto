@@ -21,6 +21,7 @@ import org.apache.accumulo.core.data.Range;
 import org.apache.hadoop.io.Text;
 
 import java.util.Arrays;
+import java.util.Objects;
 
 import static java.util.Objects.requireNonNull;
 
@@ -128,7 +129,7 @@ public class AccumuloRange
         return start;
     }
 
-    @JsonProperty
+    @JsonProperty("isStartKeyInclusive")
     public boolean isStartKeyInclusive()
     {
         return isStartKeyInclusive;
@@ -140,7 +141,7 @@ public class AccumuloRange
         return end;
     }
 
-    @JsonProperty
+    @JsonProperty("isEndKeyInclusive")
     public boolean isEndKeyInclusive()
     {
         return isEndKeyInclusive;
@@ -156,5 +157,79 @@ public class AccumuloRange
     public boolean isInfiniteStopKey()
     {
         return end == null;
+    }
+
+    public AccumuloRange getPaddedRange()
+    {
+        byte[] paddedStart;
+        byte[] paddedEnd;
+        if (start != null) {
+            if (end != null) {
+                if (start.length == end.length) {
+                    paddedStart = start;
+                    paddedEnd = end;
+                }
+                else if (start.length < end.length) {
+                    byte[] zeroes = new byte[end.length - start.length];
+                    Arrays.fill(zeroes, (byte) 0);
+                    paddedStart = Bytes.concat(start, zeroes);
+                    paddedEnd = end;
+                }
+                else {
+                    byte[] ffs = new byte[start.length - end.length];
+                    Arrays.fill(ffs, (byte) 255);
+                    paddedStart = start;
+                    paddedEnd = Bytes.concat(end, ffs);
+                }
+            }
+            else {
+                paddedStart = start;
+                paddedEnd = new byte[start.length];
+                Arrays.fill(paddedEnd, (byte) 255);
+            }
+        }
+        else {
+            if (end != null) {
+                paddedStart = new byte[end.length];
+                Arrays.fill(paddedStart, (byte) 0);
+                paddedEnd = end;
+            }
+            else {
+                // both null
+                paddedStart = start;
+                paddedEnd = end;
+            }
+        }
+        return new AccumuloRange(paddedStart, isStartKeyInclusive(), paddedEnd, isEndKeyInclusive());
+    }
+
+    @Override
+    public int hashCode()
+    {
+        return Objects.hash(start, end, isStartKeyInclusive, isEndKeyInclusive);
+    }
+
+    @Override
+    public boolean equals(Object obj)
+    {
+        if (this == obj) {
+            return true;
+        }
+
+        if ((obj == null) || (getClass() != obj.getClass())) {
+            return false;
+        }
+
+        AccumuloRange other = (AccumuloRange) obj;
+        return Arrays.equals(this.start, other.start)
+                && Arrays.equals(this.end, other.end)
+                && Objects.equals(this.isStartKeyInclusive, other.isStartKeyInclusive)
+                && Objects.equals(this.isEndKeyInclusive, other.isEndKeyInclusive);
+    }
+
+    @Override
+    public String toString()
+    {
+        return range.toString();
     }
 }

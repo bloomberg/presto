@@ -27,11 +27,14 @@ import com.google.common.primitives.Bytes;
 import org.apache.accumulo.core.data.Range;
 import org.apache.hadoop.io.Text;
 
+import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
@@ -40,6 +43,8 @@ import static com.facebook.presto.accumulo.index.Indexer.HYPHEN_BYTE;
 import static com.facebook.presto.accumulo.index.Indexer.NULL_BYTE;
 import static com.facebook.presto.accumulo.index.Indexer.TIMESTAMP_CARDINALITY_FAMILIES;
 import static com.facebook.presto.accumulo.index.Indexer.splitTimestampRange;
+import static com.google.common.base.MoreObjects.toStringHelper;
+import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkState;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static java.util.Objects.requireNonNull;
@@ -47,18 +52,32 @@ import static java.util.Objects.requireNonNull;
 public class IndexQueryParameters
 {
     private final IndexColumn column;
-    private final Text indexFamily;
-    private final List<AccumuloRange> ranges;
     private final Multimap<Text, Range> metricParameters;
 
+    private List<AccumuloRange> ranges = null;
     private Optional<Long> cardinality = Optional.empty();
+    private Text indexFamily = null;
     private boolean appendedTimestampColumn = false;
+
+    private final List<AppendParameters> appendParameters = new ArrayList<>();
+
+    private class AppendParameters
+    {
+        byte[] indexFamily;
+        List<AccumuloRange> appendRanges;
+        boolean truncateTimestamp;
+
+        public AppendParameters(byte[] indexFamily, Collection<AccumuloRange> appendRanges, boolean truncateTimestamp)
+        {
+            this.indexFamily = Arrays.copyOf(indexFamily, indexFamily.length);
+            this.appendRanges = ImmutableList.copyOf(appendRanges);
+            this.truncateTimestamp = truncateTimestamp;
+        }
+    }
 
     public IndexQueryParameters(IndexColumn column)
     {
         this.column = requireNonNull(column);
-        this.indexFamily = new Text();
-        this.ranges = new ArrayList<>();
         this.metricParameters = MultimapBuilder.hashKeys().arrayListValues().build();
     }
 
@@ -76,6 +95,8 @@ public class IndexQueryParameters
 
     public void appendColumn(byte[] indexFamily, Collection<AccumuloRange> appendRanges, boolean truncateTimestamp)
     {
+        checkState(this.indexFamily == null && ranges == null, "Cannot append after ranges have been generated");
+
         if (!truncateTimestamp) {
             checkState(!appendedTimestampColumn, "Cannot append a non-truncated-timestamp-column after a (truncated) timestamp column has been appended");
         }
@@ -83,33 +104,7 @@ public class IndexQueryParameters
             appendedTimestampColumn = true;
         }
 
-        // Append hyphen byte if this is not the first column
-        if (this.indexFamily.getLength() > 0) {
-            this.indexFamily.append(HYPHEN_BYTE, 0, HYPHEN_BYTE.length);
-        }
-
-        // Append the index family
-        this.indexFamily.append(indexFamily, 0, indexFamily.length);
-
-        // Add metric parameters *before* appending the index ranges
-        addMetricParameters(appendRanges, truncateTimestamp);
-
-        // Early-out if this is the first column
-        if (ranges.size() == 0) {
-            ranges.addAll(appendRanges);
-            return;
-        }
-
-        // Append the ranges
-        List<AccumuloRange> newRanges = new ArrayList<>();
-        for (AccumuloRange baseRange : ranges) {
-            for (AccumuloRange appendRange : appendRanges) {
-                newRanges.add(appendRange(baseRange, appendRange));
-            }
-        }
-
-        ranges.clear();
-        ranges.addAll(newRanges);
+        appendParameters.add(new AppendParameters(indexFamily, appendRanges, truncateTimestamp));
     }
 
     @JsonProperty("column")
@@ -121,34 +116,47 @@ public class IndexQueryParameters
     @JsonIgnore
     public Text getIndexFamily()
     {
-        checkState(indexFamily.getLength() > 0, "Call to getIndexFamily without an append operation");
+        checkState(indexFamily != null || appendParameters.size() > 0, "Call to getIndexFamily without an append operation");
+        if (indexFamily == null) {
+            generateIndexFamily();
+        }
+
         return indexFamily;
     }
 
     @JsonProperty("indexFamily")
     public String getIndexFamilyAsString()
     {
-        checkState(indexFamily.getLength() > 0, "Call to getIndexFamily without an append operation");
-        return indexFamily.toString();
+        return getIndexFamily().toString();
     }
 
     @JsonProperty("ranges")
     public List<AccumuloRange> getAccumuloRanges()
     {
+        // This method is used by a worker -- they'd be set by Jackson
+        checkState(ranges != null, "Ranges are not set!");
         return ranges;
     }
 
     @JsonIgnore
     public Multimap<Text, Range> getMetricParameters()
     {
-        checkState(metricParameters.size() > 0, "Call to getMetricParameters without an append operation");
+        checkState(appendParameters.size() > 0, "Call to getMetricParameters without an append operation");
+        if (ranges == null) {
+            generateRanges();
+        }
+
         return ImmutableMultimap.copyOf(metricParameters);
     }
 
     @JsonIgnore
     public List<Range> getRanges()
     {
-        checkState(ranges.size() > 0, "Call to getRanges without an append operation");
+        checkState(ranges != null || appendParameters.size() > 0, "Call to getRanges without an append operation");
+        if (ranges == null) {
+            generateRanges();
+        }
+
         return ImmutableList.copyOf(ranges.stream().map(AccumuloRange::getRange).collect(Collectors.toList()));
     }
 
@@ -164,9 +172,162 @@ public class IndexQueryParameters
         return cardinality.get();
     }
 
+    @JsonIgnore
     public void setCardinality(long cardinality)
     {
         this.cardinality = Optional.of(cardinality);
+    }
+
+    @JsonIgnore
+    public List<IndexQueryParameters> split(int n)
+    {
+        checkArgument(n > 0, "Number of splits must be greater than zero");
+
+        if (ranges == null) {
+            generateRanges();
+        }
+
+        List<AccumuloRange> paddedRanges = generatePaddedRanges();
+
+        List<List<AccumuloRange>> distributeRanges = new ArrayList<>(n);
+        for (int i = 0; i < n; ++i) {
+            distributeRanges.add(new ArrayList<>());
+        }
+
+        Iterator<AccumuloRange> rangeIterator = ranges.iterator();
+        for (AccumuloRange paddedRange : paddedRanges) {
+            List<AccumuloRange> splitRanges = splitRanges(rangeIterator.next(), paddedRange.getStart(), paddedRange.getEnd(), n);
+            for (int i = 0; i < splitRanges.size(); ++i) {
+                distributeRanges.get(i).add(splitRanges.get(i));
+            }
+        }
+
+        return ImmutableList.copyOf(distributeRanges.stream().map(ranges -> new IndexQueryParameters(column, getIndexFamilyAsString(), ranges)).collect(Collectors.toList()));
+    }
+
+    @Override
+    public int hashCode()
+    {
+        return Objects.hash(column, metricParameters, ranges, cardinality, indexFamily, appendedTimestampColumn, appendParameters);
+    }
+
+    @Override
+    public boolean equals(Object obj)
+    {
+        if (this == obj) {
+            return true;
+        }
+
+        if ((obj == null) || (getClass() != obj.getClass())) {
+            return false;
+        }
+
+        IndexQueryParameters other = (IndexQueryParameters) obj;
+        return Objects.equals(this.column, other.column)
+                && Objects.equals(this.metricParameters, other.metricParameters)
+                && Objects.equals(this.ranges, other.ranges)
+                && Objects.equals(this.cardinality, other.cardinality)
+                && Objects.equals(this.indexFamily, other.indexFamily)
+                && Objects.equals(this.appendedTimestampColumn, other.appendedTimestampColumn)
+                && Objects.equals(this.appendParameters, other.appendParameters);
+    }
+
+    @Override
+    public String toString()
+    {
+        return toStringHelper(this)
+                .add("column", column)
+                .add("numMetricParameters", metricParameters.size())
+                .add("numRanges", ranges == null ? null : ranges.size())
+                .add("cardinality", cardinality)
+                .add("indexFamily", indexFamily)
+                .add("appendedTimestampColumn", appendedTimestampColumn)
+                .add("numAppendParameters", appendParameters.size())
+                .toString();
+    }
+
+    private void generateIndexFamily()
+    {
+        indexFamily = new Text();
+
+        for (AppendParameters params : appendParameters) {
+            // Append hyphen byte if this is not the first column
+            if (indexFamily.getLength() > 0) {
+                indexFamily.append(HYPHEN_BYTE, 0, HYPHEN_BYTE.length);
+            }
+
+            // Append the index family
+            indexFamily.append(params.indexFamily, 0, params.indexFamily.length);
+        }
+    }
+
+    private void generateRanges()
+    {
+        ranges = new ArrayList<>();
+        for (AppendParameters params : appendParameters) {
+            // Add metric parameters *before* appending the index ranges
+            addMetricParameters(params.appendRanges, params.truncateTimestamp);
+
+            if (ranges.size() == 0) {
+                ranges.addAll(params.appendRanges);
+            }
+            else {
+                // Append the ranges
+                List<AccumuloRange> newRanges = new ArrayList<>();
+                for (AccumuloRange baseRange : ranges) {
+                    for (AccumuloRange appendRange : params.appendRanges) {
+                        newRanges.add(appendRange(baseRange, appendRange));
+                    }
+                }
+
+                ranges.clear();
+                ranges.addAll(newRanges);
+            }
+        }
+    }
+
+    private List<AccumuloRange> generatePaddedRanges()
+    {
+        List<AccumuloRange> ranges = new ArrayList<>();
+        for (AppendParameters params : appendParameters) {
+            if (ranges.size() == 0) {
+                params.appendRanges.forEach(range -> ranges.add(range.getPaddedRange()));
+            }
+            else {
+                // Append the ranges
+                List<AccumuloRange> newRanges = new ArrayList<>();
+                for (AccumuloRange baseRange : ranges) {
+                    for (AccumuloRange appendRange : params.appendRanges) {
+                        newRanges.add(appendRange(baseRange, appendRange.getPaddedRange()));
+                    }
+                }
+
+                ranges.clear();
+                ranges.addAll(newRanges);
+            }
+        }
+        return ranges;
+    }
+
+    private List<AccumuloRange> splitRanges(AccumuloRange range, byte[] a, byte[] b, int n)
+    {
+        checkArgument(n > 0, "Number of splits must be greater than zero");
+
+        List<AccumuloRange> splits = new ArrayList<>();
+
+        BigInteger start = new BigInteger(a);
+        BigInteger end = new BigInteger(b);
+        BigInteger slice = end.subtract(start).divide(BigInteger.valueOf(n));
+
+        byte[] previous = range.getStart();
+        for (int i = 1; i < n; ++i) {
+            byte[] split = start.add(slice.multiply(BigInteger.valueOf(i))).toByteArray();
+            splits.add(new AccumuloRange(previous, split));
+            previous = split;
+        }
+        splits.add(new AccumuloRange(previous, range.getEnd()));
+
+        return splits;
     }
 
     private AccumuloRange appendRange(AccumuloRange baseRange, AccumuloRange appendRange)
@@ -221,14 +382,18 @@ public class IndexQueryParameters
 
     private void addMetricParameters(Collection<AccumuloRange> appendRanges, boolean truncateTimestamp)
     {
+        if (indexFamily == null) {
+            generateIndexFamily();
+        }
+
         // Clear the parameters to append
         metricParameters.clear();
 
         // If no ranges are set, then we won't be appending anything to the old ranges
-        if (this.ranges.size() == 0) {
+        if (ranges.size() == 0) {
             // Not a timestamp? The metric parameters are the same
             if (!truncateTimestamp) {
-                metricParameters.putAll(this.indexFamily, appendRanges.stream().map(AccumuloRange::getRange).collect(Collectors.toList()));
+                metricParameters.putAll(indexFamily, appendRanges.stream().map(AccumuloRange::getRange).collect(Collectors.toList()));
             }
             else {
                 // Otherwise, set the metric parameters
@@ -236,13 +401,13 @@ public class IndexQueryParameters
                     // We can't rollup open-ended timestamps
                     if (appendRange.isInfiniteStartKey() || appendRange.isInfiniteStopKey()) {
                         // Append the range as-is for millisecond precision and continue to the next one
-                        metricParameters.put(this.indexFamily, appendRange.getRange());
+                        metricParameters.put(indexFamily, appendRange.getRange());
                         continue;
                     }
 
                     for (Map.Entry<TimestampPrecision, Collection<Range>> entry : splitTimestampRange(appendRange.getRange()).asMap().entrySet()) {
                         // Append the precision family to the index family
-                        Text precisionIndexFamily = new Text(this.indexFamily);
+                        Text precisionIndexFamily = new Text(indexFamily);
                         byte[] precisionFamily = TIMESTAMP_CARDINALITY_FAMILIES.get(entry.getKey());
                         precisionIndexFamily.append(precisionFamily, 0, precisionFamily.length);
 
@@ -255,9 +420,9 @@ public class IndexQueryParameters
         }
         else {
             if (!truncateTimestamp) {
-                for (AccumuloRange previousRange : this.ranges) {
+                for (AccumuloRange previousRange : ranges) {
                     for (AccumuloRange newRange : appendRanges) {
-                        metricParameters.put(this.indexFamily, appendRange(previousRange, newRange).getRange());
+                        metricParameters.put(indexFamily, appendRange(previousRange, newRange).getRange());
                     }
                 }
             }
@@ -274,17 +439,17 @@ public class IndexQueryParameters
             // We can't rollup open-ended timestamps
             if (appendRange.isInfiniteStartKey() || appendRange.isInfiniteStopKey()) {
                 // Append the range as-is for millisecond precision and continue to the next one
-                metricParameters.put(this.indexFamily, appendRange.getRange());
+                metricParameters.put(indexFamily, appendRange.getRange());
                 continue;
             }
 
             for (Map.Entry<TimestampPrecision, Collection<Range>> entry : splitTimestampRange(appendRange.getRange()).asMap().entrySet()) {
                 // Append the precision family to the index family
                 byte[] precisionFamily = TIMESTAMP_CARDINALITY_FAMILIES.get(entry.getKey());
-                Text precisionIndexFamily = new Text(this.indexFamily);
+                Text precisionIndexFamily = new Text(indexFamily);
                 precisionIndexFamily.append(precisionFamily, 0, precisionFamily.length);
 
-                for (AccumuloRange baseRange : this.ranges) {
+                for (AccumuloRange baseRange : ranges) {
                     for (Range precisionRange : entry.getValue()) {
                         byte[] precisionStart = precisionRange.isInfiniteStartKey() ? null : Arrays.copyOfRange(precisionRange.getStartKey().getRow(tmp).getBytes(), 0, 9);
                         byte[] precisionEnd = precisionRange.isInfiniteStopKey() ? null : Arrays.copyOfRange(precisionRange.getEndKey().getRow(tmp).getBytes(), 0, 9);
