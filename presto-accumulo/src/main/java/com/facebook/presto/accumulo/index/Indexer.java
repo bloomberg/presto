@@ -212,11 +212,11 @@ public class Indexer
         }
 
         // Convert the list of updates into a data structure we can use for indexing
-        Multimap<Pair<ByteBuffer, ByteBuffer>, Triple<byte[], Long, byte[]>> updates = MultimapBuilder.hashKeys().arrayListValues().build();
+        Multimap<Pair<ByteBuffer, ByteBuffer>, ColumnUpdate> updates = MultimapBuilder.hashKeys().arrayListValues().build();
         for (ColumnUpdate columnUpdate : mutation.getUpdates()) {
             ByteBuffer family = wrap(columnUpdate.getColumnFamily());
             ByteBuffer qualifier = wrap(columnUpdate.getColumnQualifier());
-            updates.put(Pair.of(family, qualifier), Triple.of(columnUpdate.getColumnVisibility(), columnUpdate.getTimestamp(), columnUpdate.getValue()));
+            updates.put(Pair.of(family, qualifier), columnUpdate);
         }
 
         applyUpdate(mutation.getRow(), updates, false);
@@ -277,12 +277,12 @@ public class Indexer
 
             // Scan the table to create a list of items to delete the index entries of
             Text text = new Text();
-            Multimap<Pair<ByteBuffer, ByteBuffer>, Triple<byte[], Long, byte[]>> deleteEntries = MultimapBuilder.hashKeys().arrayListValues().build();
+            Multimap<Pair<ByteBuffer, ByteBuffer>, ColumnUpdate> deleteEntries = MultimapBuilder.hashKeys().arrayListValues().build();
             for (Entry<Key, Value> entry : scanner) {
                 ByteBuffer family = wrap(entry.getKey().getColumnFamily(text).copyBytes());
                 ByteBuffer qualifier = wrap(entry.getKey().getColumnQualifier(text).copyBytes());
                 byte[] visibility = entry.getKey().getColumnVisibility(text).copyBytes();
-                deleteEntries.put(Pair.of(family, qualifier), Triple.of(visibility, deleteTimestamp, entry.getValue().get()));
+                deleteEntries.put(Pair.of(family, qualifier), new ColumnUpdate(family.array(), qualifier.array(), visibility, true, deleteTimestamp, true, entry.getValue().get()));
             }
 
             applyUpdate(rowBytes, deleteEntries, true);
@@ -295,7 +295,7 @@ public class Indexer
 
         // Encode the values of the column updates and gather the entries
         long updateTimestamp = deleteTimestamp + 1;
-        Multimap<Pair<ByteBuffer, ByteBuffer>, Triple<byte[], Long, byte[]>> updateEntries = MultimapBuilder.hashKeys().arrayListValues().build();
+        Multimap<Pair<ByteBuffer, ByteBuffer>, ColumnUpdate> updateEntries = MultimapBuilder.hashKeys().arrayListValues().build();
 
         for (Entry<Pair<ByteBuffer, ByteBuffer>, Pair<ColumnVisibility, Object>> update : columnUpdates.entries()) {
             AccumuloColumnHandle handle = table.getColumn(new String(update.getKey().getLeft().array(), UTF_8), new String(update.getKey().getRight().array(), UTF_8));
@@ -315,7 +315,7 @@ public class Indexer
                 value = serializer.encode(handle.getType(), update.getValue().getRight());
             }
 
-            updateEntries.put(update.getKey(), Triple.of(update.getValue().getLeft().getExpression(), updateTimestamp, value));
+            updateEntries.put(update.getKey(), new ColumnUpdate(update.getKey().getLeft().array(), update.getKey().getRight().array(), update.getValue().getLeft().getExpression(), true, updateTimestamp, false, value));
         }
 
         // Apply the update mutations
@@ -371,13 +371,13 @@ public class Indexer
             Text text = new Text();
             for (Entry<Key, Value> row : scanner) {
                 byte[] rowId = null;
-                Multimap<Pair<ByteBuffer, ByteBuffer>, Triple<byte[], Long, byte[]>> deleteEntries = MultimapBuilder.hashKeys().arrayListValues().build();
+                Multimap<Pair<ByteBuffer, ByteBuffer>, ColumnUpdate> deleteEntries = MultimapBuilder.hashKeys().arrayListValues().build();
                 for (Entry<Key, Value> entry : WholeRowIterator.decodeRow(row.getKey(), row.getValue()).entrySet()) {
                     rowId = rowId == null ? entry.getKey().getRow(text).copyBytes() : rowId;
                     ByteBuffer family = wrap(entry.getKey().getColumnFamily(text).copyBytes());
                     ByteBuffer qualifier = wrap(entry.getKey().getColumnQualifier(text).copyBytes());
                     byte[] visibility = entry.getKey().getColumnVisibility(text).copyBytes();
-                    deleteEntries.put(Pair.of(family, qualifier), Triple.of(visibility, deleteTimestamp, entry.getValue().get()));
+                    deleteEntries.put(Pair.of(family, qualifier), new ColumnUpdate(family.array(), qualifier.array(), visibility, true, deleteTimestamp, true, entry.getValue().get()));
                 }
                 applyUpdate(rowId, deleteEntries, true);
                 metricsWriter.decrementRowCount();
@@ -412,7 +412,7 @@ public class Indexer
             scanner.setRange(new Range(new Text(mutation.getRow())));
 
             Text text = new Text();
-            Multimap<Pair<ByteBuffer, ByteBuffer>, Triple<byte[], Long, byte[]>> deleteEntries = MultimapBuilder.hashKeys().arrayListValues().build();
+            Multimap<Pair<ByteBuffer, ByteBuffer>, ColumnUpdate> deleteEntries = MultimapBuilder.hashKeys().arrayListValues().build();
             // Scan the table to create a list of items to delete the index entries of
             for (Entry<Key, Value> entry : scanner) {
                 entry.getKey().getRow(text);
@@ -421,10 +421,16 @@ public class Indexer
 
                 // If this mutation contains a delete entry for this column
                 Optional<ColumnUpdate> deleteUpdate = mutation.getUpdates().stream().filter(update -> wrap(update.getColumnFamily()).equals(family) && wrap(update.getColumnQualifier()).equals(qualifier) && update.isDeleted()).findAny();
-                if (deleteUpdate.isPresent()) {
-                    byte[] visibility = entry.getKey().getColumnVisibility(text).copyBytes();
-                    deleteEntries.put(Pair.of(family, qualifier), Triple.of(visibility, deleteUpdate.get().getTimestamp(), entry.getValue().get()));
-                }
+                deleteUpdate.ifPresent(columnUpdate -> deleteEntries.put(
+                        Pair.of(family, qualifier),
+                        new ColumnUpdate(
+                                family.array(),
+                                qualifier.array(),
+                                entry.getKey().getColumnVisibility(text).copyBytes(),
+                                true,
+                                deleteUpdate.get().getTimestamp(),
+                                true,
+                                entry.getValue().get())));
             }
 
             if (!deleteEntries.isEmpty()) {
@@ -440,16 +446,16 @@ public class Indexer
 
     public static class IndexValues
     {
-        ListMultimap<Pair<ByteBuffer, ByteBuffer>, Pair<Long, byte[]>> columnValues = MultimapBuilder.hashKeys().arrayListValues().build();
+        ListMultimap<Pair<ByteBuffer, ByteBuffer>, ColumnUpdate> columnValues = MultimapBuilder.hashKeys().arrayListValues().build();
 
-        public void addValue(Pair<ByteBuffer, ByteBuffer> column, Pair<Long, byte[]> value)
+        public void addValue(Pair<ByteBuffer, ByteBuffer> column, ColumnUpdate value)
         {
             columnValues.put(column, value);
         }
 
-        public List<byte[]> getValues(Pair<ByteBuffer, ByteBuffer> column)
+        public List<ColumnUpdate> getValues(Pair<ByteBuffer, ByteBuffer> column)
         {
-            return columnValues.get(column).stream().map(Pair::getRight).collect(Collectors.toList());
+            return columnValues.get(column);
         }
 
         public int size()
@@ -457,9 +463,18 @@ public class Indexer
             return columnValues.keySet().size();
         }
 
+        public boolean hasTimestamp()
+        {
+            if (columnValues.isEmpty()) {
+                throw new PrestoException(StandardErrorCode.FUNCTION_IMPLEMENTATION_ERROR, "hasTimestamp called with an empty list");
+            }
+
+            return columnValues.values().stream().anyMatch(ColumnUpdate::hasTimestamp);
+        }
+
         public long getTimestamp()
         {
-            OptionalLong timestamp = columnValues.values().stream().mapToLong(Pair::getLeft).max();
+            OptionalLong timestamp = columnValues.values().stream().mapToLong(ColumnUpdate::getTimestamp).max();
             if (timestamp.isPresent()) {
                 return timestamp.getAsLong();
             }
@@ -474,7 +489,7 @@ public class Indexer
         METRIC
     }
 
-    private void applyUpdate(byte[] row, Multimap<Pair<ByteBuffer, ByteBuffer>, Triple<byte[], Long, byte[]>> updates, boolean delete)
+    private void applyUpdate(byte[] row, Multimap<Pair<ByteBuffer, ByteBuffer>, ColumnUpdate> updates, boolean delete)
             throws MutationsRejectedException
     {
         // Start stepping through each index we want to create
@@ -500,13 +515,13 @@ public class Indexer
                 // Populate the map of visibility to the entries containing that visibility
                 updates.get(familyQualifierPair)
                         .stream()
-                        .map(x -> Triple.of(new ColumnVisibility(x.getLeft()), x.getMiddle(), x.getRight())) // Convert byte[] to ColumnVisibility
-                        .collect(Collectors.groupingBy(Triple::getLeft)) // Group by Column Visibility
+                        .map(x -> Pair.of(new ColumnVisibility(x.getColumnVisibility()), x)) // Convert byte[] to ColumnVisibility
+                        .collect(Collectors.groupingBy(Pair::getLeft)) // Group by Column Visibility
                         .entrySet() // Iterate through each group
                         .forEach(visibilityEntry -> {
                             // Get the index values for this visibility and append the updates
                             IndexValues indexValues = visibilityToIndexValues.computeIfAbsent(visibilityEntry.getKey(), x -> new IndexValues());
-                            visibilityEntry.getValue().forEach(valueEntry -> indexValues.addValue(familyQualifierPair, Pair.of(valueEntry.getMiddle(), valueEntry.getRight())));
+                            visibilityEntry.getValue().forEach(valueEntry -> indexValues.addValue(familyQualifierPair, valueEntry.getRight()));
                         });
             }
 
@@ -516,121 +531,186 @@ public class Indexer
             for (Entry<ColumnVisibility, IndexValues> indexValueEntry : visibilityToIndexValues.entrySet().stream()
                     .filter(x -> indexColumn.getNumColumns() == x.getValue().size()) // remove all values where there aren't enough values
                     .collect(Collectors.toList())) {
-                Multimap<Destination, Pair<byte[], byte[]>> indexValues = MultimapBuilder.hashKeys(2).arrayListValues().build();
+                Multimap<Destination, ColumnUpdate> indexValues = MultimapBuilder.hashKeys(2).arrayListValues().build();
                 ColumnVisibility visibility = indexValueEntry.getKey();
-                long timestamp = indexValueEntry.getValue().getTimestamp();
                 for (String column : indexColumn.getColumns()) {
                     AccumuloColumnHandle handle = table.getColumn(column);
                     byte[] family = handle.getFamily().get().getBytes(UTF_8);
                     byte[] qualifier = handle.getQualifier().get().getBytes(UTF_8);
                     Type type = handle.getType();
-                    for (byte[] value : indexValueEntry.getValue().getValues(Pair.of(wrap(family), wrap(qualifier)))) {
+                    for (ColumnUpdate baseUpdate : indexValueEntry.getValue().getValues(Pair.of(wrap(family), wrap(qualifier)))) {
                         if (Types.isArrayType(type)) {
                             Type elementType = Types.getElementType(type);
-                            List<?> elements = serializer.decode(type, value);
+                            List<?> elements = serializer.decode(type, baseUpdate.getValue());
                             if (indexValues.size() == 0) {
                                 for (Object element : elements) {
-                                    indexValues.put(INDEX, Pair.of(indexFamily, serializer.encode(elementType, element)));
-                                    indexValues.put(METRIC, Pair.of(indexFamily, serializer.encode(elementType, element)));
+                                    ColumnUpdate columnUpdate = new ColumnUpdate(indexFamily, serializer.encode(elementType, element), visibility.getExpression(), baseUpdate.hasTimestamp(), baseUpdate.getTimestamp(), baseUpdate.isDeleted(), EMPTY_BYTE);
+                                    indexValues.put(INDEX, columnUpdate);
+                                    indexValues.put(METRIC, columnUpdate);
 
                                     if (elementType.equals(TIMESTAMP) && truncateTimestamps) {
                                         for (Entry<TimestampPrecision, Long> entry : getTruncatedTimestamps((Long) element).entrySet()) {
-                                            indexValues.put(METRIC, Pair.of(Bytes.concat(indexFamily, TIMESTAMP_CARDINALITY_FAMILIES.get(entry.getKey())), serializer.encode(elementType, entry.getValue())));
+                                            indexValues.put(METRIC, new ColumnUpdate(Bytes.concat(indexFamily, TIMESTAMP_CARDINALITY_FAMILIES.get(entry.getKey())), serializer.encode(elementType, entry.getValue()), visibility.getExpression(), baseUpdate.hasTimestamp(), baseUpdate.getTimestamp(), baseUpdate.isDeleted(), EMPTY_BYTE));
                                         }
                                     }
                                 }
                             }
                             else {
-                                Multimap<Destination, Pair<byte[], byte[]>> newIndexValues = MultimapBuilder.hashKeys(2).arrayListValues().build();
-                                for (Pair<byte[], byte[]> previousValue : indexValues.get(INDEX)) {
-                                    for (Object element : elements) {
-                                        newIndexValues.put(INDEX, Pair.of(previousValue.getLeft(), Bytes.concat(previousValue.getRight(), NULL_BYTE, serializer.encode(elementType, element))));
-                                    }
-                                }
-
-                                for (Pair<byte[], byte[]> previousValue : indexValues.get(METRIC)) {
-                                    for (Object element : elements) {
-                                        newIndexValues.put(METRIC, Pair.of(previousValue.getLeft(), Bytes.concat(previousValue.getRight(), NULL_BYTE, serializer.encode(elementType, element))));
-
-                                        if (elementType.equals(TIMESTAMP) && truncateTimestamps) {
-                                            for (Entry<TimestampPrecision, Long> entry : getTruncatedTimestamps((Long) element).entrySet()) {
-                                                newIndexValues.put(METRIC, Pair.of(Bytes.concat(previousValue.getLeft(), TIMESTAMP_CARDINALITY_FAMILIES.get(entry.getKey())), Bytes.concat(previousValue.getRight(), NULL_BYTE, serializer.encode(TIMESTAMP, entry.getValue()))));
-                                            }
-                                        }
-                                    }
-                                }
-                                indexValues = newIndexValues;
+                                indexValues = appendArrayIndexValues(indexValues, elementType, elements);
                             }
                         }
                         else {
                             if (indexValues.size() == 0) {
-                                indexValues.put(INDEX, Pair.of(indexFamily, value));
-                                indexValues.put(METRIC, Pair.of(indexFamily, value));
+                                ColumnUpdate columnUpdate = new ColumnUpdate(indexFamily, baseUpdate.getValue(), visibility.getExpression(), baseUpdate.hasTimestamp(), baseUpdate.getTimestamp(), baseUpdate.isDeleted(), EMPTY_BYTE);
+                                indexValues.put(INDEX, columnUpdate);
+                                indexValues.put(METRIC, columnUpdate);
 
                                 if (type.equals(TIMESTAMP) && truncateTimestamps) {
-                                    for (Entry<TimestampPrecision, Long> entry : getTruncatedTimestamps(serializer.decode(TIMESTAMP, value)).entrySet()) {
-                                        indexValues.put(METRIC, Pair.of(Bytes.concat(indexFamily, TIMESTAMP_CARDINALITY_FAMILIES.get(entry.getKey())), serializer.encode(TIMESTAMP, entry.getValue())));
+                                    for (Entry<TimestampPrecision, Long> entry : getTruncatedTimestamps(serializer.decode(TIMESTAMP, baseUpdate.getValue())).entrySet()) {
+                                        indexValues.put(METRIC, new ColumnUpdate(Bytes.concat(indexFamily, TIMESTAMP_CARDINALITY_FAMILIES.get(entry.getKey())), serializer.encode(TIMESTAMP, entry.getValue()), visibility.getExpression(), baseUpdate.hasTimestamp(), baseUpdate.getTimestamp(), baseUpdate.isDeleted(), EMPTY_BYTE));
                                     }
                                 }
                             }
                             else {
-                                Multimap<Destination, Pair<byte[], byte[]>> newIndexValues = MultimapBuilder.hashKeys(2).arrayListValues().build();
-                                for (Pair<byte[], byte[]> previousValue : indexValues.get(INDEX)) {
-                                    newIndexValues.put(INDEX, Pair.of(previousValue.getLeft(), Bytes.concat(previousValue.getRight(), NULL_BYTE, value)));
-                                }
-
-                                for (Pair<byte[], byte[]> previousValue : indexValues.get(METRIC)) {
-                                    newIndexValues.put(METRIC, Pair.of(previousValue.getLeft(), Bytes.concat(previousValue.getRight(), NULL_BYTE, value)));
-
-                                    if (type.equals(TIMESTAMP) && truncateTimestamps) {
-                                        for (Entry<TimestampPrecision, Long> entry : getTruncatedTimestamps(serializer.decode(TIMESTAMP, value)).entrySet()) {
-                                            newIndexValues.put(METRIC, Pair.of(Bytes.concat(previousValue.getLeft(), TIMESTAMP_CARDINALITY_FAMILIES.get(entry.getKey())), Bytes.concat(previousValue.getRight(), NULL_BYTE, serializer.encode(TIMESTAMP, entry.getValue()))));
-                                        }
-                                    }
-                                }
-                                indexValues = newIndexValues;
+                                indexValues = appendIndexValues(indexValues, type, baseUpdate);
                             }
                         }
                     }
                 }
 
                 // Now that we have aggregated the values for this index column, add or delete them
-                for (Pair<byte[], byte[]> indexValue : indexValues.get(INDEX)) {
-                    if (delete) {
-                        deleteIndexMutation(wrap(indexValue.getRight()), wrap(indexValue.getLeft()), row, visibility, timestamp);
+                for (ColumnUpdate indexValue : indexValues.get(INDEX)) {
+                    if (indexValue.isDeleted()) {
+                        deleteIndexMutation(wrap(indexValue.getColumnQualifier()), wrap(indexValue.getColumnFamily()), row, visibility, indexValue.hasTimestamp() ? Optional.of(indexValue.getTimestamp()) : Optional.empty());
                     }
                     else {
-                        addIndexMutation(wrap(indexValue.getRight()), wrap(indexValue.getLeft()), row, visibility, timestamp);
+                        addIndexMutation(wrap(indexValue.getColumnQualifier()), wrap(indexValue.getColumnFamily()), row, visibility, indexValue.hasTimestamp() ? Optional.of(indexValue.getTimestamp()) : Optional.empty());
                     }
                 }
 
-                for (Pair<byte[], byte[]> indexValue : indexValues.get(METRIC)) {
+                for (ColumnUpdate indexValue : indexValues.get(METRIC)) {
                     if (delete) {
-                        metricsWriter.decrementCardinality(wrap(indexValue.getRight()), wrap(indexValue.getLeft()), visibility);
+                        metricsWriter.decrementCardinality(wrap(indexValue.getColumnQualifier()), wrap(indexValue.getColumnFamily()), visibility);
                     }
                     else {
-                        metricsWriter.incrementCardinality(wrap(indexValue.getRight()), wrap(indexValue.getLeft()), visibility);
+                        metricsWriter.incrementCardinality(wrap(indexValue.getColumnQualifier()), wrap(indexValue.getColumnFamily()), visibility);
                     }
                 }
             }
         }
     }
 
-    private void addIndexMutation(ByteBuffer row, ByteBuffer family, byte[] qualifier, ColumnVisibility visibility, long timestamp)
+    private Multimap<Destination, ColumnUpdate> appendArrayIndexValues(Multimap<Destination, ColumnUpdate> indexValues, Type elementType, List<?> elements)
+    {
+        Multimap<Destination, ColumnUpdate> newIndexValues = MultimapBuilder.hashKeys(2).arrayListValues().build();
+        for (ColumnUpdate previousValue : indexValues.get(INDEX)) {
+            for (Object element : elements) {
+                newIndexValues.put(INDEX, new ColumnUpdate(
+                        previousValue.getColumnFamily(),
+                        Bytes.concat(previousValue.getColumnQualifier(), NULL_BYTE, serializer.encode(elementType, element)),
+                        previousValue.getColumnVisibility(),
+                        previousValue.hasTimestamp(),
+                        previousValue.getTimestamp(),
+                        previousValue.isDeleted(),
+                        previousValue.getValue()));
+            }
+        }
+
+        for (ColumnUpdate previousValue : indexValues.get(METRIC)) {
+            for (Object element : elements) {
+                newIndexValues.put(METRIC, new ColumnUpdate(
+                        previousValue.getColumnFamily(),
+                        Bytes.concat(previousValue.getColumnQualifier(), NULL_BYTE, serializer.encode(elementType, element)),
+                        previousValue.getColumnVisibility(),
+                        previousValue.hasTimestamp(),
+                        previousValue.getTimestamp(),
+                        previousValue.isDeleted(),
+                        previousValue.getValue()));
+
+                if (elementType.equals(TIMESTAMP) && truncateTimestamps) {
+                    for (Entry<TimestampPrecision, Long> entry : getTruncatedTimestamps((Long) element).entrySet()) {
+                        newIndexValues.put(METRIC, new ColumnUpdate(
+                                Bytes.concat(previousValue.getColumnFamily(), TIMESTAMP_CARDINALITY_FAMILIES.get(entry.getKey())),
+                                Bytes.concat(previousValue.getColumnQualifier(), NULL_BYTE, serializer.encode(TIMESTAMP, entry.getValue())),
+                                previousValue.getColumnVisibility(),
+                                previousValue.hasTimestamp(),
+                                previousValue.getTimestamp(),
+                                previousValue.isDeleted(),
+                                previousValue.getValue()));
+                    }
+                }
+            }
+        }
+        return newIndexValues;
+    }
+
+    private Multimap<Destination, ColumnUpdate> appendIndexValues(Multimap<Destination, ColumnUpdate> indexValues, Type type, ColumnUpdate update)
+    {
+        Multimap<Destination, ColumnUpdate> newIndexValues = MultimapBuilder.hashKeys(2).arrayListValues().build();
+        for (ColumnUpdate previousValue : indexValues.get(INDEX)) {
+            newIndexValues.put(INDEX, new ColumnUpdate(
+                    previousValue.getColumnFamily(),
+                    Bytes.concat(previousValue.getColumnQualifier(), NULL_BYTE, update.getValue()),
+                    previousValue.getColumnVisibility(),
+                    previousValue.hasTimestamp(),
+                    previousValue.getTimestamp(),
+                    previousValue.isDeleted(),
+                    previousValue.getValue()));
+        }
+
+        for (ColumnUpdate previousValue : indexValues.get(METRIC)) {
+            newIndexValues.put(METRIC, new ColumnUpdate(
+                    previousValue.getColumnFamily(),
+                    Bytes.concat(previousValue.getColumnQualifier(), NULL_BYTE, update.getValue()),
+                    previousValue.getColumnVisibility(),
+                    previousValue.hasTimestamp(),
+                    previousValue.getTimestamp(),
+                    previousValue.isDeleted(),
+                    previousValue.getValue()));
+
+            if (type.equals(TIMESTAMP) && truncateTimestamps) {
+                for (Entry<TimestampPrecision, Long> entry : getTruncatedTimestamps(serializer.decode(TIMESTAMP, update.getValue())).entrySet()) {
+                    newIndexValues.put(METRIC, new ColumnUpdate(
+                            Bytes.concat(previousValue.getColumnFamily(), TIMESTAMP_CARDINALITY_FAMILIES.get(entry.getKey())),
+                            Bytes.concat(previousValue.getColumnQualifier(), NULL_BYTE, serializer.encode(TIMESTAMP, entry.getValue())),
+                            previousValue.getColumnVisibility(),
+                            previousValue.hasTimestamp(),
+                            previousValue.getTimestamp(),
+                            previousValue.isDeleted(),
+                            previousValue.getValue()));
+                }
+            }
+        }
+        return newIndexValues;
+    }
+
+    private void addIndexMutation(ByteBuffer row, ByteBuffer family, byte[] qualifier, ColumnVisibility visibility, Optional<Long> timestamp)
             throws MutationsRejectedException
     {
         // Create the mutation and add it to the batch writer
         Mutation indexMutation = new Mutation(row.array());
-        indexMutation.put(family.array(), qualifier, visibility, timestamp, EMPTY_BYTE);
+        if (timestamp.isPresent()) {
+            indexMutation.put(family.array(), qualifier, visibility, timestamp.get(), EMPTY_BYTE);
+        }
+        else {
+            indexMutation.put(family.array(), qualifier, visibility, EMPTY_BYTE);
+        }
+
         indexWriter.addMutation(indexMutation);
     }
 
-    private void deleteIndexMutation(ByteBuffer row, ByteBuffer family, byte[] qualifier, ColumnVisibility visibility, long timestamp)
+    private void deleteIndexMutation(ByteBuffer row, ByteBuffer family, byte[] qualifier, ColumnVisibility visibility, Optional<Long> timestamp)
             throws MutationsRejectedException
     {
         // Create the mutation and add it to the batch writer
         Mutation indexMutation = new Mutation(row.array());
-        indexMutation.putDelete(family.array(), qualifier, visibility, timestamp);
+        if (timestamp.isPresent()) {
+            indexMutation.putDelete(family.array(), qualifier, visibility, timestamp.get());
+        }
+        else {
+            indexMutation.putDelete(family.array(), qualifier, visibility);
+        }
+
         indexWriter.addMutation(indexMutation);
     }
 
@@ -826,7 +906,6 @@ public class Indexer
         }
         while (cont && !nextTime.getRight().equals(endTime));
 
-        Timestamp s = new Timestamp(serializer.decode(TIMESTAMP, Arrays.copyOfRange(previousRange.getRight().getStartKey().getRow().getBytes(), 0, 9)));
         splitTimestampRange.put(previousRange.getLeft(), previousRange.getRight());
         return ImmutableMultimap.copyOf(splitTimestampRange);
     }
