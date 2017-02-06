@@ -1042,6 +1042,7 @@ public class TestIndexer
         assertEquals(e.getKey().getRow().copyBytes(), row);
         assertEquals(e.getKey().getColumnFamily().toString(), cf);
         assertEquals(e.getKey().getColumnQualifier().toString(), cq);
+        assertTrue(e.getKey().getTimestamp() > 0, "Timestamp is zero");
         assertEquals(e.getValue().toString(), value);
     }
 
@@ -1051,6 +1052,7 @@ public class TestIndexer
         assertEquals(e.getKey().getColumnFamily().toString(), cf);
         assertEquals(e.getKey().getColumnQualifier().toString(), cq);
         assertEquals(e.getKey().getColumnVisibility().toString(), cv);
+        assertTrue(e.getKey().getTimestamp() > 0, "Timestamp is zero");
         assertEquals(e.getValue().toString(), value);
     }
 
