@@ -427,8 +427,8 @@ public class Indexer
                                 family.array(),
                                 qualifier.array(),
                                 entry.getKey().getColumnVisibility(text).copyBytes(),
-                                true,
-                                deleteUpdate.get().getTimestamp(),
+                                columnUpdate.hasTimestamp(),
+                                columnUpdate.getTimestamp(),
                                 true,
                                 entry.getValue().get())));
             }

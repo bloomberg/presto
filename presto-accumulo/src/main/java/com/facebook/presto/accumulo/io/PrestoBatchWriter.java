@@ -656,10 +656,20 @@ public class PrestoBatchWriter
     {
         for (ColumnUpdate update : toSplit.getUpdates()) {
             if (update.isDeleted()) {
-                delete.putDelete(update.getColumnFamily(), update.getColumnQualifier(), new ColumnVisibility(update.getColumnVisibility()), update.getTimestamp());
+                if (update.hasTimestamp()) {
+                    delete.putDelete(update.getColumnFamily(), update.getColumnQualifier(), new ColumnVisibility(update.getColumnVisibility()), update.getTimestamp());
+                }
+                else {
+                    delete.putDelete(update.getColumnFamily(), update.getColumnQualifier(), new ColumnVisibility(update.getColumnVisibility()));
+                }
             }
             else {
-                add.put(update.getColumnFamily(), update.getColumnQualifier(), new ColumnVisibility(update.getColumnVisibility()), update.getTimestamp(), update.getValue());
+                if (update.hasTimestamp()) {
+                    add.put(update.getColumnFamily(), update.getColumnQualifier(), new ColumnVisibility(update.getColumnVisibility()), update.getTimestamp(), update.getValue());
+                }
+                else {
+                    add.put(update.getColumnFamily(), update.getColumnQualifier(), new ColumnVisibility(update.getColumnVisibility()), update.getValue());
+                }
             }
         }
     }
