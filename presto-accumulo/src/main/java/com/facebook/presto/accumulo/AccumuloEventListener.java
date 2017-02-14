@@ -69,6 +69,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Collectors;
 
 import static com.facebook.presto.accumulo.AccumuloErrorCode.UNEXPECTED_ACCUMULO_ERROR;
@@ -178,6 +180,7 @@ public class AccumuloEventListener
     private final Duration timeout;
     private final Duration latency;
     private final String user;
+    private final Lock writerLock = new ReentrantLock();
 
     private PrestoBatchWriter writer;
 
@@ -200,7 +203,13 @@ public class AccumuloEventListener
         this.config = new AccumuloConfig().setInstance(instance).setZooKeepers(zooKeepers).setUsername(user).setPassword(password);
         this.batchWriterConfig = new BatchWriterConfig().setTimeout(timeout.toMillis(), MILLISECONDS).setMaxLatency(latency.toMillis(), MILLISECONDS);
 
-        createBatchWriter();
+        try {
+            writerLock.lock();
+            createBatchWriter();
+        }
+        finally {
+            writerLock.unlock();
+        }
     }
 
     @Override
@@ -345,10 +354,16 @@ public class AccumuloEventListener
                 createTableIfNotExists();
             }
             catch (AccumuloSecurityException e) {
-                throw new PrestoException(UNEXPECTED_ACCUMULO_ERROR, "Security exception getting user authorizations", e);
+                LOG.error("Security exception getting user authorizations", e);
+                break;
             }
             catch (AccumuloException e) {
-                throw new PrestoException(UNEXPECTED_ACCUMULO_ERROR, "Unexpected Accumulo exception getting user authorizations", e);
+                LOG.error("Unexpected Accumulo exception getting user authorizations", e);
+                break;
+            }
+            catch (Exception e) {
+                LOG.error("Unexpected exception trying to create batch writer", e);
+                break;
             }
         }
         while (writer == null);
@@ -406,28 +421,44 @@ public class AccumuloEventListener
 
     private void writeMutation(Mutation mutation, boolean incrementNumRows, boolean flush)
     {
-        boolean written = false;
-        do {
-            try {
-                writer.addMutation(mutation, incrementNumRows);
-                written = true;
-            }
-            catch (MutationsRejectedException | TableNotFoundException e) {
-                LOG.error("Failed to write mutation", e);
+        try {
+            writerLock.lock();
+
+            if (writer == null) {
                 createBatchWriter();
+
+                if (writer == null) {
+                    LOG.warn("Writer is still null, skipping this mutation");
+                    return;
+                }
+            }
+
+            boolean written = false;
+            do {
+                try {
+                    writer.addMutation(mutation, incrementNumRows);
+                    written = true;
+                }
+                catch (MutationsRejectedException | TableNotFoundException e) {
+                    LOG.error("Failed to write mutation", e);
+                    createBatchWriter();
+                }
+            }
+            while (!written);
+
+            while (flush) {
+                try {
+                    writer.flush();
+                    flush = false;
+                }
+                catch (MutationsRejectedException e) {
+                    LOG.error("Failed to flush", e);
+                    createBatchWriter();
+                }
             }
         }
-        while (!written);
-
-        while (flush) {
-            try {
-                writer.flush();
-                flush = false;
-            }
-            catch (MutationsRejectedException e) {
-                LOG.error("Failed to flush", e);
-                createBatchWriter();
-            }
+        finally {
+            writerLock.unlock();
         }
     }
 
