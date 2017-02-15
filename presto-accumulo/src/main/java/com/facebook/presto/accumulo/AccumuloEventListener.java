@@ -64,8 +64,8 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
-import java.util.concurrent.locks.Lock;
-import java.util.concurrent.locks.ReentrantLock;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.LinkedBlockingQueue;
 
 import static com.facebook.presto.accumulo.AccumuloErrorCode.UNEXPECTED_ACCUMULO_ERROR;
 import static com.facebook.presto.accumulo.Types.getElementType;
@@ -176,12 +176,12 @@ public class AccumuloEventListener
 
     private final AccumuloConfig config;
     private final BatchWriterConfig batchWriterConfig;
-    private final Connector connector;
     private final Duration timeout;
     private final Duration latency;
     private final String user;
-    private final Lock writerLock = new ReentrantLock();
+    private final BlockingQueue<MetadataUpdate> mutationQueue = new LinkedBlockingQueue<>();
 
+    private Connector connector;
     private PrestoBatchWriter writer;
 
     public AccumuloEventListener(String instance, String zooKeepers, String user, String password, Duration timeout, Duration latency)
@@ -193,23 +193,13 @@ public class AccumuloEventListener
         this.timeout = requireNonNull(timeout, "timeout is null");
         this.latency = requireNonNull(latency, "latency is null");
 
-        try {
-            this.connector = new ZooKeeperInstance(instance, zooKeepers).getConnector(user, new PasswordToken(password));
-        }
-        catch (AccumuloException | AccumuloSecurityException e) {
-            throw new PrestoException(UNEXPECTED_ACCUMULO_ERROR, "Failed to create connector", e);
-        }
-
         this.config = new AccumuloConfig().setInstance(instance).setZooKeepers(zooKeepers).setUsername(user).setPassword(password);
         this.batchWriterConfig = new BatchWriterConfig().setTimeout(timeout.toMillis(), MILLISECONDS).setMaxLatency(latency.toMillis(), MILLISECONDS);
 
-        try {
-            writerLock.lock();
-            createBatchWriter();
-        }
-        finally {
-            writerLock.unlock();
-        }
+        Thread writerThread = new Thread(new MutationWriter(instance, zooKeepers, password));
+        writerThread.setName("event-listener-writer");
+        writerThread.setDaemon(true);
+        writerThread.start();
     }
 
     @Override
@@ -239,7 +229,9 @@ public class AccumuloEventListener
         mutation.put(QUERY, "state", event.getMetadata().getQueryState());
         mutation.put(QUERY, "uri", event.getMetadata().getUri().toString());
 
-        writeMutation(mutation, true, true);
+        if (!mutationQueue.offer(new MetadataUpdate(mutation, true, true))) {
+            LOG.warn("Failed to offer mutation to queue, skipping");
+        }
     }
 
     @Override
@@ -283,7 +275,9 @@ public class AccumuloEventListener
         mutation.put(QUERY, "start_time", new Value(serializer.encode(TIMESTAMP, event.getExecutionStartTime().getEpochSecond() * 1000L)));
         mutation.put(QUERY, "end_time", new Value(serializer.encode(TIMESTAMP, event.getEndTime().getEpochSecond() * 1000L)));
 
-        writeMutation(mutation, false, true);
+        if (!mutationQueue.offer(new MetadataUpdate(mutation, false, true))) {
+            LOG.warn("Failed to offer mutation to queue, skipping");
+        }
     }
 
     @Override
@@ -320,7 +314,9 @@ public class AccumuloEventListener
 
         mutation.put(SPLIT, SPLIT, new Value(serializer.encode(SPLIT_TYPE, getBlockFromArray(getElementType(SPLIT_TYPE), ImmutableList.of(row)))));
 
-        writeMutation(mutation, false, false);
+        if (!mutationQueue.offer(new MetadataUpdate(mutation, false, false))) {
+            LOG.warn("Failed to offer mutation to queue, skipping");
+        }
     }
 
     private void appendInputs(Mutation mutation, List<QueryInputMetadata> inputs)
@@ -342,6 +338,15 @@ public class AccumuloEventListener
 
     private void createBatchWriter()
     {
+        if (writer != null) {
+            try {
+                writer.close();
+            }
+            catch (MutationsRejectedException e) {
+                LOG.error("Failed to close writer, sleeping for 10s", e);
+            }
+        }
+
         writer = null;
         do {
             try {
@@ -354,15 +359,15 @@ public class AccumuloEventListener
                 createTableIfNotExists();
             }
             catch (AccumuloSecurityException e) {
-                LOG.error("Security exception getting user authorizations", e);
+                LOG.error("Security exception getting user authorizations: " + e.getMessage());
                 break;
             }
             catch (AccumuloException e) {
-                LOG.error("Unexpected Accumulo exception getting user authorizations", e);
+                LOG.error("Unexpected Accumulo exception getting user authorizations: " + e.getMessage());
                 break;
             }
             catch (Exception e) {
-                LOG.error("Unexpected exception trying to create batch writer", e);
+                LOG.error("Unexpected exception trying to create batch writer: " + e.getMessage());
                 break;
             }
         }
@@ -419,46 +424,103 @@ public class AccumuloEventListener
         }
     }
 
-    private void writeMutation(Mutation mutation, boolean incrementNumRows, boolean flush)
+    private static class MetadataUpdate
     {
-        try {
-            writerLock.lock();
+        Mutation mutation;
+        boolean incrementNumRows;
+        boolean flush;
 
-            if (writer == null) {
-                createBatchWriter();
+        public MetadataUpdate(Mutation mutation, boolean incrementNumRows, boolean flush)
+        {
+            this.mutation = mutation;
+            this.incrementNumRows = incrementNumRows;
+            this.flush = flush;
+        }
+    }
+
+    private class MutationWriter
+            implements Runnable
+    {
+        private String instance;
+        private String zooKeepers;
+        private String password;
+
+        public MutationWriter(String instance, String zooKeepers, String password)
+        {
+            this.instance = instance;
+            this.zooKeepers = zooKeepers;
+            this.password = password;
+        }
+
+        @Override
+        public void run()
+        {
+            try {
+                connector = new ZooKeeperInstance(instance, zooKeepers).getConnector(user, new PasswordToken(password));
+            }
+            catch (AccumuloException | AccumuloSecurityException e) {
+                throw new PrestoException(UNEXPECTED_ACCUMULO_ERROR, "Failed to create connector", e);
+            }
+
+            //noinspection InfiniteLoopStatement
+            while (true) {
+                MetadataUpdate update;
+                try {
+                    update = mutationQueue.take();
+                }
+                catch (InterruptedException e) {
+                    LOG.error("InterruptedException polling for mutation, sleeping for 10s", e);
+                    sleep(10000);
+                    continue;
+                }
 
                 if (writer == null) {
-                    LOG.warn("Writer is still null, skipping this mutation");
-                    return;
-                }
-                createBatchWriter();
-            }
-            boolean written = false;
-            do {
-                try {
-                    writer.addMutation(mutation, incrementNumRows);
-                    written = true;
-                }
-                catch (MutationsRejectedException | TableNotFoundException e) {
-                    LOG.error("Failed to write mutation", e);
                     createBatchWriter();
-                }
-            }
-            while (!written);
 
-            while (flush) {
-                try {
-                    writer.flush();
-                    flush = false;
+                    if (writer == null) {
+                        LOG.warn("Writer is still null, skipping this mutation, sleeping for 10s");
+                        sleep(10000);
+                        continue;
+                    }
                 }
-                catch (MutationsRejectedException e) {
-                    LOG.error("Failed to flush", e);
-                    createBatchWriter();
+
+                boolean written = false;
+                do {
+                    try {
+                        writer.addMutation(update.mutation, update.incrementNumRows);
+                        written = true;
+                    }
+                    catch (MutationsRejectedException | TableNotFoundException e) {
+                        LOG.error("Failed to write mutation, sleeping for 10s", e);
+                        sleep(10000);
+                        createBatchWriter();
+                    }
+                }
+                while (!written);
+
+                while (update.flush) {
+                    try {
+                        writer.flush();
+                        break;
+                    }
+                    catch (MutationsRejectedException e) {
+                        LOG.error("Failed to flush, sleeping for 10s", e);
+                        sleep(10000);
+                        createBatchWriter();
+                    }
                 }
             }
         }
-        finally {
-            writerLock.unlock();
+
+        private void sleep(int millis)
+        {
+            try {
+                Thread.sleep(millis);
+            }
+            catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                LOG.error("InterruptedException on sleep", e);
+            }
         }
     }
 
