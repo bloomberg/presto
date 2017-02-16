@@ -20,6 +20,8 @@ import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
+import javax.annotation.Nonnull;
+
 import java.util.Objects;
 import java.util.Optional;
 
@@ -36,6 +38,8 @@ public final class AccumuloColumnHandle
     private final String comment;
     private final String name;
     private final int ordinal;
+    private final boolean timestamp;
+    private final boolean visibility;
 
     @JsonCreator
     public AccumuloColumnHandle(
@@ -44,16 +48,39 @@ public final class AccumuloColumnHandle
             @JsonProperty("qualifier") Optional<String> qualifier,
             @JsonProperty("type") Type type,
             @JsonProperty("ordinal") int ordinal,
-            @JsonProperty("comment") String comment)
+            @JsonProperty("comment") String comment,
+            @JsonProperty("timestamp") boolean timestamp,
+            @JsonProperty("visibility") boolean visibility)
     {
         this.name = requireNonNull(name, "name is null");
         this.family = requireNonNull(family, "family is null");
         this.qualifier = requireNonNull(qualifier, "qualifier is null");
         this.type = requireNonNull(type, "type is null");
-        this.ordinal = requireNonNull(ordinal, "type is null");
+        this.ordinal = ordinal;
         checkArgument(ordinal >= 0, "ordinal must be >= zero");
 
         this.comment = requireNonNull(comment, "comment is null");
+        this.timestamp = timestamp;
+        this.visibility = visibility;
+    }
+
+    public AccumuloColumnHandle(String name,
+            Optional<String> family,
+            Optional<String> qualifier,
+            Type type,
+            int ordinal,
+            String comment)
+    {
+        this.name = requireNonNull(name, "name is null");
+        this.family = requireNonNull(family, "family is null");
+        this.qualifier = requireNonNull(qualifier, "qualifier is null");
+        this.type = requireNonNull(type, "type is null");
+        this.ordinal = ordinal;
+        checkArgument(ordinal >= 0, "ordinal must be >= zero");
+
+        this.comment = requireNonNull(comment, "comment is null");
+        this.timestamp = false;
+        this.visibility = false;
     }
 
     @JsonProperty
@@ -92,16 +119,34 @@ public final class AccumuloColumnHandle
         return comment;
     }
 
+    @JsonProperty
+    public boolean isTimestamp()
+    {
+        return timestamp;
+    }
+
+    @JsonProperty
+    public boolean isVisibility()
+    {
+        return visibility;
+    }
+
+    @JsonIgnore
+    public boolean isHidden()
+    {
+        return isTimestamp() || isVisibility();
+    }
+
     @JsonIgnore
     public ColumnMetadata getColumnMetadata()
     {
-        return new ColumnMetadata(name, type, comment, false);
+        return new ColumnMetadata(name, type, comment, isHidden());
     }
 
     @Override
     public int hashCode()
     {
-        return Objects.hash(name, family, qualifier, type, ordinal, comment);
+        return Objects.hash(name, family, qualifier, type, ordinal, comment, timestamp, visibility);
     }
 
     @Override
@@ -121,7 +166,9 @@ public final class AccumuloColumnHandle
                 && Objects.equals(this.qualifier, other.qualifier)
                 && Objects.equals(this.type, other.type)
                 && Objects.equals(this.ordinal, other.ordinal)
-                && Objects.equals(this.comment, other.comment);
+                && Objects.equals(this.comment, other.comment)
+                && Objects.equals(this.timestamp, other.timestamp)
+                && Objects.equals(this.visibility, other.visibility);
     }
 
     @Override
@@ -134,11 +181,13 @@ public final class AccumuloColumnHandle
                 .add("type", type)
                 .add("ordinal", ordinal)
                 .add("comment", comment)
+                .add("timestamp", timestamp)
+                .add("visibility", visibility)
                 .toString();
     }
 
     @Override
-    public int compareTo(AccumuloColumnHandle obj)
+    public int compareTo(@Nonnull AccumuloColumnHandle obj)
     {
         return Integer.compare(this.getOrdinal(), obj.getOrdinal());
     }
