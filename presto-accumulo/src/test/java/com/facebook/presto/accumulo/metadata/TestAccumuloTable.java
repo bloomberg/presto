@@ -197,6 +197,7 @@ public class TestAccumuloTable
         assertEquals(actual.getSchema(), expected.getSchema());
         assertEquals(actual.getTable(), expected.getTable());
         assertEquals(actual.getColumns(), expected.getColumns());
+        assertEquals(actual.getAllColumns(), expected.getAllColumns());
         assertEquals(actual.getRowId(), expected.getRowId());
         assertEquals(actual.isExternal(), expected.isExternal());
         assertEquals(actual.getSerializerClassName(), expected.getSerializerClassName());
