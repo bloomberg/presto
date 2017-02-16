@@ -66,12 +66,18 @@ public class LexicoderRowSerializer
     private static final Map<TypeSignature, MapLexicoder<?, ?>> MAP_LEXICODERS = new HashMap<>();
     private static final Map<TypeSignature, RowLexicoder> ROW_LEXICODERS = new HashMap<>();
 
+    @SuppressWarnings("MismatchedQueryAndUpdateOfCollection")
+    private static final Map<String, String> EMPTY_MAP = new HashMap<>();
+
     private final Map<String, Map<String, String>> familyQualifierColumnMap = new HashMap<>();
+    private final Map<String, Map<String, String>> timestampMap = new HashMap<>();
+    private final Map<String, Map<String, String>> visibilityMap = new HashMap<>();
     private final Map<String, byte[]> columnValues = new HashMap<>();
     private final Text rowId = new Text();
     private final Text family = new Text();
     private final Text qualifier = new Text();
     private final Text value = new Text();
+    private final Text visibility = new Text();
 
     private boolean rowOnly = false;
     private String rowIdName;
@@ -106,12 +112,21 @@ public class LexicoderRowSerializer
     }
 
     @Override
-    public void setMapping(String name, String family, String qualifier)
+    public void setDataMapping(String name, String family, String qualifier)
     {
-        columnValues.put(name, null);
-        Map<String, String> qualifierToNameMap = familyQualifierColumnMap.computeIfAbsent(family, k -> new HashMap<>());
+        familyQualifierColumnMap.computeIfAbsent(family, k -> new HashMap<>()).put(qualifier, name);
+    }
 
-        qualifierToNameMap.put(qualifier, name);
+    @Override
+    public void setTimestampMapping(String name, String family, String qualifier)
+    {
+        timestampMap.computeIfAbsent(family, k -> new HashMap<>()).put(qualifier, name);
+    }
+
+    @Override
+    public void setVisibilityMapping(String name, String family, String qualifier)
+    {
+        visibilityMap.computeIfAbsent(family, k -> new HashMap<>()).put(qualifier, name);
     }
 
     @Override
@@ -140,8 +155,21 @@ public class LexicoderRowSerializer
             return;
         }
 
+        String strFamily = family.toString();
+        String strQualifier = qualifier.toString();
+
         value.set(entry.getValue().get());
-        columnValues.put(familyQualifierColumnMap.get(family.toString()).get(qualifier.toString()), value.copyBytes());
+        columnValues.put(familyQualifierColumnMap.get(strFamily).get(strQualifier), value.copyBytes());
+
+        String timestampColumnName = timestampMap.getOrDefault(strFamily, EMPTY_MAP).get(strQualifier);
+        if (timestampColumnName != null) {
+            columnValues.put(timestampColumnName, encode(TIMESTAMP, entry.getKey().getTimestamp()));
+        }
+
+        String visibilityColumnName = visibilityMap.getOrDefault(strFamily, EMPTY_MAP).get(strQualifier);
+        if (visibilityColumnName != null) {
+            columnValues.put(visibilityColumnName, entry.getKey().getColumnVisibility(visibility).copyBytes());
+        }
     }
 
     @Override

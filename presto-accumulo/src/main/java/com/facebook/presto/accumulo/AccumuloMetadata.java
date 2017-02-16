@@ -302,7 +302,7 @@ public class AccumuloMetadata
         }
 
         ImmutableMap.Builder<String, ColumnHandle> columnHandles = ImmutableMap.builder();
-        for (AccumuloColumnHandle column : table.getColumns()) {
+        for (AccumuloColumnHandle column : table.getAllColumns()) {
             columnHandles.put(column.getName(), column);
         }
         return columnHandles.build();

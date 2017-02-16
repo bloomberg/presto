@@ -313,7 +313,7 @@ public abstract class AbstractTestAccumuloRowSerializer
         m.put(b("a"), b("a"), data);
         Key key = new Key(b("row"), b("a"), b("b"), b(), 0, false);
         Value value = new Value(data);
-        serializer.setMapping(COLUMN_NAME, "a", "b");
+        serializer.setDataMapping(COLUMN_NAME, "a", "b");
         serializer.deserialize(new SimpleImmutableEntry<>(key, value));
     }
 
