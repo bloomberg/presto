@@ -52,8 +52,8 @@ import static com.google.common.base.Preconditions.checkArgument;
  * <li>setRowIdName - Sets the Presto name which is the Accumulo row ID</li>
  * <li>setRowOnly - True if only the row ID is going to be retrieved, false if more data is
  * necessary.</li>
- * <li>setMapping - Multiple calls for each Presto column, setting the mapping of Presto column name
- * to Accumulo column family and qualifier</li>
+ * <li>setDataMapping/setTimestampMapping/setVisibilityMapping - Multiple calls for each Presto column,
+ * setting the mapping of Presto column name to Accumulo column family and qualifier</li>
  * <li>deserialize - Called for each Accumulo entry in the same row. Implements should
  * retrieve the Presto column value from the given key/value pair</li>
  * <li>get* - Called to retrieve the data type for the given Presto column name</li>
@@ -90,7 +90,25 @@ public interface AccumuloRowSerializer
      * @param family Accumulo family
      * @param qualifier Accumulo qualifier
      */
-    void setMapping(String name, String family, String qualifier);
+    void setDataMapping(String name, String family, String qualifier);
+
+    /**
+     * Sets the mapping for the Presto column name for a timestamp column to Accumulo family and qualifier.
+     *
+     * @param name Presto name
+     * @param family Accumulo family
+     * @param qualifier Accumulo qualifier
+     */
+    void setTimestampMapping(String name, String family, String qualifier);
+
+    /**
+     * Sets the mapping for the Presto column name for a visibility column to Accumulo family and qualifier.
+     *
+     * @param name Presto name
+     * @param family Accumulo family
+     * @param qualifier Accumulo qualifier
+     */
+    void setVisibilityMapping(String name, String family, String qualifier);
 
     /**
      * Sets a Boolean value indicating whether or not only the row ID is going to be retrieved from the serializer.

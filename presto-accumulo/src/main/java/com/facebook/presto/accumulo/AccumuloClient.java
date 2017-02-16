@@ -282,9 +282,8 @@ public class AccumuloClient
 
         // And now we parse the configured columns and create handles for the metadata manager
         ImmutableList.Builder<AccumuloColumnHandle> cBuilder = ImmutableList.builder();
-        for (int ordinal = 0; ordinal < meta.getColumns().size(); ++ordinal) {
-            ColumnMetadata cm = meta.getColumns().get(ordinal);
-
+        int ordinal = 0;
+        for (ColumnMetadata cm : meta.getColumns()) {
             // Special case if this column is the row ID
             if (cm.getName().equalsIgnoreCase(rowIdColumn)) {
                 cBuilder.add(
@@ -293,7 +292,7 @@ public class AccumuloClient
                                 Optional.empty(),
                                 Optional.empty(),
                                 cm.getType(),
-                                ordinal,
+                                ordinal++,
                                 "Accumulo row ID"));
             }
             else {
@@ -303,7 +302,6 @@ public class AccumuloClient
 
                 // Get the mapping for this column
                 Pair<String, String> famqual = mapping.get(cm.getName());
-                String comment = format("Accumulo column %s:%s", famqual.getLeft(), famqual.getRight());
 
                 // Create a new AccumuloColumnHandle object
                 cBuilder.add(
@@ -312,8 +310,8 @@ public class AccumuloClient
                                 Optional.of(famqual.getLeft()),
                                 Optional.of(famqual.getRight()),
                                 cm.getType(),
-                                ordinal,
-                                comment));
+                                ordinal++,
+                                format("Accumulo column %s:%s", famqual.getLeft(), famqual.getRight())));
             }
         }
 
@@ -563,7 +561,9 @@ public class AccumuloClient
                         columnHandle.getQualifier(),
                         columnHandle.getType(),
                         columnHandle.getOrdinal(),
-                        columnHandle.getComment()));
+                        columnHandle.getComment(),
+                        columnHandle.isTimestamp(),
+                        columnHandle.isVisibility()));
             }
             else {
                 newColumnList.add(columnHandle);

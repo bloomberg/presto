@@ -127,16 +127,28 @@ public class AccumuloRecordCursor
                 fieldToColumnName[i] = columnHandle.getName();
 
                 // Make sure to skip the row ID!
-                if (!columnHandle.getName().equals(rowIdName)) {
-                    // Set the mapping of presto column name to the family/qualifier
-                    this.serializer.setMapping(columnHandle.getName(), columnHandle.getFamily().get(), columnHandle.getQualifier().get());
-
-                    // Set our scanner to fetch this family/qualifier column
-                    // This will help us prune which data we receive from Accumulo
-                    family.set(columnHandle.getFamily().get());
-                    qualifier.set(columnHandle.getQualifier().get());
-                    this.scanner.fetchColumn(family, qualifier);
+                if (columnHandle.getName().equals(rowIdName)) {
+                    continue;
                 }
+
+                if (columnHandle.isTimestamp()) {
+                    // Set the mapping of presto column name to the family/qualifier for the hidden timestamp column
+                    this.serializer.setTimestampMapping(columnHandle.getName(), columnHandle.getFamily().get(), columnHandle.getQualifier().get());
+                }
+                else if (columnHandle.isVisibility()) {
+                    // Set the mapping of presto column name to the family/qualifier for the hidden visibility column
+                    this.serializer.setVisibilityMapping(columnHandle.getName(), columnHandle.getFamily().get(), columnHandle.getQualifier().get());
+                }
+                else {
+                    // Set the mapping of presto column name to the family/qualifier for the data
+                    this.serializer.setDataMapping(columnHandle.getName(), columnHandle.getFamily().get(), columnHandle.getQualifier().get());
+                }
+
+                // Set our scanner to fetch this family/qualifier column
+                // This will help us prune which data we receive from Accumulo
+                family.set(columnHandle.getFamily().get());
+                qualifier.set(columnHandle.getQualifier().get());
+                this.scanner.fetchColumn(family, qualifier);
             }
         }
 

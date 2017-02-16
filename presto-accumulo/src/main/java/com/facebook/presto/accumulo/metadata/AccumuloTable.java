@@ -22,7 +22,6 @@ import com.facebook.presto.accumulo.serializers.AccumuloRowSerializer;
 import com.facebook.presto.spi.ColumnMetadata;
 import com.facebook.presto.spi.PrestoException;
 import com.facebook.presto.spi.SchemaTableName;
-import com.facebook.presto.spi.type.TimestampType;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
@@ -40,6 +39,8 @@ import java.util.stream.Collectors;
 
 import static com.facebook.presto.spi.StandardErrorCode.FUNCTION_IMPLEMENTATION_ERROR;
 import static com.facebook.presto.spi.StandardErrorCode.NOT_FOUND;
+import static com.facebook.presto.spi.type.TimestampType.TIMESTAMP;
+import static com.facebook.presto.spi.type.VarcharType.VARCHAR;
 import static com.google.common.base.MoreObjects.toStringHelper;
 import static com.google.common.base.Preconditions.checkArgument;
 import static java.lang.String.format;
@@ -60,6 +61,7 @@ public class AccumuloTable
     private final Optional<String> indexColumns;
 
     private final boolean indexed;
+    private final List<AccumuloColumnHandle> allColumns;
     private final List<AccumuloColumnHandle> columns;
     private final String rowId;
     private final String table;
@@ -105,7 +107,7 @@ public class AccumuloTable
                                     List<AccumuloColumnHandle> columnHandle = this.columns.stream().filter(x -> x.getName().equals(column)).collect(Collectors.toList());
                                     checkArgument(columnHandle.size() == 1, "Specified index column is not defined: " + column);
                                     checkArgument(!column.equals(rowId), "Specified index column cannot be the row ID: " + column);
-                                    if (columnHandle.get(0).getType().equals(TimestampType.TIMESTAMP)) {
+                                    if (columnHandle.get(0).getType().equals(TIMESTAMP)) {
                                         checkArgument(i + 1 == parsedIndexColumns.size(), "Timestamp-type columns must be at the end of a composite index");
                                     }
                                     builder.add(column);
@@ -118,12 +120,46 @@ public class AccumuloTable
             this.parsedIndexColumns = ImmutableList.of();
         }
 
+        ImmutableList.Builder<AccumuloColumnHandle> allColumnsBuilder = ImmutableList.builder();
+        allColumnsBuilder.addAll(columns);
+
+        int ordinal = columns.size();
+        for (AccumuloColumnHandle column : columns) {
+            if (column.getName().equalsIgnoreCase(rowId)) {
+                continue;
+            }
+
+            // And add the ColumnHandles for the hidden timestamp and visibility columns
+            allColumnsBuilder.add(
+                    new AccumuloColumnHandle(
+                            column.getName() + "_ts",
+                            column.getFamily(),
+                            column.getQualifier(),
+                            TIMESTAMP,
+                            ordinal++,
+                            format("Timestamp for Accumulo column %s:%s", column.getFamily().get(), column.getQualifier().get()),
+                            true,
+                            false));
+
+            allColumnsBuilder.add(
+                    new AccumuloColumnHandle(
+                            column.getName() + "_vis",
+                            column.getFamily(),
+                            column.getQualifier(),
+                            VARCHAR,
+                            ordinal++,
+                            format("Visibility for Accumulo column %s:%s", column.getFamily().get(), column.getQualifier().get()),
+                            false,
+                            true));
+        }
+
+        this.allColumns = allColumnsBuilder.build();
+        this.columnsMetadata = ImmutableList.copyOf(this.allColumns.stream().map(AccumuloColumnHandle::getColumnMetadata).collect(Collectors.toList()));
+
         // Extract the ColumnMetadata from the handles for faster access
         ImmutableMap.Builder<String, AccumuloColumnHandle> columnHandleBuilder = ImmutableMap.builder();
         ImmutableMap.Builder<Pair<String, String>, AccumuloColumnHandle> columnFamQualBuilder = ImmutableMap.builder();
-        ImmutableList.Builder<ColumnMetadata> columnMetadataBuilder = ImmutableList.builder();
         for (AccumuloColumnHandle column : this.columns) {
-            columnMetadataBuilder.add(column.getColumnMetadata());
             columnHandleBuilder.put(column.getName(), column);
 
             if (column.getFamily().isPresent() && column.getQualifier().isPresent()) {
@@ -131,7 +167,6 @@ public class AccumuloTable
             }
         }
 
-        this.columnsMetadata = columnMetadataBuilder.build();
         this.columnNameToHandle = columnHandleBuilder.build();
         this.columnFamQualToHandle = columnFamQualBuilder.build();
         this.schemaTableName = new SchemaTableName(this.schema, this.table);
@@ -171,6 +206,12 @@ public class AccumuloTable
     public List<AccumuloColumnHandle> getColumns()
     {
         return columns;
+    }
+
+    @JsonIgnore
+    public List<AccumuloColumnHandle> getAllColumns()
+    {
+        return allColumns;
     }
 
     @JsonProperty

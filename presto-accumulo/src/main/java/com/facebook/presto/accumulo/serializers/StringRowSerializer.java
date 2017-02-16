@@ -55,12 +55,18 @@ import static java.util.concurrent.TimeUnit.MILLISECONDS;
 public class StringRowSerializer
         implements AccumuloRowSerializer
 {
+    @SuppressWarnings("MismatchedQueryAndUpdateOfCollection")
+    private static final Map<String, String> EMPTY_MAP = new HashMap<>();
+
     private final Map<String, Map<String, String>> familyQualifierColumnMap = new HashMap<>();
+    private final Map<String, Map<String, String>> timestampMap = new HashMap<>();
+    private final Map<String, Map<String, String>> visibilityMap = new HashMap<>();
     private final Map<String, Object> columnValues = new HashMap<>();
     private final Text rowId = new Text();
     private final Text family = new Text();
     private final Text qualifier = new Text();
     private final Text value = new Text();
+    private final Text visibility = new Text();
 
     private boolean rowOnly = false;
     private String rowIdName;
@@ -78,16 +84,21 @@ public class StringRowSerializer
     }
 
     @Override
-    public void setMapping(String name, String family, String qualifier)
+    public void setDataMapping(String name, String family, String qualifier)
     {
-        columnValues.put(name, null);
-        Map<String, String> qualifierColumnMap = familyQualifierColumnMap.get(family);
-        if (qualifierColumnMap == null) {
-            qualifierColumnMap = new HashMap<>();
-            familyQualifierColumnMap.put(family, qualifierColumnMap);
-        }
+        familyQualifierColumnMap.computeIfAbsent(family, k -> new HashMap<>()).put(qualifier, name);
+    }
 
-        qualifierColumnMap.put(qualifier, name);
+    @Override
+    public void setTimestampMapping(String name, String family, String qualifier)
+    {
+        timestampMap.computeIfAbsent(family, k -> new HashMap<>()).put(qualifier, name);
+    }
+
+    @Override
+    public void setVisibilityMapping(String name, String family, String qualifier)
+    {
+        visibilityMap.computeIfAbsent(family, k -> new HashMap<>()).put(qualifier, name);
     }
 
     @Override
@@ -116,8 +127,21 @@ public class StringRowSerializer
             return;
         }
 
+        String strFamily = family.toString();
+        String strQualifier = qualifier.toString();
+
         value.set(entry.getValue().get());
-        columnValues.put(familyQualifierColumnMap.get(family.toString()).get(qualifier.toString()), value.toString());
+        columnValues.put(familyQualifierColumnMap.get(strFamily).get(strQualifier), value.toString());
+
+        String timestampColumnName = timestampMap.getOrDefault(strFamily, EMPTY_MAP).get(strQualifier);
+        if (timestampColumnName != null) {
+            columnValues.put(timestampColumnName, encode(TIMESTAMP, entry.getKey().getTimestamp()));
+        }
+
+        String visibilityColumnName = visibilityMap.getOrDefault(strFamily, EMPTY_MAP).get(strQualifier);
+        if (visibilityColumnName != null) {
+            columnValues.put(visibilityColumnName, entry.getKey().getColumnVisibility(visibility).toString());
+        }
     }
 
     @Override
