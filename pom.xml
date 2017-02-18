@@ -111,6 +111,7 @@
         <module>presto-raptor</module>
         <module>presto-base-jdbc</module>
         <module>presto-mysql</module>
+        <module>presto-oracle</module>
         <module>presto-postgresql</module>
         <module>presto-mongodb</module>
         <module>presto-bytecode</module>
