@@ -613,6 +613,12 @@
             </dependency>
 
             <dependency>
+                <groupId>oracle</groupId>
+                <artifactId>oracle.jdbc</artifactId>
+                <version>11.2.0.4</version>
+            </dependency>
+
+            <dependency>
                 <groupId>org.postgresql</groupId>
                 <artifactId>postgresql</artifactId>
                 <version>42.0.0</version>
