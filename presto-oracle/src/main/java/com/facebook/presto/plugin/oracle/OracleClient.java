@@ -21,6 +21,8 @@ import com.facebook.presto.plugin.jdbc.JdbcTableHandle;
 import com.facebook.presto.spi.PrestoException;
 import com.facebook.presto.spi.TableNotFoundException;
 import com.facebook.presto.spi.type.Type;
+import com.google.common.cache.CacheBuilder;
+import com.google.common.cache.CacheLoader;
 import com.google.common.base.Throwables;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
@@ -42,6 +44,15 @@ import static com.facebook.presto.spi.StandardErrorCode.NOT_SUPPORTED;
 public class OracleClient extends BaseJdbcClient
 {
     private static final Logger log = Logger.get(BaseJdbcClient.class);
+    private com.google.common.cache.LoadingCache<JdbcTableHandle, List<JdbcColumnHandle>> tableColumnsCache =
+          CacheBuilder.newBuilder().maximumSize(10000)
+                  .expireAfterAccess(7, java.util.concurrent.TimeUnit.DAYS)
+                  .build(new CacheLoader<JdbcTableHandle, List<JdbcColumnHandle>>(){
+                      @Override
+                      public List<JdbcColumnHandle> load(JdbcTableHandle tableHandle) throws Exception{
+                          return getColumns(tableHandle);
+                      }
+                  });
 
     @Inject
     public OracleClient(JdbcConnectorId connectorId, BaseJdbcConfig config,
@@ -78,6 +89,17 @@ public class OracleClient extends BaseJdbcClient
 
     @Override
     public List<JdbcColumnHandle> getColumns(JdbcTableHandle tableHandle)
+    {
+        try {
+            return tableColumnsCache.get(tableHandle);
+        }
+        catch(java.util.concurrent.ExecutionException e){
+            log.warn("Failed to fetch oracle columns from cache, try JDBC connection");
+            return getColumnsFromDatabase(tableHandle);
+        }
+    }
+
+    private List<JdbcColumnHandle> getColumnsFromDatabase(JdbcTableHandle tableHandle)
     {
         log.info("getting oracle columns");
         try (Connection connection = driver.connect(connectionUrl,
