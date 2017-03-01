@@ -21,9 +21,9 @@ import com.facebook.presto.plugin.jdbc.JdbcTableHandle;
 import com.facebook.presto.spi.PrestoException;
 import com.facebook.presto.spi.TableNotFoundException;
 import com.facebook.presto.spi.type.Type;
+import com.google.common.base.Throwables;
 import com.google.common.cache.CacheBuilder;
 import com.google.common.cache.CacheLoader;
-import com.google.common.base.Throwables;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
 import io.airlift.log.Logger;
@@ -49,7 +49,8 @@ public class OracleClient extends BaseJdbcClient
                   .expireAfterAccess(7, java.util.concurrent.TimeUnit.DAYS)
                   .build(new CacheLoader<JdbcTableHandle, List<JdbcColumnHandle>>(){
                       @Override
-                      public List<JdbcColumnHandle> load(JdbcTableHandle tableHandle) throws Exception{
+                      public List<JdbcColumnHandle> load(JdbcTableHandle tableHandle) throws Exception
+                      {
                           return getColumns(tableHandle);
                       }
                   });
@@ -93,7 +94,7 @@ public class OracleClient extends BaseJdbcClient
         try {
             return tableColumnsCache.get(tableHandle);
         }
-        catch(java.util.concurrent.ExecutionException e){
+        catch (java.util.concurrent.ExecutionException e) {
             log.warn("Failed to fetch oracle columns from cache, try JDBC connection");
             return getColumnsFromDatabase(tableHandle);
         }
