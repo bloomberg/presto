@@ -28,10 +28,25 @@
     </licenses>
 
     <scm>
-        <connection>scm:git:git://github.com/facebook/presto.git</connection>
-        <url>https://github.com/facebook/presto</url>
+        <developerConnection>scm:git:git@bbgithub.dev.bloomberg.com:gobig/accumulo-rest.git</developerConnection>
         <tag>HEAD</tag>
     </scm>
+
+    <distributionManagement>
+        <repository>
+            <uniqueVersion>false</uniqueVersion>
+            <id>central</id>
+            <name>libs-releases</name>
+            <url>http://artprod.dev.bloomberg.com:8080/artifactory/libs-release-local</url>
+        </repository>
+
+        <snapshotRepository>
+            <uniqueVersion>false</uniqueVersion>
+            <id>central</id>
+            <name>libs-snapshots</name>
+            <url>http://artprod.dev.bloomberg.com:8080/artifactory/libs-snapshot-local</url>
+        </snapshotRepository>
+    </distributionManagement>
 
     <properties>
         <air.main.basedir>${project.basedir}</air.main.basedir>
