@@ -17,64 +17,17 @@ import io.airlift.configuration.Config;
 
 public class OracleConfig
 {
-    private String user;
-    private String password;
-    private String url;
+    private boolean includeSynonyms = true;
 
-    /**
-     * @return the user
-     */
-    public String getUser()
+    public boolean isIncludeSynonyms()
     {
-        return user;
+        return includeSynonyms;
     }
 
-    /**
-     * @param user
-     *            the user to set
-     */
-    @Config("oracle.user")
-    public OracleConfig setUser(String user)
+    @Config("oracle.include-synonyms")
+    public OracleConfig setIncludeSynonyms(boolean includeSynonyms)
     {
-        this.user = user;
-        return this;
-    }
-
-    /**
-     * @return the password
-     */
-    public String getPassword()
-    {
-        return password;
-    }
-
-    /**
-     * @param password
-     *            the password to set
-     */
-    @Config("oracle.password")
-    public OracleConfig setPassword(String password)
-    {
-        this.password = password;
-        return this;
-    }
-
-    /**
-     * @return the url
-     */
-    public String getUrl()
-    {
-        return url;
-    }
-
-    /**
-     * @param url
-     *            the url to set
-     */
-    @Config("oracle.url")
-    public OracleConfig setUrl(String url)
-    {
-        this.url = url;
+        this.includeSynonyms = includeSynonyms;
         return this;
     }
 }
