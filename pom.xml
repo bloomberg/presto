@@ -111,6 +111,7 @@
         <module>presto-raptor</module>
         <module>presto-base-jdbc</module>
         <module>presto-mysql</module>
+        <module>presto-oracle</module>
         <module>presto-postgresql</module>
         <module>presto-mongodb</module>
         <module>presto-bytecode</module>
@@ -587,6 +588,12 @@
                 <groupId>mysql</groupId>
                 <artifactId>mysql-connector-java</artifactId>
                 <version>5.1.35</version>
+            </dependency>
+
+            <dependency>
+                <groupId>oracle</groupId>
+                <artifactId>oracle.jdbc</artifactId>
+                <version>11.2.0.4</version>
             </dependency>
 
             <dependency>
