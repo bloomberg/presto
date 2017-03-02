@@ -18,13 +18,9 @@ import com.facebook.presto.plugin.jdbc.BaseJdbcConfig;
 import com.facebook.presto.plugin.jdbc.JdbcColumnHandle;
 import com.facebook.presto.plugin.jdbc.JdbcConnectorId;
 import com.facebook.presto.plugin.jdbc.JdbcTableHandle;
-import com.facebook.presto.spi.PrestoException;
-import com.facebook.presto.spi.TableNotFoundException;
-import com.facebook.presto.spi.type.Type;
 import com.google.common.base.Throwables;
 import com.google.common.cache.CacheBuilder;
 import com.google.common.cache.CacheLoader;
-import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
 import io.airlift.log.Logger;
 import oracle.jdbc.OracleDriver;
@@ -32,14 +28,10 @@ import oracle.jdbc.OracleDriver;
 import javax.inject.Inject;
 
 import java.sql.Connection;
-import java.sql.DatabaseMetaData;
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
-
-import static com.facebook.presto.spi.StandardErrorCode.NOT_SUPPORTED;
 
 public class OracleClient extends BaseJdbcClient
 {
@@ -51,7 +43,7 @@ public class OracleClient extends BaseJdbcClient
                       @Override
                       public List<JdbcColumnHandle> load(JdbcTableHandle tableHandle) throws Exception
                       {
-                          return getColumnsFromDatabase(tableHandle);
+                          return OracleClient.super.getColumns(tableHandle);
                       }
                   });
 
@@ -60,12 +52,14 @@ public class OracleClient extends BaseJdbcClient
                         OracleConfig oracleConfig) throws SQLException
     {
         super(connectorId, config, "", new OracleDriver());
+        if (oracleConfig.isIncludeSynonyms()) {
+            connectionProperties.setProperty("includeSynonyms", String.valueOf(oracleConfig.isIncludeSynonyms()));
+        }
     }
 
     @Override
     public Set<String> getSchemaNames()
     {
-        log.info("get schema names");
         try (Connection connection = driver.connect(connectionUrl,
                 connectionProperties);
              ResultSet resultSet = connection.getMetaData().getSchemas()) {
@@ -95,50 +89,6 @@ public class OracleClient extends BaseJdbcClient
             return tableColumnsCache.get(tableHandle);
         }
         catch (java.util.concurrent.ExecutionException e) {
-            log.warn("Failed to fetch oracle columns from cache, try JDBC connection");
-            return getColumnsFromDatabase(tableHandle);
-        }
-    }
-
-    private List<JdbcColumnHandle> getColumnsFromDatabase(JdbcTableHandle tableHandle)
-    {
-        log.info("getting oracle columns");
-        try (Connection connection = driver.connect(connectionUrl,
-                connectionProperties)) {
-            //If the table is mapped to another user you will need to get the synonym to that table
-            //So, in this case, is mandatory to use setIncludeSynonyms
-            ((oracle.jdbc.driver.OracleConnection) connection).setIncludeSynonyms(true);
-            DatabaseMetaData metadata = connection.getMetaData();
-            String schemaName = tableHandle.getSchemaName().toUpperCase();
-            String tableName = tableHandle.getTableName().toUpperCase();
-            try (ResultSet resultSet = metadata.getColumns(tableHandle.getCatalogName(), schemaName,
-                    tableName, null)) {
-                List<JdbcColumnHandle> columns = new ArrayList<>();
-                boolean found = false;
-                while (resultSet.next()) {
-                    found = true;
-                    Type columnType = toPrestoType(resultSet
-                            .getInt("DATA_TYPE"), resultSet.getInt("COLUMN_SIZE"));
-                    // skip unsupported column types
-                    if (columnType != null) {
-                        String columnName = resultSet.getString("COLUMN_NAME");
-                        columns.add(new JdbcColumnHandle(connectorId,
-                                columnName, columnType));
-                    }
-                }
-                if (!found) {
-                    throw new TableNotFoundException(
-                            tableHandle.getSchemaTableName());
-                }
-                if (columns.isEmpty()) {
-                    throw new PrestoException(NOT_SUPPORTED,
-                            "Table has no supported column types: "
-                                    + tableHandle.getSchemaTableName());
-                }
-                log.info("getting oracle table columns:" + columns.size());
-                return ImmutableList.copyOf(columns);
-            }
-        } catch (SQLException e) {
             throw Throwables.propagate(e);
         }
     }
