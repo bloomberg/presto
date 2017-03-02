@@ -14,13 +14,17 @@
 package com.facebook.presto.accumulo;
 
 import com.facebook.presto.testing.MaterializedResult;
+import com.facebook.presto.testing.MaterializedRow;
 import com.facebook.presto.tests.AbstractTestDistributedQueries;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import org.intellij.lang.annotations.Language;
 import org.testng.annotations.Test;
 
+import java.sql.Timestamp;
+
 import static com.facebook.presto.accumulo.AccumuloQueryRunner.createAccumuloQueryRunner;
+import static com.google.common.collect.Iterables.getOnlyElement;
 import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertFalse;
 import static org.testng.Assert.assertTrue;
@@ -453,5 +457,57 @@ public class TestAccumuloDistributedQueries
         finally {
             assertUpdate("DROP TABLE test_open_ended_timestamp_rollup");
         }
+    }
+
+    @Test
+    public void testHiddenColumns()
+            throws Exception
+    {
+        try {
+            Timestamp time = new Timestamp(System.currentTimeMillis());
+
+            assertUpdate("CREATE TABLE test_hidden_columns AS SELECT 1 AS a, 'b' as b, CAST(123 AS BIGINT) c", 1);
+            assertQuery("SELECT * FROM test_hidden_columns", "SELECT 1, 'b', 123");
+            MaterializedRow actual = computeActual("SELECT a, b, b_ts, b_vis, c, c_ts, c_vis FROM test_hidden_columns").toJdbcTypes().getMaterializedRows().get(0);
+
+            assertEquals(actual.getField(0), 1);
+            assertEquals(actual.getField(1), "b");
+            assertTrue(((Timestamp) actual.getField(2)).after(time), "Timestamp is not greater than or equal to " + time);
+            assertEquals(actual.getField(3), "");
+            assertEquals(actual.getField(4), 123L);
+            assertTrue(((Timestamp) actual.getField(5)).after(time), "Timestamp is not greater than or equal to " + time);
+            assertEquals(actual.getField(6), "");
+        }
+        finally {
+            assertUpdate("DROP TABLE test_hidden_columns");
+        }
+    }
+
+    @Test
+    public void testRenameHiddenColumn()
+            throws Exception
+    {
+        Timestamp time = new Timestamp(System.currentTimeMillis());
+
+        assertUpdate("CREATE TABLE test_rename_hidden_column AS SELECT 'a' a, 123 x", 1);
+        MaterializedResult materializedRows = computeActual("SELECT x, x_ts, x_vis FROM test_rename_hidden_column").toJdbcTypes();
+        assertEquals(getOnlyElement(materializedRows.getMaterializedRows()).getField(0), 123);
+        assertTrue(((Timestamp) getOnlyElement(materializedRows.getMaterializedRows()).getField(1)).after(time), "Timestamp is not greater than or equal to " + time);
+        assertEquals(getOnlyElement(materializedRows.getMaterializedRows()).getField(2), "");
+
+        assertUpdate("ALTER TABLE test_rename_hidden_column RENAME COLUMN x TO y");
+        materializedRows = computeActual("SELECT y, y_ts, y_vis FROM test_rename_hidden_column").toJdbcTypes();
+        assertEquals(getOnlyElement(materializedRows.getMaterializedRows()).getField(0), 123);
+        assertTrue(((Timestamp) getOnlyElement(materializedRows.getMaterializedRows()).getField(1)).after(time), "Timestamp is not greater than or equal to " + time);
+        assertEquals(getOnlyElement(materializedRows.getMaterializedRows()).getField(2), "");
+
+        assertUpdate("ALTER TABLE test_rename_hidden_column RENAME COLUMN y TO Z");
+        materializedRows = computeActual("SELECT z, z_ts, z_vis FROM test_rename_hidden_column").toJdbcTypes();
+        assertEquals(getOnlyElement(materializedRows.getMaterializedRows()).getField(0), 123);
+        assertTrue(((Timestamp) getOnlyElement(materializedRows.getMaterializedRows()).getField(1)).after(time), "Timestamp is not greater than or equal to " + time);
+        assertEquals(getOnlyElement(materializedRows.getMaterializedRows()).getField(2), "");
+
+        assertUpdate("DROP TABLE test_rename_hidden_column");
+        assertFalse(queryRunner.tableExists(getSession(), "test_rename_hidden_column"));
     }
 }
