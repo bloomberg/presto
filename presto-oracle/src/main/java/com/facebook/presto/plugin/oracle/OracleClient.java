@@ -51,7 +51,7 @@ public class OracleClient extends BaseJdbcClient
                       @Override
                       public List<JdbcColumnHandle> load(JdbcTableHandle tableHandle) throws Exception
                       {
-                          return getColumns(tableHandle);
+                          return getColumnsFromDatabase(tableHandle);
                       }
                   });
 
