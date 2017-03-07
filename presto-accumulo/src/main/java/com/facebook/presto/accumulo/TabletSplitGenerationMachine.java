@@ -270,7 +270,7 @@ public class TabletSplitGenerationMachine
                     table.getSchema(),
                     table.getTable(),
                     indexQueryParameters,
-                    auths,
+                    getScanAuthorizations(session, table),
                     getSmallestCardinalityThreshold(session, numRows),
                     metricsStorage);
 
