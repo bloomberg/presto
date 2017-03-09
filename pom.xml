@@ -10,7 +10,7 @@
 
     <groupId>com.facebook.presto</groupId>
     <artifactId>presto-root</artifactId>
-    <version>0.156.10.bb</version>
+    <version>0.156.11.bb-SNAPSHOT</version>
     <packaging>pom</packaging>
 
     <name>presto-root</name>
@@ -29,7 +29,7 @@
 
     <scm>
         <developerConnection>scm:git:git@bbgithub.dev.bloomberg.com:gobig/accumulo-rest.git</developerConnection>
-        <tag>0.156.10.bb</tag>
+        <tag>HEAD</tag>
     </scm>
 
     <distributionManagement>
