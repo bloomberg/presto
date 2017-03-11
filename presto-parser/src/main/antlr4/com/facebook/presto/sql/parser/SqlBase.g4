@@ -267,6 +267,7 @@ valueExpression
     | left=valueExpression operator=(ASTERISK | SLASH | PERCENT) right=valueExpression  #arithmeticBinary
     | left=valueExpression operator=(PLUS | MINUS) right=valueExpression                #arithmeticBinary
     | left=valueExpression CONCAT right=valueExpression                                 #concatenation
+    | left=valueExpression OVERLAP right=valueExpression                                #overlap
     ;
 
 primaryExpression
@@ -654,6 +655,7 @@ ASTERISK: '*';
 SLASH: '/';
 PERCENT: '%';
 CONCAT: '||';
+OVERLAP: '&&';
 
 STRING
     : '\'' ( ~'\'' | '\'\'' )* '\''

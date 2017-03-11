@@ -655,6 +655,74 @@ public class TestArrayOperators
     }
 
     @Test
+    public void testArraysOverlapOperator()
+            throws Exception
+    {
+        assertFunction("ARRAY [1, 2] && ARRAY [2, 3]", BooleanType.BOOLEAN, true);
+        assertFunction("ARRAY [2, 1] && ARRAY [2, 3]", BooleanType.BOOLEAN, true);
+        assertFunction("ARRAY [2, 1] && ARRAY [3, 2]", BooleanType.BOOLEAN, true);
+        assertFunction("ARRAY [1, 2] && ARRAY [3, 2]", BooleanType.BOOLEAN, true);
+
+        assertFunction("ARRAY [1, 3] && ARRAY [2, 4]", BooleanType.BOOLEAN, false);
+        assertFunction("ARRAY [3, 1] && ARRAY [2, 4]", BooleanType.BOOLEAN, false);
+        assertFunction("ARRAY [3, 1] && ARRAY [4, 2]", BooleanType.BOOLEAN, false);
+        assertFunction("ARRAY [1, 3] && ARRAY [4, 2]", BooleanType.BOOLEAN, false);
+
+        assertFunction("ARRAY [1, 3] && ARRAY [2, 3, 4]", BooleanType.BOOLEAN, true);
+        assertFunction("ARRAY [3, 1] && ARRAY [5, 4, 1]", BooleanType.BOOLEAN, true);
+
+        assertFunction("ARRAY [CAST(1 AS BIGINT), 2] && ARRAY [CAST(2 AS BIGINT), 3]", BooleanType.BOOLEAN, true);
+        assertFunction("ARRAY [CAST(2 AS BIGINT), 1] && ARRAY [CAST(2 AS BIGINT), 3]", BooleanType.BOOLEAN, true);
+        assertFunction("ARRAY [CAST(2 AS BIGINT), 1] && ARRAY [CAST(3 AS BIGINT), 2]", BooleanType.BOOLEAN, true);
+        assertFunction("ARRAY [CAST(1 AS BIGINT), 2] && ARRAY [CAST(3 AS BIGINT), 2]", BooleanType.BOOLEAN, true);
+
+        assertFunction("ARRAY [CAST(1 AS BIGINT), 3] && ARRAY [CAST(2 AS BIGINT), 4]", BooleanType.BOOLEAN, false);
+        assertFunction("ARRAY [CAST(3 AS BIGINT), 1] && ARRAY [CAST(2 AS BIGINT), 4]", BooleanType.BOOLEAN, false);
+        assertFunction("ARRAY [CAST(3 AS BIGINT), 1] && ARRAY [CAST(4 AS BIGINT), 2]", BooleanType.BOOLEAN, false);
+        assertFunction("ARRAY [CAST(1 AS BIGINT), 3] && ARRAY [CAST(4 AS BIGINT), 2]", BooleanType.BOOLEAN, false);
+
+        assertFunction("ARRAY ['dog', 'cat'] && ARRAY ['monkey', 'dog']", BooleanType.BOOLEAN, true);
+        assertFunction("ARRAY ['dog', 'cat'] && ARRAY ['monkey', 'fox']", BooleanType.BOOLEAN, false);
+
+        // Test arrays with NULLs
+        assertFunction("ARRAY [1, 2] && ARRAY [NULL, 2]", BooleanType.BOOLEAN, true);
+        assertFunction("ARRAY [1, 2] && ARRAY [2, NULL]", BooleanType.BOOLEAN, true);
+        assertFunction("ARRAY [2, 1] && ARRAY [NULL, 3]", BooleanType.BOOLEAN, null);
+        assertFunction("ARRAY [2, 1] && ARRAY [3, NULL]", BooleanType.BOOLEAN, null);
+        assertFunction("ARRAY [NULL, 2] && ARRAY [1, 2]", BooleanType.BOOLEAN, true);
+        assertFunction("ARRAY [2, NULL] && ARRAY [1, 2]", BooleanType.BOOLEAN, true);
+        assertFunction("ARRAY [NULL, 3] && ARRAY [2, 1]", BooleanType.BOOLEAN, null);
+        assertFunction("ARRAY [3, NULL] && ARRAY [2, 1]", BooleanType.BOOLEAN, null);
+
+        assertFunction("ARRAY [CAST(1 AS BIGINT), 2] && ARRAY [NULL, CAST(2 AS BIGINT)]", BooleanType.BOOLEAN, true);
+        assertFunction("ARRAY [CAST(1 AS BIGINT), 2] && ARRAY [CAST(2 AS BIGINT), NULL]", BooleanType.BOOLEAN, true);
+        assertFunction("ARRAY [CAST(2 AS BIGINT), 1] && ARRAY [CAST(3 AS BIGINT), NULL]", BooleanType.BOOLEAN, null);
+        assertFunction("ARRAY [CAST(2 AS BIGINT), 1] && ARRAY [NULL, CAST(3 AS BIGINT)]", BooleanType.BOOLEAN, null);
+        assertFunction("ARRAY [NULL, CAST(2 AS BIGINT)] && ARRAY [CAST(1 AS BIGINT), 2]", BooleanType.BOOLEAN, true);
+        assertFunction("ARRAY [CAST(2 AS BIGINT), NULL] && ARRAY [CAST(1 AS BIGINT), 2]", BooleanType.BOOLEAN, true);
+        assertFunction("ARRAY [CAST(3 AS BIGINT), NULL] && ARRAY [CAST(2 AS BIGINT), 1]", BooleanType.BOOLEAN, null);
+        assertFunction("ARRAY [NULL, CAST(3 AS BIGINT)] && ARRAY [CAST(2 AS BIGINT), 1]", BooleanType.BOOLEAN, null);
+
+        assertFunction("ARRAY ['dog', 'cat'] && ARRAY [NULL, 'dog']", BooleanType.BOOLEAN, true);
+        assertFunction("ARRAY ['dog', 'cat'] && ARRAY ['monkey', NULL]", BooleanType.BOOLEAN, null);
+        assertFunction("ARRAY [NULL, 'dog'] && ARRAY ['dog', 'cat']", BooleanType.BOOLEAN, true);
+        assertFunction("ARRAY ['monkey', NULL] && ARRAY ['dog', 'cat']", BooleanType.BOOLEAN, null);
+
+        assertFunction("ARRAY [ARRAY [1, 2], ARRAY[3]] && ARRAY [ARRAY[4], ARRAY [1, 2]]", BooleanType.BOOLEAN, true);
+        assertFunction("ARRAY [ARRAY [1, 2], ARRAY[3]] && ARRAY [ARRAY[4], NULL]", BooleanType.BOOLEAN, null);
+        assertFunction("ARRAY [ARRAY [2], ARRAY[3]] && ARRAY [ARRAY[4], ARRAY[1, 2]]", BooleanType.BOOLEAN, false);
+
+        assertFunction("ARRAY [] && ARRAY []", BooleanType.BOOLEAN, false);
+        assertFunction("ARRAY [] && ARRAY [1, 2]", BooleanType.BOOLEAN, false);
+        assertFunction("ARRAY [] && ARRAY [NULL]", BooleanType.BOOLEAN, false);
+
+        assertFunction("ARRAY [true] && ARRAY [true, false]", BooleanType.BOOLEAN, true);
+        assertFunction("ARRAY [false] && ARRAY [true, true]", BooleanType.BOOLEAN, false);
+        assertFunction("ARRAY [true, false] && ARRAY [NULL]", BooleanType.BOOLEAN, null);
+        assertFunction("ARRAY [false] && ARRAY [true, NULL]", BooleanType.BOOLEAN, null);
+    }
+
+    @Test
     public void testArrayIntersect()
             throws Exception
     {

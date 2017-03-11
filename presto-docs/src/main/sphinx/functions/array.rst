@@ -18,6 +18,14 @@ The ``||`` operator is used to concatenate an array with an array or an element 
     SELECT ARRAY [1] || 2; -- [1, 2]
     SELECT 2 || ARRAY [1]; -- [2, 1]
 
+Overlap Operator: &&
+--------------------
+
+The ``&&`` operator is used to determine if two arrays of the same type contain one or more of the same elements::
+
+    SELECT ARRAY [1, 2, 3] && ARRAY [2, 3, 4]; -- true
+    SELECT ARRAY [1, 2, 3] && ARRAY [4, 5, 6]; -- false
+
 Array Functions
 ---------------
 

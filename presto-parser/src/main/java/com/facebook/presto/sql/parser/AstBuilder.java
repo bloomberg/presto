@@ -1044,6 +1044,16 @@ class AstBuilder
     }
 
     @Override
+    public Node visitOverlap(SqlBaseParser.OverlapContext context)
+    {
+        return new FunctionCall(
+                getLocation(context.OVERLAP()),
+                QualifiedName.of("arrays_overlap"), ImmutableList.of(
+                (Expression) visit(context.left),
+                (Expression) visit(context.right)));
+    }
+
+    @Override
     public Node visitAtTimeZone(SqlBaseParser.AtTimeZoneContext context)
     {
         return new AtTimeZone(
