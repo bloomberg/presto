@@ -39,9 +39,7 @@ import com.facebook.presto.sql.tree.NotExpression;
 import com.facebook.presto.sql.tree.NullLiteral;
 import com.facebook.presto.sql.tree.SymbolReference;
 import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
 
 import java.util.Collection;
@@ -55,7 +53,7 @@ import static com.facebook.presto.sql.ExpressionUtils.extractPredicates;
 import static com.facebook.presto.sql.analyzer.ExpressionAnalyzer.getExpressionTypes;
 import static com.facebook.presto.sql.tree.BooleanLiteral.FALSE_LITERAL;
 import static com.facebook.presto.sql.tree.BooleanLiteral.TRUE_LITERAL;
-import static com.facebook.presto.sql.tree.ComparisonExpression.Type.IS_DISTINCT_FROM;
+import static com.facebook.presto.sql.tree.ComparisonExpressionType.IS_DISTINCT_FROM;
 import static com.facebook.presto.sql.tree.LogicalBinaryExpression.Type.OR;
 import static com.facebook.presto.util.ImmutableCollectors.toImmutableList;
 import static java.util.Collections.emptyList;
@@ -108,8 +106,7 @@ public class SimplifyExpressions
         public PlanNode visitProject(ProjectNode node, RewriteContext<Void> context)
         {
             PlanNode source = context.rewrite(node.getSource());
-            Map<Symbol, Expression> assignments = ImmutableMap.copyOf(Maps.transformValues(node.getAssignments(), this::simplifyExpression));
-            return new ProjectNode(node.getId(), source, assignments);
+            return new ProjectNode(node.getId(), source, node.getAssignments().rewrite(this::simplifyExpression));
         }
 
         @Override
@@ -222,7 +219,7 @@ public class SimplifyExpressions
             List<List<Expression>> subPredicates = getSubPredicates(predicates);
 
             Set<Expression> commonPredicates = ImmutableSet.copyOf(subPredicates.stream()
-                    .map(this::filterDeterministicPredicates)
+                    .map(ExtractCommonPredicatesExpressionRewriter::filterDeterministicPredicates)
                     .reduce(Sets::intersection)
                     .orElse(emptySet()));
 
@@ -249,7 +246,7 @@ public class SimplifyExpressions
                     .build());
         }
 
-        private List<List<Expression>> getSubPredicates(List<Expression> predicates)
+        private static List<List<Expression>> getSubPredicates(List<Expression> predicates)
         {
             return predicates.stream()
                     .map(predicate -> predicate instanceof LogicalBinaryExpression ?
@@ -257,7 +254,7 @@ public class SimplifyExpressions
                     .collect(toImmutableList());
         }
 
-        private Set<Expression> filterDeterministicPredicates(List<Expression> predicates)
+        private static Set<Expression> filterDeterministicPredicates(List<Expression> predicates)
         {
             return predicates.stream()
                     .filter(DeterminismEvaluator::isDeterministic)

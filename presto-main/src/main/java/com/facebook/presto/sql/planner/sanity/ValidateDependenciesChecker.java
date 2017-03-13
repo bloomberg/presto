@@ -252,7 +252,7 @@ public final class ValidateDependenciesChecker
             verifyUniqueId(node);
 
             Set<Symbol> inputs = createInputs(source, boundSymbols);
-            for (Expression expression : node.getAssignments().values()) {
+            for (Expression expression : node.getAssignments().getExpressions()) {
                 Set<Symbol> dependencies = DependencyExtractor.extractUnique(expression);
                 checkDependencies(inputs, dependencies, "Invalid node. Expression dependencies (%s) not in source plan output (%s)", dependencies, inputs);
             }
@@ -466,7 +466,6 @@ public final class ValidateDependenciesChecker
             for (int i = 0; i < node.getSources().size(); i++) {
                 PlanNode subplan = node.getSources().get(i);
                 checkDependencies(subplan.getOutputSymbols(), node.getInputs().get(i), "EXCHANGE subplan must provide all of the necessary symbols");
-                checkDependencies(subplan.getOutputSymbols(), node.getInputs().get(i), "EXCHANGE subplan must provide all of the necessary symbols");
                 subplan.accept(this, boundSymbols); // visit child
             }
 
@@ -584,6 +583,16 @@ public final class ValidateDependenciesChecker
             checkDependencies(node.getInput().getOutputSymbols(), node.getCorrelation(), "APPLY input must provide all the necessary correlation symbols for subquery");
             checkDependencies(DependencyExtractor.extractUnique(node.getSubquery()), node.getCorrelation(), "not all APPLY correlation symbols are used in subquery");
 
+            ImmutableSet<Symbol> inputs = ImmutableSet.<Symbol>builder()
+                    .addAll(createInputs(node.getSubquery(), boundSymbols))
+                    .addAll(createInputs(node.getInput(), boundSymbols))
+                    .build();
+
+            for (Expression expression : node.getSubqueryAssignments().getExpressions()) {
+                Set<Symbol> dependencies = DependencyExtractor.extractUnique(expression);
+                checkDependencies(inputs, dependencies, "Invalid node. Expression dependencies (%s) not in source plan output (%s)", dependencies, inputs);
+            }
+
             verifyUniqueId(node);
 
             return null;
@@ -597,7 +606,7 @@ public final class ValidateDependenciesChecker
             nodesById.put(id, node);
         }
 
-        private ImmutableSet<Symbol> createInputs(PlanNode source, Set<Symbol> boundSymbols)
+        private static ImmutableSet<Symbol> createInputs(PlanNode source, Set<Symbol> boundSymbols)
         {
             return ImmutableSet.<Symbol>builder()
                     .addAll(source.getOutputSymbols())

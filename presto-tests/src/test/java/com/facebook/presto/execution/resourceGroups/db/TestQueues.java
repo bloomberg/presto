@@ -19,6 +19,8 @@ import com.facebook.presto.execution.QueryState;
 import com.facebook.presto.execution.resourceGroups.ResourceGroupInfo;
 import com.facebook.presto.execution.resourceGroups.ResourceGroupManager;
 import com.facebook.presto.resourceGroups.db.DbResourceGroupConfig;
+import com.facebook.presto.resourceGroups.db.H2DaoProvider;
+import com.facebook.presto.resourceGroups.db.H2ResourceGroupsDao;
 import com.facebook.presto.spi.Plugin;
 import com.facebook.presto.spi.QueryId;
 import com.facebook.presto.spi.resourceGroups.ResourceGroupId;
@@ -42,7 +44,6 @@ import static com.facebook.presto.execution.QueryState.QUEUED;
 import static com.facebook.presto.execution.QueryState.RUNNING;
 import static com.facebook.presto.spi.StandardErrorCode.QUERY_REJECTED;
 import static com.facebook.presto.testing.TestingSession.testSessionBuilder;
-
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static org.testng.Assert.assertEquals;
 
@@ -263,8 +264,11 @@ public class TestQueues
     {
         DbResourceGroupConfig dbResourceGroupConfig = new DbResourceGroupConfig()
                 .setConfigDbUrl(url);
-        H2DaoProvider daoProvider = new H2DaoProvider(dbResourceGroupConfig);
-        return daoProvider.get();
+        H2ResourceGroupsDao dao = new H2DaoProvider(dbResourceGroupConfig).get();
+        dao.createResourceGroupsTable();
+        dao.createSelectorsTable();
+        dao.createResourceGroupsGlobalPropertiesTable();
+        return dao;
     }
 
     private static DistributedQueryRunner createQueryRunner(String dbConfigUrl, H2ResourceGroupsDao dao)

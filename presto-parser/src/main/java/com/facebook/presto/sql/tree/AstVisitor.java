@@ -17,6 +17,11 @@ import javax.annotation.Nullable;
 
 public abstract class AstVisitor<R, C>
 {
+    public R process(Node node)
+    {
+        return process(node, null);
+    }
+
     public R process(Node node, @Nullable C context)
     {
         return node.accept(this, context);
@@ -97,6 +102,11 @@ public abstract class AstVisitor<R, C>
         return visitStatement(node, context);
     }
 
+    protected R visitDescribeOutput(DescribeOutput node, C context)
+    {
+        return visitStatement(node, context);
+    }
+
     protected R visitDescribeInput(DescribeInput node, C context)
     {
         return visitStatement(node, context);
@@ -162,7 +172,7 @@ public abstract class AstVisitor<R, C>
         return visitStatement(node, context);
     }
 
-    public R visitResetSession(ResetSession node, C context)
+    protected R visitResetSession(ResetSession node, C context)
     {
         return visitStatement(node, context);
     }
@@ -549,12 +559,12 @@ public abstract class AstVisitor<R, C>
 
     protected R visitInsert(Insert node, C context)
     {
-        return visitNode(node, context);
+        return visitStatement(node, context);
     }
 
     protected R visitCall(Call node, C context)
     {
-        return visitNode(node, context);
+        return visitStatement(node, context);
     }
 
     protected R visitDelete(Delete node, C context)
@@ -638,6 +648,16 @@ public abstract class AstVisitor<R, C>
     }
 
     protected R visitSymbolReference(SymbolReference node, C context)
+    {
+        return visitExpression(node, context);
+    }
+
+    protected R visitQuantifiedComparisonExpression(QuantifiedComparisonExpression node, C context)
+    {
+        return visitExpression(node, context);
+    }
+
+    protected R visitLambdaArgumentDeclaration(LambdaArgumentDeclaration node, C context)
     {
         return visitExpression(node, context);
     }

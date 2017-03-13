@@ -49,14 +49,12 @@ public class TestAccumuloDistributedQueries
 
     @Override
     public void testAddColumn()
-            throws Exception
     {
         // Adding columns via SQL are not supported until adding columns with comments are supported
     }
 
     @Override
     public void testCreateTableAsSelect()
-            throws Exception
     {
         // This test is overridden due to Function "UUID" not found errors
         // Some test cases from the base class are removed
@@ -93,14 +91,12 @@ public class TestAccumuloDistributedQueries
 
     @Override
     public void testDelete()
-            throws Exception
     {
         // Deletes are not supported by the connector
     }
 
     @Override
     public void testInsert()
-            throws Exception
     {
         @Language("SQL") String query = "SELECT UUID() AS uuid, orderdate, orderkey FROM orders";
 
@@ -137,7 +133,6 @@ public class TestAccumuloDistributedQueries
 
     @Test
     public void testInsertDuplicateRows()
-            throws Exception
     {
         // This test case tests the Accumulo connectors override capabilities
         // When a row is inserted into a table where a row with the same row ID already exists,
@@ -156,7 +151,6 @@ public class TestAccumuloDistributedQueries
 
     @Override
     public void testBuildFilteredLeftJoin()
-            throws Exception
     {
         // Override because of extra UUID column in lineitem table, cannot SELECT *
         assertQuery("SELECT "
@@ -169,7 +163,6 @@ public class TestAccumuloDistributedQueries
     @Override
     @Test
     public void testJoinWithAlias()
-            throws Exception
     {
         // Override because of extra UUID column in lineitem table, cannot SELECT *
         // Cannot munge test to pass due to aliased data set 'x' containing duplicate orderkey and comment columns
@@ -177,7 +170,6 @@ public class TestAccumuloDistributedQueries
 
     @Override
     public void testProbeFilteredLeftJoin()
-            throws Exception
     {
         // Override because of extra UUID column in lineitem table, cannot SELECT *
         assertQuery("SELECT "
@@ -190,7 +182,6 @@ public class TestAccumuloDistributedQueries
     @Override
     @Test
     public void testJoinWithDuplicateRelations()
-            throws Exception
     {
         // Override because of extra UUID column in lineitem table, cannot SELECT *
         // Cannot munge test to pass due to aliased data sets 'x' containing duplicate orderkey and comment columns
@@ -198,7 +189,6 @@ public class TestAccumuloDistributedQueries
 
     @Override
     public void testLeftJoinWithEmptyInnerTable()
-            throws Exception
     {
         // Override because of extra UUID column in lineitem table, cannot SELECT *
         // Use orderkey = rand() to create an empty relation
@@ -226,7 +216,6 @@ public class TestAccumuloDistributedQueries
 
     @Override
     public void testScalarSubquery()
-            throws Exception
     {
         // Override because of extra UUID column in lineitem table, cannot SELECT *
 
@@ -317,7 +306,6 @@ public class TestAccumuloDistributedQueries
 
     @Override
     public void testShowColumns()
-            throws Exception
     {
         // Override base class because table descriptions for Accumulo connector include comments
         MaterializedResult actual = computeActual("SHOW COLUMNS FROM orders");
@@ -344,7 +332,6 @@ public class TestAccumuloDistributedQueries
 
     @Test
     public void testMultiInBelowCardinality()
-            throws Exception
     {
         assertQuery("SELECT COUNT(*) FROM partsupp WHERE partkey = 1", "SELECT 4");
         assertQuery("SELECT COUNT(*) FROM partsupp WHERE partkey = 2", "SELECT 4");
@@ -353,7 +340,6 @@ public class TestAccumuloDistributedQueries
 
     @Test
     public void testSelectNullValue()
-            throws Exception
     {
         try {
             assertUpdate("CREATE TABLE test_select_null_value AS SELECT 1 a, 2 b, CAST(NULL AS BIGINT) c", 1);

@@ -39,7 +39,7 @@ public class ResourceGroupSpecBuilder
     private final Optional<Duration> softCpuLimit;
     private final Optional<Duration> hardCpuLimit;
     private final Optional<Long> parentId;
-    private final ImmutableList.Builder<ResourceGroupSpec> subGroups = ImmutableList.<ResourceGroupSpec>builder();
+    private final ImmutableList.Builder<ResourceGroupSpec> subGroups = ImmutableList.builder();
 
     ResourceGroupSpecBuilder(
             long id,
@@ -122,7 +122,7 @@ public class ResourceGroupSpecBuilder
         public ResourceGroupSpecBuilder map(int index, ResultSet resultSet, StatementContext context)
                 throws SQLException
         {
-            long id = resultSet.getLong("id");
+            long id = resultSet.getLong("resource_group_id");
             ResourceGroupNameTemplate nameTemplate = new ResourceGroupNameTemplate(resultSet.getString("name"));
             String softMemoryLimit = resultSet.getString("soft_memory_limit");
             int maxQueued = resultSet.getInt("max_queued");

@@ -37,6 +37,7 @@ import java.util.concurrent.CompletableFuture;
 import static com.facebook.presto.accumulo.AccumuloErrorCode.ACCUMULO_TABLE_DNE;
 import static com.facebook.presto.accumulo.AccumuloErrorCode.UNEXPECTED_ACCUMULO_ERROR;
 import static java.util.Objects.requireNonNull;
+import static java.util.concurrent.CompletableFuture.completedFuture;
 
 /**
  * Output class for serializing Presto pages (blocks of rows of data) to Accumulo.
@@ -107,7 +108,7 @@ public class AccumuloPageSink
     }
 
     @Override
-    public Collection<Slice> finish()
+    public CompletableFuture<Collection<Slice>> finish()
     {
         try {
             batchWriter.close();
@@ -117,7 +118,7 @@ public class AccumuloPageSink
         }
 
         // TODO Look into any use of the metadata for writing out the rows
-        return ImmutableList.of();
+        return completedFuture(ImmutableList.of());
     }
 
     @Override
