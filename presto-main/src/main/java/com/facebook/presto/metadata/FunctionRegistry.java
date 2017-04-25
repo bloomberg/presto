@@ -72,7 +72,6 @@ import com.facebook.presto.operator.scalar.ArrayLessThanOrEqualOperator;
 import com.facebook.presto.operator.scalar.ArrayMaxFunction;
 import com.facebook.presto.operator.scalar.ArrayMinFunction;
 import com.facebook.presto.operator.scalar.ArrayNotEqualOperator;
-import com.facebook.presto.operator.scalar.ArrayOverlapFunction;
 import com.facebook.presto.operator.scalar.ArrayPositionFunction;
 import com.facebook.presto.operator.scalar.ArrayRemoveFunction;
 import com.facebook.presto.operator.scalar.ArrayReverseFunction;
@@ -529,7 +528,6 @@ public class FunctionRegistry
                 .scalar(ArrayUnionFunction.class)
                 .scalar(ArrayExceptFunction.class)
                 .scalar(ArraySliceFunction.class)
-                .scalar(ArrayOverlapFunction.class)
                 .scalar(MapDistinctFromOperator.class)
                 .scalar(MapEqualOperator.class)
                 .scalar(MapEntriesFunction.class)
