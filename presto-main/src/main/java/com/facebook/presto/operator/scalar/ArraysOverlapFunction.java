@@ -15,39 +15,22 @@ package com.facebook.presto.operator.scalar;
 
 import com.facebook.presto.spi.block.Block;
 import com.facebook.presto.spi.function.Description;
-import com.facebook.presto.spi.function.OperatorDependency;
 import com.facebook.presto.spi.function.ScalarFunction;
 import com.facebook.presto.spi.function.SqlNullable;
 import com.facebook.presto.spi.function.SqlType;
 import com.facebook.presto.spi.function.TypeParameter;
-import com.facebook.presto.spi.type.AbstractType;
 import com.facebook.presto.spi.type.StandardTypes;
 import com.facebook.presto.spi.type.Type;
 import it.unimi.dsi.fastutil.ints.AbstractIntComparator;
 import it.unimi.dsi.fastutil.ints.IntArrays;
 import it.unimi.dsi.fastutil.ints.IntComparator;
 
-import java.lang.invoke.MethodHandle;
-import java.util.Arrays;
-
-import static com.facebook.presto.spi.function.OperatorType.LESS_THAN;
-import static com.facebook.presto.spi.type.BigintType.BIGINT;
-import static com.facebook.presto.spi.type.IntegerType.INTEGER;
-
 @ScalarFunction("arrays_overlap")
 @Description("Returns true if arrays have common elements")
 public final class ArraysOverlapFunction
 {
-    private int[] leftPositions;
-    private int[] rightPositions;
-
-    private long[] leftLongArray;
-    private long[] rightLongArray;
-
     @TypeParameter("E")
     public ArraysOverlapFunction(@TypeParameter("E") Type elementType) {}
-
-    public ArraysOverlapFunction() {}
 
     private static IntComparator intBlockCompare(Type type, Block block)
     {
@@ -60,41 +43,20 @@ public final class ArraysOverlapFunction
                     return 0;
                 }
                 if (block.isNull(left)) {
-                    return 1;
+                    return -1;
                 }
                 if (block.isNull(right)) {
-                    return -1;
+                    return 1;
                 }
                 return type.compareTo(block, left, block, right);
             }
         };
     }
 
-    @SqlNullable
-    @SqlType(StandardTypes.BOOLEAN)
-    public Boolean arraysOverlapInt(
-            @OperatorDependency(operator = LESS_THAN, returnType = StandardTypes.BOOLEAN, argumentTypes = {"integer", "integer"}) MethodHandle lessThanFunction,
-            @SqlType("array(integer)") Block leftArray,
-            @SqlType("array(integer)") Block rightArray)
-    {
-        return genericArraysOverlap(leftArray, rightArray, INTEGER);
-    }
-
-    @SqlNullable
-    @SqlType(StandardTypes.BOOLEAN)
-    public Boolean arraysOverlapBigInt(
-            @OperatorDependency(operator = LESS_THAN, returnType = StandardTypes.BOOLEAN, argumentTypes = {"bigint", "bigint"}) MethodHandle lessThanFunction,
-            @SqlType("array(bigint)") Block leftArray,
-            @SqlType("array(bigint)") Block rightArray)
-    {
-        return genericArraysOverlap(leftArray, rightArray, BIGINT);
-    }
-
-    @SqlNullable
     @TypeParameter("E")
     @SqlType(StandardTypes.BOOLEAN)
+    @SqlNullable
     public Boolean arraysOverlap(
-            @OperatorDependency(operator = LESS_THAN, returnType = StandardTypes.BOOLEAN, argumentTypes = {"E", "E"}) MethodHandle lessThanFunction,
             @TypeParameter("E") Type type,
             @SqlType("array(E)") Block leftArray,
             @SqlType("array(E)") Block rightArray)
@@ -106,95 +68,73 @@ public final class ArraysOverlapFunction
             return false;
         }
 
-        if (leftPositions == null || leftPositions.length < leftPositionCount) {
-            leftPositions = new int[leftPositionCount * 2];
+        int[] positions;
+        if (leftPositionCount >= rightPositionCount) {
+            positions = new int[leftPositionCount];
+        }
+        else {
+            positions = new int[rightPositionCount];
+            Block temp = leftArray;
+            leftArray = rightArray;
+            rightArray = temp;
+            leftPositionCount = leftArray.getPositionCount();
+            rightPositionCount = rightArray.getPositionCount();
         }
 
-        if (rightPositions == null || rightPositions.length < rightPositionCount) {
-            rightPositions = new int[rightPositionCount * 2];
+        for (int i = 0; i < positions.length; i++) {
+            positions[i] = i;
         }
 
-        for (int i = 0; i < leftPositionCount; i++) {
-            leftPositions[i] = i;
-        }
-        for (int i = 0; i < rightPositionCount; i++) {
-            rightPositions[i] = i;
-        }
-        IntArrays.quickSort(leftPositions, 0, leftPositionCount, intBlockCompare(type, leftArray));
-        IntArrays.quickSort(rightPositions, 0, rightPositionCount, intBlockCompare(type, rightArray));
+        IntArrays.quickSort(positions, 0, positions.length, intBlockCompare(type, leftArray));
 
-        int leftCurrentPosition = 0;
-        int rightCurrentPosition = 0;
-        while (leftCurrentPosition < leftPositionCount && rightCurrentPosition < rightPositionCount) {
-            if (leftArray.isNull(leftPositions[leftCurrentPosition]) || rightArray.isNull(rightPositions[rightCurrentPosition])) {
-                // Nulls are in the end of the array. Non-null elements do not overlap.
-                return null;
+        // Get the location of the first non-null element from the long array
+        int searchStart = getSearchStart(leftArray, positions);
+        if (searchStart < 0) {
+            return null;
+        }
+
+        boolean rightHasNull = false;
+        for (int currentPosition = 0; currentPosition < rightPositionCount; ++currentPosition) {
+            if (rightArray.isNull(currentPosition)) {
+                rightHasNull = true;
+                continue;
             }
-            int compareValue = type.compareTo(leftArray, leftPositions[leftCurrentPosition], rightArray, rightPositions[rightCurrentPosition]);
-            if (compareValue > 0) {
-                rightCurrentPosition++;
-            }
-            else if (compareValue < 0) {
-                leftCurrentPosition++;
-            }
-            else {
-                return true;
+
+            int low = searchStart;
+            int high = leftPositionCount - 1;
+            while (high >= low) {
+                int middle = (low + high) / 2;
+                if (leftArray.isNull(positions[middle])) {
+                    break;
+                }
+
+                int compareValue = type.compareTo(leftArray, positions[middle], rightArray, currentPosition);
+                if (compareValue > 0) {
+                    high = middle - 1;
+                }
+                else if (compareValue < 0) {
+                    low = middle + 1;
+                }
+                else {
+                    return true;
+                }
             }
         }
-        return leftArray.isNull(leftPositions[leftPositionCount - 1]) || rightArray.isNull(rightPositions[rightPositionCount - 1]) ? null : false;
+
+        if (rightHasNull || leftArray.isNull(positions[0])) {
+            return null;
+        }
+
+        return false;
     }
 
-    public Boolean genericArraysOverlap(Block leftArray, Block rightArray, AbstractType type)
+    private int getSearchStart(Block leftArray, int[] positions)
     {
-        int leftSize = leftArray.getPositionCount();
-        int rightSize = rightArray.getPositionCount();
-
-        if (leftSize == 0 || rightSize == 0) {
-            return false;
-        }
-
-        if (leftLongArray == null || leftLongArray.length < leftSize) {
-            leftLongArray = new long[leftSize * 2];
-        }
-        if (rightLongArray == null || rightLongArray.length < rightSize) {
-            rightLongArray = new long[rightSize * 2];
-        }
-
-        int leftNonNullSize = sortAbstractLongArray(leftArray, leftLongArray, type);
-        int rightNonNullSize = sortAbstractLongArray(rightArray, rightLongArray, type);
-
-        int leftPosition = 0;
-        int rightPosition = 0;
-        while (leftPosition < leftNonNullSize && rightPosition < rightNonNullSize) {
-            if (leftLongArray[leftPosition] < rightLongArray[rightPosition]) {
-                leftPosition++;
-            }
-            else if (rightLongArray[rightPosition] < leftLongArray[leftPosition]) {
-                rightPosition++;
-            }
-            else {
-                return true;
+        for (int i = 0; i < positions.length; ++i) {
+            if (!leftArray.isNull(positions[i])) {
+                return i;
             }
         }
-        return (leftNonNullSize < leftSize) || (rightNonNullSize < rightSize) ? null : false;
-    }
-
-    // Assumes buffer is long enough, returns count of non-null elements.
-    private static int sortAbstractLongArray(Block array, long[] buffer, AbstractType type)
-    {
-        int arraySize = array.getPositionCount();
-        int nonNullSize = 0;
-        for (int i = 0; i < arraySize; i++) {
-            if (!array.isNull(i)) {
-                buffer[nonNullSize++] = type.getLong(array, i);
-            }
-        }
-        for (int i = 1; i < nonNullSize; i++) {
-            if (buffer[i - 1] > buffer[i]) {
-                Arrays.sort(buffer, 0, nonNullSize);
-                break;
-            }
-        }
-        return nonNullSize;
+        return -1;
     }
 }
