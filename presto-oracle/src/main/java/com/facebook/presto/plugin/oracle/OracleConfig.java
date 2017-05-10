@@ -19,6 +19,8 @@ public class OracleConfig
 {
     private boolean includeSynonyms = true;
 
+    private int defaultRowPrefetch = 5000;
+
     public boolean isIncludeSynonyms()
     {
         return includeSynonyms;
@@ -28,6 +30,18 @@ public class OracleConfig
     public OracleConfig setIncludeSynonyms(boolean includeSynonyms)
     {
         this.includeSynonyms = includeSynonyms;
+        return this;
+    }
+
+    public int getDefaultRowPrefetch()
+    {
+        return defaultRowPrefetch;
+    }
+
+    @Config("oracle.fetch-size")
+    public OracleConfig setDefaultRowPrefetch(int fetchSize)
+    {
+        this.defaultRowPrefetch = fetchSize;
         return this;
     }
 }

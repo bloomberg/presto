@@ -55,6 +55,7 @@ public class OracleClient extends BaseJdbcClient
         if (oracleConfig.isIncludeSynonyms()) {
             connectionProperties.setProperty("includeSynonyms", String.valueOf(oracleConfig.isIncludeSynonyms()));
         }
+        connectionProperties.setProperty("defaultRowPrefetch", String.valueOf(oracleConfig.getDefaultRowPrefetch()));
     }
 
     @Override
