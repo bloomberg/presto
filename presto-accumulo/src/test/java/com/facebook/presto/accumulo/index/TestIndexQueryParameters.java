@@ -68,6 +68,21 @@ public class TestIndexQueryParameters
     }
 
     @Test
+    public void testIndexQueryParametersSingleValue()
+    {
+        IndexQueryParameters parameters = new IndexQueryParameters(new IndexColumn(ImmutableList.of("email")));
+        assertEquals(parameters.getIndexColumn(), new IndexColumn(ImmutableList.of("email")));
+
+        parameters.appendColumn("cf_email".getBytes(UTF_8), ImmutableList.of(new AccumuloRange(FOO)), false);
+
+        assertEquals(parameters.getIndexFamily(), new Text("cf_email"));
+        assertEquals(parameters.getMetricParameters().asMap().size(), 1);
+        assertEquals(parameters.getRanges(), ImmutableList.of(new Range(new Text(FOO), new Text(Bytes.concat(FOO)))));
+
+        parameters.split(4).stream().map(x -> x.getRanges()).forEach(System.out::println);
+    }
+
+    @Test
     public void testIndexQueryParametersTruncateTimestamp()
     {
         IndexQueryParameters parameters = new IndexQueryParameters(INDEX_COLUMN);
