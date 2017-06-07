@@ -147,8 +147,8 @@ public final class AccumuloSessionProperties
 
         PropertyMetadata<Long> s16 = longSessionProperty(
                 INDEX_DISTRIBUTION_THRESHOLD,
-                "Minimum number of rows that would cause the index lookup to be distributed to the workers, if applicable.  Set to zero to disable.  Default 500_000",
-                500_000L,
+                "Minimum number of rows that would cause the index lookup to be distributed to the workers, if applicable.  Set to zero to disable.  Default 1000",
+                1000L,
                 false);
 
         sessionProperties = ImmutableList.of(s2, s3, s4, s5, s6, s7, s8, s9, s10, s11, s12, s13, s14, s15, s16);
