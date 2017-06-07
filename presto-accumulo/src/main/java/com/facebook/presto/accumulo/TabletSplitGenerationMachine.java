@@ -17,6 +17,7 @@ import com.facebook.presto.accumulo.conf.AccumuloConfig;
 import com.facebook.presto.accumulo.index.ColumnCardinalityCache;
 import com.facebook.presto.accumulo.index.IndexLookup;
 import com.facebook.presto.accumulo.index.IndexQueryParameters;
+import com.facebook.presto.accumulo.index.Indexer;
 import com.facebook.presto.accumulo.index.metrics.MetricsReader;
 import com.facebook.presto.accumulo.index.metrics.MetricsStorage;
 import com.facebook.presto.accumulo.metadata.AccumuloTable;
@@ -341,6 +342,10 @@ public class TabletSplitGenerationMachine
             }
             else if (queryParameters.get(0).getCardinality() < threshold) {
                 LOG.debug("Distribution of index is disabled, cardinality of query column is too large.  Needs to be greater than or equal to " + threshold);
+                return false;
+            }
+            else if (queryParameters.get(0).getRanges().stream().anyMatch(Indexer::isExact)) {
+                LOG.debug("Distribution of index is disabled, query contains an exact key lookup.  Distribution is only supported for range scans");
                 return false;
             }
 
