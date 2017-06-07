@@ -36,12 +36,14 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 
 import static com.facebook.presto.accumulo.index.Indexer.EMPTY_BYTE;
 import static com.facebook.presto.accumulo.index.Indexer.HYPHEN_BYTE;
 import static com.facebook.presto.accumulo.index.Indexer.NULL_BYTE;
 import static com.facebook.presto.accumulo.index.Indexer.TIMESTAMP_CARDINALITY_FAMILIES;
+import static com.facebook.presto.accumulo.index.Indexer.isExact;
 import static com.facebook.presto.accumulo.index.Indexer.splitTimestampRange;
 import static com.google.common.base.MoreObjects.toStringHelper;
 import static com.google.common.base.Preconditions.checkArgument;
@@ -135,7 +137,7 @@ public class IndexQueryParameters
     {
         // This method is used by a worker -- they'd be set by Jackson
         checkState(ranges != null, "Ranges are not set!");
-        return ranges;
+        return ImmutableList.copyOf(ranges);
     }
 
     @JsonIgnore
@@ -185,6 +187,15 @@ public class IndexQueryParameters
 
         if (ranges == null) {
             generateRanges();
+        }
+
+        // If any one of the ranges is an exact range, we won't be able to split it
+        // Just return the parameters as-is
+        AtomicBoolean split = new AtomicBoolean(true);
+        ranges.forEach(range -> split.set(split.get() && !isExact(range.getRange())));
+
+        if (!split.get()) {
+            return ImmutableList.of(this);
         }
 
         List<AccumuloRange> paddedRanges = generatePaddedRanges();

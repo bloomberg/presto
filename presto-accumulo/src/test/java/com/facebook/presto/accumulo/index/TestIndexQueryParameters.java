@@ -68,6 +68,37 @@ public class TestIndexQueryParameters
     }
 
     @Test
+    public void testIndexQueryParametersExactValue()
+    {
+        IndexQueryParameters parameters = new IndexQueryParameters(new IndexColumn(ImmutableList.of("email")));
+        assertEquals(parameters.getIndexColumn(), new IndexColumn(ImmutableList.of("email")));
+
+        parameters.appendColumn("cf_email".getBytes(UTF_8), ImmutableList.of(new AccumuloRange(FOO)), false);
+
+        assertEquals(parameters.getIndexFamily(), new Text("cf_email"));
+        assertEquals(parameters.getMetricParameters().asMap().size(), 1);
+        assertEquals(parameters.getRanges(), ImmutableList.of(new Range(new Text(FOO), new Text(Bytes.concat(FOO)))));
+        assertEquals(parameters.split(4), ImmutableList.of(parameters));
+    }
+
+    @Test
+    public void testIndexQueryParametersMultipleExactValues()
+    {
+        IndexQueryParameters parameters = new IndexQueryParameters(new IndexColumn(ImmutableList.of("email", "born")));
+        assertEquals(parameters.getIndexColumn(), new IndexColumn(ImmutableList.of("email", "born")));
+
+        parameters.appendColumn("cf_email".getBytes(UTF_8), ImmutableList.of(new AccumuloRange(FOO), new AccumuloRange(BAR)), false);
+        parameters.appendColumn("cf_born".getBytes(UTF_8), ImmutableList.of(new AccumuloRange(MIN_TIMESTAMP_VALUE, MIN_TIMESTAMP_VALUE)), false);
+
+        assertEquals(parameters.getIndexFamily(), new Text("cf_email-cf_born"));
+        assertEquals(parameters.getMetricParameters().asMap().size(), 1);
+        assertEquals(parameters.getRanges(), ImmutableList.of(
+                new Range(new Text(Bytes.concat(FOO, NULL_BYTE, MIN_TIMESTAMP_VALUE)), new Text(Bytes.concat(FOO, NULL_BYTE, MIN_TIMESTAMP_VALUE))),
+                new Range(new Text(Bytes.concat(BAR, NULL_BYTE, MIN_TIMESTAMP_VALUE)), new Text(Bytes.concat(BAR, NULL_BYTE, MIN_TIMESTAMP_VALUE)))));
+        assertEquals(parameters.split(4), ImmutableList.of(parameters));
+    }
+
+    @Test
     public void testIndexQueryParametersTruncateTimestamp()
     {
         IndexQueryParameters parameters = new IndexQueryParameters(INDEX_COLUMN);
