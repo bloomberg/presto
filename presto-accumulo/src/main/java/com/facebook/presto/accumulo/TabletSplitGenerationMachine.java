@@ -39,20 +39,14 @@ import io.airlift.log.Logger;
 import org.apache.accumulo.core.client.AccumuloException;
 import org.apache.accumulo.core.client.AccumuloSecurityException;
 import org.apache.accumulo.core.client.Connector;
-import org.apache.accumulo.core.client.Scanner;
 import org.apache.accumulo.core.client.TableNotFoundException;
-import org.apache.accumulo.core.data.Key;
-import org.apache.accumulo.core.data.PartialKey;
 import org.apache.accumulo.core.data.Range;
-import org.apache.accumulo.core.data.Value;
 import org.apache.accumulo.core.security.Authorizations;
-import org.apache.hadoop.io.Text;
 
 import javax.inject.Inject;
 
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -70,7 +64,6 @@ import static com.facebook.presto.accumulo.conf.AccumuloSessionProperties.getSca
 import static com.facebook.presto.accumulo.conf.AccumuloSessionProperties.getSplitsPerWorker;
 import static com.facebook.presto.accumulo.conf.AccumuloSessionProperties.isIndexMetricsEnabled;
 import static com.facebook.presto.accumulo.conf.AccumuloSessionProperties.isOptimizeIndexEnabled;
-import static com.facebook.presto.accumulo.conf.AccumuloSessionProperties.isOptimizeLocalityEnabled;
 import static com.facebook.presto.accumulo.conf.AccumuloSessionProperties.isOptimizeNumRowsPerSplitEnabled;
 import static com.facebook.presto.accumulo.index.Indexer.getIndexColumnFamily;
 import static com.facebook.presto.spi.StandardErrorCode.FUNCTION_IMPLEMENTATION_ERROR;
@@ -370,13 +363,13 @@ public class TabletSplitGenerationMachine
             if (numSplits > 0) {
                 ImmutableList.Builder<TabletSplitMetadata> builder = ImmutableList.builder();
                 for (IndexQueryParameters splitParams : params.split(numSplits)) {
-                    builder.add(new TabletSplitMetadata(Optional.empty(), ImmutableList.of(), rowIdRanges, Optional.of(splitParams)));
+                    builder.add(new TabletSplitMetadata(ImmutableList.of(), rowIdRanges, Optional.of(splitParams)));
                 }
                 tabletSplits = builder.build();
             }
             else {
                 tabletSplits = new ArrayList<>();
-                tabletSplits.add(new TabletSplitMetadata(Optional.empty(), ImmutableList.of(), rowIdRanges, Optional.of(params)));
+                tabletSplits.add(new TabletSplitMetadata(ImmutableList.of(), rowIdRanges, Optional.of(params)));
             }
 
             LOG.info("Distributing %s tablet splits to worker nodes for index retrieval", tabletSplits.size());
@@ -427,16 +420,9 @@ public class TabletSplitGenerationMachine
             Collection<Range> splitRanges = splitByTabletBoundaries(tableName, rowIdRanges.stream().map(AccumuloRange::getRange).collect(Collectors.toList()));
 
             // Create TabletSplitMetadata objects for each range
-            boolean fetchTabletLocations = isOptimizeLocalityEnabled(session);
             for (Range range : splitRanges) {
-                // If locality is enabled, then fetch tablet location
-                if (fetchTabletLocations) {
-                    tabletSplits.add(new TabletSplitMetadata(getTabletLocation(tableName, range.getStartKey()), ImmutableList.of(range), rowIdRanges, Optional.empty()));
-                }
-                else {
-                    // else, just use the default location
-                    tabletSplits.add(new TabletSplitMetadata(Optional.empty(), ImmutableList.of(range), rowIdRanges, Optional.empty()));
-                }
+                // else, just use the default location
+                tabletSplits.add(new TabletSplitMetadata(ImmutableList.of(range), rowIdRanges, Optional.empty()));
             }
 
             // Log some fun stuff and return the tablet splits
@@ -491,131 +477,6 @@ public class TabletSplitGenerationMachine
                 }
             }
             return rangeBuilder.build();
-        }
-
-        /**
-         * Gets the TabletServer hostname for where the given key is located in the given table
-         *
-         * @param table Fully-qualified table name
-         * @param key Key to locate
-         * @return The tablet location, or DUMMY_LOCATION if an error occurs
-         */
-        private Optional<String> getTabletLocation(String table, Key key)
-        {
-            Scanner scanner = null;
-            try {
-                // Get the Accumulo table ID so we can scan some fun stuff
-                String tableId = connector.tableOperations().tableIdMap().get(table);
-
-                // Create our scanner against the metadata table, fetching 'loc' family
-                scanner = connector.createScanner("accumulo.metadata", auths);
-                scanner.fetchColumnFamily(new Text("loc"));
-
-                // Set the scan range to just this table, from the table ID to the default tablet
-                // row, which is the last listed tablet
-                Key defaultTabletRow = new Key(tableId + '<');
-                Key start = new Key(tableId);
-                Key end = defaultTabletRow.followingKey(PartialKey.ROW);
-                scanner.setRange(new Range(start, end));
-
-                Optional<String> location = Optional.empty();
-                if (key == null) {
-                    // if the key is null, then it is -inf, so get first tablet location
-                    Iterator<Map.Entry<Key, Value>> iter = scanner.iterator();
-                    if (iter.hasNext()) {
-                        location = Optional.of(iter.next().getValue().toString());
-                    }
-                }
-                else {
-                    // Else, we will need to scan through the tablet location data and find the location
-
-                    // Create some text objects to do comparison for what we are looking for
-                    Text splitCompareKey = new Text();
-                    key.getRow(splitCompareKey);
-                    Text scannedCompareKey = new Text();
-
-                    // Scan the table!
-                    for (Map.Entry<Key, Value> entry : scanner) {
-                        // Get the bytes of the key
-                        byte[] keyBytes = entry.getKey().getRow().copyBytes();
-
-                        // If the last byte is <, then we have hit the default tablet, so use this location
-                        if (keyBytes[keyBytes.length - 1] == '<') {
-                            location = Optional.of(entry.getValue().toString());
-                            break;
-                        }
-                        else {
-                            // Chop off some magic nonsense
-                            scannedCompareKey.set(keyBytes, 3, keyBytes.length - 3);
-
-                            // Compare the keys, moving along the tablets until the location is found
-                            if (scannedCompareKey.getLength() > 0) {
-                                int compareTo = splitCompareKey.compareTo(scannedCompareKey);
-                                if (compareTo <= 0) {
-                                    location = Optional.of(entry.getValue().toString());
-                                }
-                                else {
-                                    // all future tablets will be greater than this key
-                                    break;
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // If we were unable to find the location for some reason, return the default tablet
-                // location
-                return location.isPresent() ? location : getDefaultTabletLocation(table);
-            }
-            catch (Exception e) {
-                // Swallow this exception so the query does not fail due to being unable
-                // to locate the tablet server for the provided Key.
-                // This is purely an optimization, but we will want to log the error.
-                LOG.error("Failed to get tablet location, returning dummy location", e);
-                return Optional.empty();
-            }
-            finally {
-                if (scanner != null) {
-                    scanner.close();
-                }
-            }
-        }
-
-        private Optional<String> getDefaultTabletLocation(String fulltable)
-        {
-            Scanner scanner = null;
-
-            try {
-                String tableId = connector.tableOperations().tableIdMap().get(fulltable);
-
-                // Create a scanner over the metadata table, fetching the 'loc' column of the default tablet row
-                scanner = connector.createScanner("accumulo.metadata", auths);
-                scanner.fetchColumnFamily(new Text("loc"));
-                scanner.setRange(new Range(tableId + '<'));
-
-                // scan the entry
-                Optional<String> location = Optional.empty();
-                for (Map.Entry<Key, Value> entry : scanner) {
-                    if (location.isPresent()) {
-                        throw new PrestoException(FUNCTION_IMPLEMENTATION_ERROR, "Scan for default tablet returned more than one entry");
-                    }
-
-                    location = Optional.of(entry.getValue().toString());
-                }
-
-                return location;
-            }
-            catch (Exception e) {
-                // Swallow this exception so the query does not fail due to being unable to locate the tablet server for the default tablet.
-                // This is purely an optimization, but we will want to log the error.
-                LOG.error("Failed to get tablet location, returning dummy location", e);
-                return Optional.empty();
-            }
-            finally {
-                if (scanner != null) {
-                    scanner.close();
-                }
-            }
         }
 
         private int optimizeNumRowsPerSplit(ConnectorSession session, long numRowIDs, int numWorkers)
@@ -769,7 +630,7 @@ public class TabletSplitGenerationMachine
         do {
             // Add the sublist of range handles
             // Use an empty location because we are binning multiple Ranges spread across many tablet servers
-            prestoSplits.add(new TabletSplitMetadata(Optional.empty(), splitRanges.subList(fromIndex, toIndex), rowIdRanges, Optional.empty()));
+            prestoSplits.add(new TabletSplitMetadata(splitRanges.subList(fromIndex, toIndex), rowIdRanges, Optional.empty()));
             toAdd -= toIndex - fromIndex;
             fromIndex = toIndex;
             toIndex += Math.min(toAdd, numRangesPerBin);

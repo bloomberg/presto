@@ -39,7 +39,6 @@ import static com.facebook.presto.spi.type.VarcharType.VARCHAR;
  */
 public final class AccumuloSessionProperties
 {
-    private static final String OPTIMIZE_LOCALITY_ENABLED = "optimize_locality_enabled";
     private static final String OPTIMIZE_INDEX_ENABLED = "optimize_index_enabled";
     private static final String INDEX_ROWS_PER_SPLIT = "index_rows_per_split";
     private static final String INDEX_THRESHOLD = "index_threshold";
@@ -61,11 +60,6 @@ public final class AccumuloSessionProperties
     @Inject
     public AccumuloSessionProperties()
     {
-        PropertyMetadata<Boolean> s1 = booleanSessionProperty(
-                OPTIMIZE_LOCALITY_ENABLED,
-                "Set to true to enable data locality for non-indexed scans. Default true.", true,
-                false);
-
         PropertyMetadata<String> s2 = stringSessionProperty(
                 SCAN_USERNAME,
                 "User to impersonate when scanning the tables. This property trumps the scan_auths table property. Default is the user in the configuration file.", null, false);
@@ -157,17 +151,12 @@ public final class AccumuloSessionProperties
                 500_000L,
                 false);
 
-        sessionProperties = ImmutableList.of(s1, s2, s3, s4, s5, s6, s7, s8, s9, s10, s11, s12, s13, s14, s15, s16);
+        sessionProperties = ImmutableList.of(s2, s3, s4, s5, s6, s7, s8, s9, s10, s11, s12, s13, s14, s15, s16);
     }
 
     public List<PropertyMetadata<?>> getSessionProperties()
     {
         return sessionProperties;
-    }
-
-    public static boolean isOptimizeLocalityEnabled(ConnectorSession session)
-    {
-        return session.getProperty(OPTIMIZE_LOCALITY_ENABLED, Boolean.class);
     }
 
     public static boolean isOptimizeIndexEnabled(ConnectorSession session)

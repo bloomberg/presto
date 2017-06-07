@@ -96,8 +96,7 @@ public class AccumuloSplitManager
                     splitMetadata.getRowIdRanges(),
                     splitMetadata.getIndexQueryParameters(),
                     constraints,
-                    tableHandle.getScanAuthorizations(),
-                    splitMetadata.getHostPort());
+                    tableHandle.getScanAuthorizations());
             cSplits.add(split);
         }
 

@@ -29,24 +29,17 @@ import static java.util.Objects.requireNonNull;
 
 public class TabletSplitMetadata
 {
-    private final Optional<String> hostPort;
     private final List<Range> ranges;
     private final Collection<AccumuloRange> rowIdRanges;
     private final Optional<IndexQueryParameters> indexQueryParameters;
 
     @JsonCreator
-    public TabletSplitMetadata(Optional<String> hostPort, List<Range> ranges, Collection<AccumuloRange> rowIdRanges, Optional<IndexQueryParameters> indexQueryParameters)
+    public TabletSplitMetadata(List<Range> ranges, Collection<AccumuloRange> rowIdRanges, Optional<IndexQueryParameters> indexQueryParameters)
     {
-        this.hostPort = requireNonNull(hostPort, "hostPort is null");
         this.ranges = ImmutableList.copyOf(requireNonNull(ranges, "ranges is null"));
         this.rowIdRanges = ImmutableList.copyOf(requireNonNull(rowIdRanges, "rowIdRanges is null"));
         this.indexQueryParameters = requireNonNull(indexQueryParameters, "indexQueryParameters is null");
         checkArgument(ranges.size() > 0 ^ indexQueryParameters.isPresent(), "Both ranges and index query parameters must not be set/empty");
-    }
-
-    public Optional<String> getHostPort()
-    {
-        return hostPort;
     }
 
     public List<Range> getRanges()
@@ -67,7 +60,7 @@ public class TabletSplitMetadata
     @Override
     public int hashCode()
     {
-        return Objects.hash(hostPort, ranges, rowIdRanges, indexQueryParameters);
+        return Objects.hash(ranges, rowIdRanges, indexQueryParameters);
     }
 
     @Override
@@ -82,16 +75,15 @@ public class TabletSplitMetadata
         }
 
         TabletSplitMetadata other = (TabletSplitMetadata) obj;
-        return Objects.equals(this.hostPort, other.hostPort)
-                && Objects.equals(this.ranges, other.ranges)
-                && Objects.equals(this.indexQueryParameters, other.indexQueryParameters);
+        return Objects.equals(this.ranges, other.ranges) &&
+                Objects.equals(this.rowIdRanges, other.rowIdRanges) &&
+                Objects.equals(this.indexQueryParameters, other.indexQueryParameters);
     }
 
     @Override
     public String toString()
     {
         return toStringHelper(this)
-                .add("hostPort", hostPort)
                 .add("numRanges", ranges.size())
                 .add("numRowIdRanges", rowIdRanges.size())
                 .add("indexQueryParameters", indexQueryParameters)
