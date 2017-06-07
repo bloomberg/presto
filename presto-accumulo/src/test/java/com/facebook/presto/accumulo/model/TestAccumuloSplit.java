@@ -78,8 +78,7 @@ public class TestAccumuloSplit
                                 "qual2",
                                 VARCHAR,
                                 Optional.empty())),
-                Optional.of("foo,bar"),
-                Optional.of("localhost:9000"));
+                Optional.of("foo,bar"));
 
         String json = codec.toJson(expected);
         AccumuloSplit actual = codec.fromJson(json);
@@ -99,7 +98,6 @@ public class TestAccumuloSplit
                 ImmutableList.of(),
                 Optional.empty(),
                 ImmutableList.of(),
-                Optional.empty(),
                 Optional.empty());
 
         String json = codec.toJson(expected);
@@ -113,7 +111,6 @@ public class TestAccumuloSplit
         assertEquals(actual.getConnectorId(), expected.getConnectorId());
         assertEquals(actual.getConstraints(), expected.getConstraints());
         assertEquals(actual.getRowId(), expected.getRowId());
-        assertEquals(actual.getHostPort(), expected.getHostPort());
         assertEquals(actual.getWrappedRanges(), expected.getWrappedRanges());
         assertEquals(actual.getRowIdRanges(), expected.getRowIdRanges());
         assertEquals(actual.getIndexQueryParameters(), expected.getIndexQueryParameters());

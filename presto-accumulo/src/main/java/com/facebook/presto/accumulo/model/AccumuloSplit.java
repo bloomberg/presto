@@ -42,8 +42,6 @@ public class AccumuloSplit
     private final String table;
     private final String serializerClassName;
     private final Optional<String> scanAuthorizations;
-    private final Optional<String> hostPort;
-    private final List<HostAddress> addresses;
     private final List<AccumuloColumnConstraint> constraints;
     private final List<AccumuloRange> ranges;
     private final Collection<AccumuloRange> rowIdRanges;
@@ -60,8 +58,7 @@ public class AccumuloSplit
             @JsonProperty("rowIdRanges") Collection<AccumuloRange> rowIdRanges,
             @JsonProperty("indexQueryParameters") Optional<IndexQueryParameters> indexQueryParameters,
             @JsonProperty("constraints") List<AccumuloColumnConstraint> constraints,
-            @JsonProperty("scanAuthorizations") Optional<String> scanAuthorizations,
-            @JsonProperty("hostPort") Optional<String> hostPort)
+            @JsonProperty("scanAuthorizations") Optional<String> scanAuthorizations)
     {
         this.connectorId = requireNonNull(connectorId, "connectorId is null");
         this.rowId = requireNonNull(rowId, "rowId is null");
@@ -70,25 +67,15 @@ public class AccumuloSplit
         this.serializerClassName = requireNonNull(serializerClassName, "serializerClassName is null");
         this.constraints = ImmutableList.copyOf(requireNonNull(constraints, "constraints is null"));
         this.scanAuthorizations = requireNonNull(scanAuthorizations, "scanAuthorizations is null");
-        this.hostPort = requireNonNull(hostPort, "hostPort is null");
         this.ranges = ImmutableList.copyOf(requireNonNull(ranges, "ranges is null"));
         this.rowIdRanges = ImmutableList.copyOf(requireNonNull(rowIdRanges, "rowIdRanges is null"));
         this.indexQueryParameters = requireNonNull(indexQueryParameters, "indexQueryParameters is null");
-
-        // Parse the host address into a list of addresses, this would be an Accumulo Tablet server or some localhost thing
-        addresses = hostPort.map(s -> ImmutableList.of(HostAddress.fromString(s))).orElseGet(ImmutableList::of);
     }
 
     @JsonProperty
     public String getConnectorId()
     {
         return connectorId;
-    }
-
-    @JsonProperty
-    public Optional<String> getHostPort()
-    {
-        return hostPort;
     }
 
     @JsonProperty
@@ -184,7 +171,7 @@ public class AccumuloSplit
     @Override
     public List<HostAddress> getAddresses()
     {
-        return addresses;
+        return ImmutableList.of();
     }
 
     @Override
@@ -202,12 +189,10 @@ public class AccumuloSplit
                 .add("table", table)
                 .add("rowId", rowId)
                 .add("serializerClassName", serializerClassName)
-                .add("addresses", addresses)
                 .add("numRanges", ranges.size())
                 .add("indexQueryParameters", indexQueryParameters)
                 .add("constraints", constraints)
                 .add("scanAuthorizations", scanAuthorizations)
-                .add("hostPort", hostPort)
                 .toString();
     }
 }

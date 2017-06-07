@@ -487,7 +487,6 @@ Note that session properties are prefixed with the catalog name::
 ============================================= ============================= ==============================================================================================================================
 Property Name                                 Default Value                 Description
 ============================================= ============================= ==============================================================================================================================
-``optimize_locality_enabled``                 ``true``                      Set to true to enable data locality for non-indexed scans
 ``optimize_split_ranges_enabled``             ``true``                      Set to true to split non-indexed queries by tablet splits. Should generally be true.
 ``optimize_index_enabled``                    ``true``                      Set to true to enable usage of the secondary index on query
 ``index_rows_per_split``                      ``10000``                     The number of Accumulo row IDs that are packed into a single Presto split
