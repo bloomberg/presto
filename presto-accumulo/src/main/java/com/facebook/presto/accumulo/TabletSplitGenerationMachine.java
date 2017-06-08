@@ -53,8 +53,10 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
+import static com.facebook.presto.accumulo.AccumuloErrorCode.EXCEEDED_INDEX_THRESHOLD;
 import static com.facebook.presto.accumulo.AccumuloErrorCode.UNEXPECTED_ACCUMULO_ERROR;
 import static com.facebook.presto.accumulo.conf.AccumuloSessionProperties.getIndexDistributionThreshold;
+import static com.facebook.presto.accumulo.conf.AccumuloSessionProperties.getIndexMaximumThreshold;
 import static com.facebook.presto.accumulo.conf.AccumuloSessionProperties.getIndexSmallCardRowThreshold;
 import static com.facebook.presto.accumulo.conf.AccumuloSessionProperties.getIndexSmallCardThreshold;
 import static com.facebook.presto.accumulo.conf.AccumuloSessionProperties.getIndexThreshold;
@@ -156,6 +158,8 @@ public class TabletSplitGenerationMachine
             try {
                 this.rowIdRanges = getRangesFromDomain(rowIdDomain, table.getSerializerInstance());
 
+                numRows = table.isIndexed() ? metricsReader.getNumRowsInTable(table.getSchema(), table.getTable()) : -1;
+
                 setInitialState();
 
                 while (state != State.DONE) {
@@ -188,6 +192,11 @@ public class TabletSplitGenerationMachine
                 }
             }
             catch (Exception e) {
+                // Re-throw any instances of a PrestoException rather than wrapping it again
+                if (e instanceof PrestoException) {
+                    throw (PrestoException) e;
+                }
+
                 throw new PrestoException(UNEXPECTED_ACCUMULO_ERROR, "Failed to get splits from Accumulo", e);
             }
 
@@ -233,8 +242,6 @@ public class TabletSplitGenerationMachine
             if (indexQueryParameters != null) {
                 return false;
             }
-
-            numRows = metricsReader.getNumRowsInTable(table.getSchema(), table.getTable());
 
             // Collect Accumulo ranges for each indexed column constraint
             indexQueryParameters = getIndexQueryParameters(table, constraints);
@@ -419,6 +426,15 @@ public class TabletSplitGenerationMachine
                 throws AccumuloSecurityException, TableNotFoundException, AccumuloException
         {
             checkState(state == State.FULL, "State machine is not set to FULL");
+
+            long threshold = getIndexMaximumThreshold(session);
+            if (numRows > threshold) {
+                throw new PrestoException(EXCEEDED_INDEX_THRESHOLD, format("Refusing to execute this query: Index lookup cannot be distributed to workers and the number of rows in the table (%s) is greater than index_maximum_threshold (%s)", numRows, threshold));
+            }
+            else if (numRows < 0) {
+                LOG.debug("Executing full table scan against a non-indexed table.  Unable to determine if this is a bad idea");
+            }
+
             tabletSplits = new ArrayList<>();
 
             // Split the ranges on tablet boundaries

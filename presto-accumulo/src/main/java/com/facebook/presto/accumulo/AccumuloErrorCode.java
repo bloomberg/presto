@@ -39,7 +39,10 @@ public enum AccumuloErrorCode
     ACCUMULO_TABLE_EXISTS(5, EXTERNAL),
 
     // Thrown when an attempt to start/stop MiniAccumuloCluster fails (testing only)
-    MINI_ACCUMULO(6, EXTERNAL);
+    MINI_ACCUMULO(6, EXTERNAL),
+
+    // Thrown when the amount of data that will be read by the connector is above the index threshold
+    EXCEEDED_INDEX_THRESHOLD(7, EXTERNAL);
 
     private final ErrorCode errorCode;
 

@@ -54,6 +54,7 @@ public final class AccumuloSessionProperties
     private static final String SPLITS_PER_WORKER = "splits_per_worker";
     private static final String TRACING_ENABLED = "tracing_enabled";
     private static final String INDEX_DISTRIBUTION_THRESHOLD = "index_distribution_threshold";
+    private static final String INDEX_MAXIMUM_THRESHOLD = "index_maximum_threshold";
 
     private final List<PropertyMetadata<?>> sessionProperties;
 
@@ -151,7 +152,13 @@ public final class AccumuloSessionProperties
                 1000L,
                 false);
 
-        sessionProperties = ImmutableList.of(s2, s3, s4, s5, s6, s7, s8, s9, s10, s11, s12, s13, s14, s15, s16);
+        PropertyMetadata<Long> s17 = longSessionProperty(
+                INDEX_MAXIMUM_THRESHOLD,
+                "Maximum number of rows that where non-distributed index lookups will be rejected by the SQL connector.  Default 50000000",
+                50_000_000L,
+                false);
+
+        sessionProperties = ImmutableList.of(s2, s3, s4, s5, s6, s7, s8, s9, s10, s11, s12, s13, s14, s15, s16, s17);
     }
 
     public List<PropertyMetadata<?>> getSessionProperties()
@@ -270,5 +277,10 @@ public final class AccumuloSessionProperties
     public static long getIndexDistributionThreshold(ConnectorSession session)
     {
         return session.getProperty(INDEX_DISTRIBUTION_THRESHOLD, Long.class);
+    }
+
+    public static long getIndexMaximumThreshold(ConnectorSession session)
+    {
+        return session.getProperty(INDEX_MAXIMUM_THRESHOLD, Long.class);
     }
 }
