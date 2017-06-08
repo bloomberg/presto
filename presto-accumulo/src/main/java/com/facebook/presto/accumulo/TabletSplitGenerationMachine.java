@@ -53,8 +53,10 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
+import static com.facebook.presto.accumulo.AccumuloErrorCode.EXCEEDED_INDEX_THRESHOLD;
 import static com.facebook.presto.accumulo.AccumuloErrorCode.UNEXPECTED_ACCUMULO_ERROR;
 import static com.facebook.presto.accumulo.conf.AccumuloSessionProperties.getIndexDistributionThreshold;
+import static com.facebook.presto.accumulo.conf.AccumuloSessionProperties.getIndexMaximumThreshold;
 import static com.facebook.presto.accumulo.conf.AccumuloSessionProperties.getIndexSmallCardRowThreshold;
 import static com.facebook.presto.accumulo.conf.AccumuloSessionProperties.getIndexSmallCardThreshold;
 import static com.facebook.presto.accumulo.conf.AccumuloSessionProperties.getIndexThreshold;
@@ -419,6 +421,12 @@ public class TabletSplitGenerationMachine
                 throws AccumuloSecurityException, TableNotFoundException, AccumuloException
         {
             checkState(state == State.FULL, "State machine is not set to FULL");
+
+            long threshold = getIndexMaximumThreshold(session);
+            if (numRows > threshold) {
+                throw new PrestoException(EXCEEDED_INDEX_THRESHOLD, format("Refusing to execute this query: Index lookup cannot be distributed to workers and the number of rows in the table (%s) is greater than index_maximum_threshold (%s)", numRows, threshold));
+            }
+
             tabletSplits = new ArrayList<>();
 
             // Split the ranges on tablet boundaries
