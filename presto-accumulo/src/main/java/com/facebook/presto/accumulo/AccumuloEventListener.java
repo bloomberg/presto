@@ -149,14 +149,14 @@ public class AccumuloEventListener
         schema.addColumn("server_address", Optional.of(QUERY), Optional.of("server_address"), VARCHAR);
         schema.addColumn("server_version", Optional.of(QUERY), Optional.of("server_version"), VARCHAR);
 
-        INPUT_TYPE = new ArrayType(new RowType(ImmutableList.of(VARCHAR, VARCHAR, VARCHAR, VARCHAR, VARCHAR), Optional.of(ImmutableList.of("columns", "connector_id", "schema", "table", "connector_info"))));
+        INPUT_TYPE = new ArrayType(new RowType(ImmutableList.of(VARCHAR, VARCHAR, VARCHAR, VARCHAR, VARCHAR), Optional.of(ImmutableList.of("connector_id", "table", "schema", "columns", "connector_info"))));
         schema.addColumn("inputs", Optional.of(INPUT), Optional.of(INPUT), INPUT_TYPE);
 
         schema.addColumn("output_connector_id", Optional.of(OUTPUT), Optional.of("connector_id"), VARCHAR);
         schema.addColumn("output_schema", Optional.of(OUTPUT), Optional.of("schema"), VARCHAR);
         schema.addColumn("output_table", Optional.of(OUTPUT), Optional.of("table"), VARCHAR);
 
-        FAILURE_TYPE = new RowType(ImmutableList.of(VARCHAR, VARCHAR, VARCHAR, VARCHAR, VARCHAR), Optional.of(ImmutableList.of("code", "type", "msg", "host", "json")));
+        FAILURE_TYPE = new RowType(ImmutableList.of(VARCHAR, VARCHAR, VARCHAR, VARCHAR, VARCHAR, VARCHAR), Optional.of(ImmutableList.of("code", "type", "msg", "task", "host", "json")));
         schema.addColumn("failure", Optional.of(FAILURE), Optional.of("failure"), FAILURE_TYPE);
 
         SPLIT_TYPE = new ArrayType(new RowType(
@@ -268,12 +268,12 @@ public class AccumuloEventListener
         });
 
         if (event.getFailureInfo().isPresent()) {
-            mutation.put("failure", "code", event.getFailureInfo().get().getErrorCode().toString());
-            event.getFailureInfo().get().getFailureType().ifPresent(type -> mutation.put("failure", "type", type));
-            event.getFailureInfo().get().getFailureMessage().ifPresent(message -> mutation.put("failure", "msg", message));
-            event.getFailureInfo().get().getFailureTask().ifPresent(task -> mutation.put("failure", "task", task));
-            event.getFailureInfo().get().getFailureHost().ifPresent(host -> mutation.put("failure", "host", host));
-            mutation.put("failure", "json", event.getFailureInfo().get().getFailuresJson());
+            mutation.put(FAILURE, "code", event.getFailureInfo().get().getErrorCode().toString());
+            event.getFailureInfo().get().getFailureType().ifPresent(type -> mutation.put(FAILURE, "type", type));
+            event.getFailureInfo().get().getFailureMessage().ifPresent(message -> mutation.put(FAILURE, "msg", message));
+            event.getFailureInfo().get().getFailureTask().ifPresent(task -> mutation.put(FAILURE, "task", task));
+            event.getFailureInfo().get().getFailureHost().ifPresent(host -> mutation.put(FAILURE, "host", host));
+            mutation.put(FAILURE, "json", event.getFailureInfo().get().getFailuresJson());
         }
 
         mutation.put(QUERY, "start_time", new Value(serializer.encode(TIMESTAMP, event.getExecutionStartTime().getEpochSecond() * 1000L)));
@@ -289,6 +289,7 @@ public class AccumuloEventListener
     {
         Mutation mutation = new Mutation(event.getQueryId());
 
+        // "completed_data_size_bytes", "completed_positions", "completed_read_time", "cpu_time", "create_time", "end_time"
         // We use an ArrayList here to allow null elements
         List<Object> row = new ArrayList<>();
         row.add(event.getStatistics().getCompletedDataSizeBytes());
@@ -298,6 +299,7 @@ public class AccumuloEventListener
         row.add(event.getCreateTime().getEpochSecond() * 1000L);
         row.add(event.getEndTime().isPresent() ? event.getEndTime().get().getEpochSecond() * 1000L : null);
 
+        // "failure_msg", "failure_type"
         if (event.getFailureInfo().isPresent()) {
             row.add(event.getFailureInfo().get().getFailureMessage());
             row.add(event.getFailureInfo().get().getFailureType());
@@ -307,6 +309,7 @@ public class AccumuloEventListener
             row.add(null);
         }
 
+        // "queued_time", "stage_id", "start_time", "task_id", "time_to_first_byte", "time_to_last_byte", "user_time", "wall_time"
         row.add(event.getStatistics().getQueuedTime().toMillis());
         row.add(event.getStageId());
         row.add(event.getStartTime().isPresent() ? event.getStartTime().get().getEpochSecond() * 1000L : null);
@@ -325,6 +328,7 @@ public class AccumuloEventListener
 
     private void appendInputs(Mutation mutation, List<QueryInputMetadata> inputs)
     {
+        // "connector_id", "table", "schema", "columns", "connector_info"
         ImmutableList.Builder<List<Object>> inputBuilder = ImmutableList.builder();
         inputs.forEach(input -> {
             // We use an ArrayList here to allow null elements
@@ -430,15 +434,30 @@ public class AccumuloEventListener
 
     private static class MetadataUpdate
     {
-        Mutation mutation;
-        boolean incrementNumRows;
-        boolean flush;
+        private Mutation mutation;
+        private boolean incrementNumRows;
+        private boolean flush;
 
         public MetadataUpdate(Mutation mutation, boolean incrementNumRows, boolean flush)
         {
             this.mutation = mutation;
             this.incrementNumRows = incrementNumRows;
             this.flush = flush;
+        }
+
+        public Mutation getMutation()
+        {
+            return mutation;
+        }
+
+        public boolean isIncrementNumRows()
+        {
+            return incrementNumRows;
+        }
+
+        public boolean isFlush()
+        {
+            return flush;
         }
     }
 
@@ -491,7 +510,7 @@ public class AccumuloEventListener
                 boolean written = false;
                 do {
                     try {
-                        writer.addMutation(update.mutation, update.incrementNumRows);
+                        writer.addMutation(update.getMutation(), update.isIncrementNumRows());
                         written = true;
                     }
                     catch (MutationsRejectedException | TableNotFoundException e) {
@@ -502,7 +521,7 @@ public class AccumuloEventListener
                 }
                 while (!written);
 
-                while (update.flush) {
+                while (update.isFlush()) {
                     try {
                         writer.flush();
                         break;
