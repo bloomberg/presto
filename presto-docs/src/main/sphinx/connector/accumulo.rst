@@ -767,3 +767,42 @@ This will generate the timestamp metrics for existing entries.
 
 If your table is *internal*,  follow the below instructions to convert it into an
 external table.  You can then add the new table property and run the tool.
+
+Accumulo Event Listener
+-----------------------
+
+An event listener is available for users that is packaged as part of the ``presto-accumulo`` project.
+This event listener archives query-based events and stores them in Accumulo, making them available
+for query through Presto itself.
+
+To use the event listener, create a file on the coordinator called ``$PRESTO_HOME/etc/event-listener.properties``
+containing the following event listener name and properties:
+
+.. code-block:: none
+
+    event-listener.name=accumulo-event-sink
+    accumulo.instance=xxx
+    accumulo.zookeepers=xxx
+    accumulo.username=username
+    accumulo.password=password
+
+========================= ====================== ========== =============================================================
+Property Name             Default Value          Required   Description
+========================= ====================== ========== =============================================================
+``event-listener.name``   (none)                 Yes        Name of the event listener, must be ``accumulo-event-sink``
+``accumulo.instance``     (none)                 Yes        Name of the Accumulo instance
+``accumulo.zookeepers``   (none)                 Yes        ZooKeeper connect string
+``accumulo.username``     (none)                 Yes        Accumulo user for Presto
+``accumulo.password``     (none)                 Yes        Accumulo password for user
+``accumulo.timeout``      ``1m``                 No         Timeout for the Accumulo ``BatchWriter``
+``accumulo.latency``      ``10s``                No         Latency for the Accumulo ``BatchWriter``
+========================= ====================== ========== =============================================================
+
+You can then use SQL to query the archive:
+
+.. code-block:: sql
+
+    SELECT * FROM presto.query_archive;
+
+Note that the Accumulo table backing this has no age off iterator attached by default, but it can be
+attached via the Accumulo shell to age off the data in the table.  See the Accumulo user manual for details.
