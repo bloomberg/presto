@@ -84,7 +84,7 @@ public class TestAccumuloMetricStorage
     {
         AccumuloTable table = getTable("test_accumulo_metric_storage_create");
         storage.create(table);
-        assertTrue(connector.tableOperations().exists(table.getIndexTableName() + "_metrics"));
+        assertTrue(connector.tableOperations().exists(table.getFullTableName() + "_idx_metrics"));
     }
 
     @Test
@@ -92,9 +92,9 @@ public class TestAccumuloMetricStorage
             throws Exception
     {
         AccumuloTable table = getTable("test_accumulo_metric_storage_create_already_exists");
-        connector.tableOperations().create(table.getIndexTableName() + "_metrics");
+        connector.tableOperations().create(table.getFullTableName() + "_idx_metrics");
         storage.create(table);
-        assertTrue(connector.tableOperations().exists(table.getIndexTableName() + "_metrics"));
+        assertTrue(connector.tableOperations().exists(table.getFullTableName() + "_idx_metrics"));
     }
 
     @Test
@@ -103,9 +103,9 @@ public class TestAccumuloMetricStorage
     {
         AccumuloTable table = getTable("test_accumulo_metric_storage_drop_table");
         storage.create(table);
-        assertTrue(connector.tableOperations().exists(table.getIndexTableName() + "_metrics"));
+        assertTrue(connector.tableOperations().exists(table.getFullTableName() + "_idx_metrics"));
         storage.drop(table);
-        assertFalse(connector.tableOperations().exists(table.getIndexTableName() + "_metrics"));
+        assertFalse(connector.tableOperations().exists(table.getFullTableName() + "_idx_metrics"));
     }
 
     @Test
@@ -114,7 +114,7 @@ public class TestAccumuloMetricStorage
     {
         AccumuloTable table = getTable("test_accumulo_metric_storage_drop_table_does_not_exist");
         storage.drop(table);
-        assertFalse(connector.tableOperations().exists(table.getIndexTableName() + "_metrics"));
+        assertFalse(connector.tableOperations().exists(table.getFullTableName() + "_idx_metrics"));
     }
 
     @Override
@@ -123,9 +123,9 @@ public class TestAccumuloMetricStorage
     {
         AccumuloTable externalTable = getTable("test_accumulo_metric_storage_drop_external_table", true);
         storage.create(externalTable);
-        assertTrue(connector.tableOperations().exists(externalTable.getIndexTableName() + "_metrics"));
+        assertTrue(connector.tableOperations().exists(externalTable.getFullTableName() + "_idx_metrics"));
         storage.drop(externalTable);
-        assertTrue(connector.tableOperations().exists(externalTable.getIndexTableName() + "_metrics"));
+        assertTrue(connector.tableOperations().exists(externalTable.getFullTableName() + "_idx_metrics"));
     }
 
     @Test
@@ -136,8 +136,8 @@ public class TestAccumuloMetricStorage
         AccumuloTable table2 = getTable("test_accumulo_metric_storage_rename_table2");
         storage.create(table);
         storage.rename(table, table2);
-        assertFalse(connector.tableOperations().exists(table.getIndexTableName() + "_metrics"));
-        assertTrue(connector.tableOperations().exists(table2.getIndexTableName() + "_metrics"));
+        assertFalse(connector.tableOperations().exists(table.getFullTableName() + "_idx_metrics"));
+        assertTrue(connector.tableOperations().exists(table2.getFullTableName() + "_idx_metrics"));
     }
 
     @Test(expectedExceptions = PrestoException.class)
@@ -156,7 +156,7 @@ public class TestAccumuloMetricStorage
         AccumuloTable table = getTable("test_accumulo_metric_storage_rename_new_table_exists");
         AccumuloTable table2 = getTable("test_accumulo_metric_storage_rename_new_table_exists2");
         storage.create(table);
-        connector.tableOperations().create(table2.getIndexTableName() + "_metrics");
+        connector.tableOperations().create(table2.getFullTableName() + "_idx_metrics");
         storage.rename(table, table2);
     }
 

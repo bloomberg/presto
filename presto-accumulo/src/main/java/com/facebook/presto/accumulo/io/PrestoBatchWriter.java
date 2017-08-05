@@ -147,7 +147,7 @@ public class PrestoBatchWriter
         dataWriter = multiTableBatchWriter.getBatchWriter(table.getFullTableName());
         if (table.isIndexed()) {
             metricsWriter = Optional.of(table.getMetricsStorageInstance(connector).newWriter(table));
-            indexer = Optional.of(new Indexer(connector, table, multiTableBatchWriter.getBatchWriter(table.getIndexTableName()), metricsWriter.get()));
+            indexer = Optional.of(new Indexer(connector, table, multiTableBatchWriter, metricsWriter.get()));
         }
         else {
             indexer = Optional.empty();
@@ -176,7 +176,7 @@ public class PrestoBatchWriter
      * @param row Row to write
      */
     public void addRow(Row row)
-            throws MutationsRejectedException
+            throws AccumuloException, AccumuloSecurityException, TableNotFoundException
     {
         // Convert row to a Mutation, write, and index it
         Mutation mutation = toMutation(row, rowIdOrdinal, columns, serializer);
@@ -192,7 +192,7 @@ public class PrestoBatchWriter
      * @param rows Rows to write
      */
     public void addRows(Iterable<Row> rows)
-            throws MutationsRejectedException, TableNotFoundException
+            throws AccumuloException, TableNotFoundException, AccumuloSecurityException
     {
         ImmutableList.Builder<Mutation> mutationBuilder = ImmutableList.builder();
         rows.forEach(row -> mutationBuilder.add(toMutation(row, rowIdOrdinal, columns, serializer)));
@@ -205,7 +205,7 @@ public class PrestoBatchWriter
      * @param mutation Mutation to write
      */
     public void addMutation(Mutation mutation)
-            throws MutationsRejectedException, TableNotFoundException
+            throws AccumuloException, TableNotFoundException, AccumuloSecurityException
     {
         addMutation(mutation, true);
     }
@@ -228,7 +228,7 @@ public class PrestoBatchWriter
      * @param incrementNumRows True to increment the number of rows if the mutation contains all 'puts'.  Useful if you are adding columns to a row that you know already exists.
      */
     public void addMutation(Mutation mutation, boolean incrementNumRows)
-            throws MutationsRejectedException, TableNotFoundException
+            throws AccumuloException, TableNotFoundException, AccumuloSecurityException
     {
         dataWriter.addMutation(mutation);
         if (indexer.isPresent()) {
@@ -255,7 +255,7 @@ public class PrestoBatchWriter
      * @param mutations Mutations to write
      */
     public void addMutations(Iterable<Mutation> mutations)
-            throws MutationsRejectedException, TableNotFoundException
+            throws AccumuloException, TableNotFoundException, AccumuloSecurityException
     {
         for (Mutation mutation : mutations) {
             addMutation(mutation);
@@ -272,7 +272,7 @@ public class PrestoBatchWriter
      * @param value New value of the row
      */
     public void updateColumnByName(Object rowId, String columnName, Object value)
-            throws MutationsRejectedException, TableNotFoundException
+            throws AccumuloException, TableNotFoundException, AccumuloSecurityException
     {
         updateColumnByName(rowId, columnName, new ColumnVisibility(), value);
     }
@@ -288,7 +288,7 @@ public class PrestoBatchWriter
      * @param value New value of the row
      */
     public void updateColumnByName(Object rowId, String columnName, ColumnVisibility visibility, Object value)
-            throws MutationsRejectedException, TableNotFoundException
+            throws AccumuloException, TableNotFoundException, AccumuloSecurityException
     {
         Pair<String, String> column = findColumnFamilyQualifier(columnName);
         updateColumn(rowId, column.getLeft(), column.getRight(), visibility, value);
@@ -303,7 +303,7 @@ public class PrestoBatchWriter
      * @param columnUpdates A map of Presto column name/visibility pairs to their new value
      */
     public void updateColumnByName(Object rowId, Map<Pair<String, ColumnVisibility>, Object> columnUpdates)
-            throws MutationsRejectedException, TableNotFoundException
+            throws AccumuloException, TableNotFoundException, AccumuloSecurityException
     {
         ImmutableMap.Builder<Triple<String, String, ColumnVisibility>, Object> columnUpdateBuilder = ImmutableMap.builder();
         columnUpdates.entrySet().forEach(entry -> {
@@ -325,7 +325,7 @@ public class PrestoBatchWriter
      * @param value New value of the row
      */
     public void updateColumn(Object rowId, String family, String qualifier, ColumnVisibility visibility, Object value)
-            throws MutationsRejectedException, TableNotFoundException
+            throws AccumuloException, TableNotFoundException, AccumuloSecurityException
     {
         updateColumns(rowId, ImmutableMap.of(Triple.of(family, qualifier, visibility), value));
     }
@@ -340,7 +340,7 @@ public class PrestoBatchWriter
      */
     @Deprecated
     public void updateColumns(Object rowId, Map<Triple<String, String, ColumnVisibility>, Object> columnUpdates)
-            throws MutationsRejectedException, TableNotFoundException
+            throws AccumuloException, TableNotFoundException, AccumuloSecurityException
     {
         Multimap<Pair<ByteBuffer, ByteBuffer>, Pair<ColumnVisibility, Object>> updates = MultimapBuilder.hashKeys().arrayListValues().build();
         for (Entry<Triple<String, String, ColumnVisibility>, Object> update : columnUpdates.entrySet()) {
@@ -358,7 +358,7 @@ public class PrestoBatchWriter
      * @param columnUpdates A map of Accumulo column family/qualifier/visibility triples to their new value
      */
     public void updateColumns(Object rowId, Multimap<Pair<ByteBuffer, ByteBuffer>, Pair<ColumnVisibility, Object>> columnUpdates)
-            throws MutationsRejectedException, TableNotFoundException
+            throws AccumuloException, TableNotFoundException, AccumuloSecurityException
     {
         // Get Row ID
         Text text = new Text();
@@ -431,7 +431,7 @@ public class PrestoBatchWriter
      * @param rowId Identifier of the row
      */
     public void deleteRow(Object rowId)
-            throws MutationsRejectedException, TableNotFoundException
+            throws AccumuloException, TableNotFoundException, AccumuloSecurityException
     {
         // Convert row to a Mutation, write it to Accumulo, and delete the index entries
         byte[] rowBytes = setText(columns.get(rowIdOrdinal).getType(), rowId, new Text(), serializer).copyBytes();
@@ -464,7 +464,7 @@ public class PrestoBatchWriter
      * @param rowIds Row IDs, an iterable of Java objects which are the row values
      */
     public void deleteRows(Iterable<Object> rowIds)
-            throws MutationsRejectedException, TableNotFoundException
+            throws AccumuloException, TableNotFoundException, AccumuloSecurityException
     {
         AccumuloColumnHandle rowIdColumn = columns.get(rowIdOrdinal);
 

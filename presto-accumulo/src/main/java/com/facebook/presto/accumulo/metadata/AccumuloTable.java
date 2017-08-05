@@ -28,15 +28,22 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.google.common.base.Splitter;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
+import com.google.common.collect.ImmutableSet;
+import com.google.common.primitives.Bytes;
 import org.apache.accumulo.core.client.Connector;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.tuple.Pair;
+import org.apache.hadoop.io.Text;
 
 import java.lang.reflect.InvocationTargetException;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.stream.Collectors;
 
+import static com.facebook.presto.accumulo.index.Indexer.HYPHEN_BYTE;
 import static com.facebook.presto.spi.StandardErrorCode.FUNCTION_IMPLEMENTATION_ERROR;
 import static com.facebook.presto.spi.StandardErrorCode.NOT_FOUND;
 import static com.facebook.presto.spi.type.TimestampType.TIMESTAMP;
@@ -44,6 +51,7 @@ import static com.facebook.presto.spi.type.VarcharType.VARCHAR;
 import static com.google.common.base.MoreObjects.toStringHelper;
 import static com.google.common.base.Preconditions.checkArgument;
 import static java.lang.String.format;
+import static java.nio.charset.StandardCharsets.UTF_8;
 import static java.util.Objects.requireNonNull;
 
 /**
@@ -96,29 +104,6 @@ public class AccumuloTable
         this.truncateTimestamps = truncateTimestamps;
         this.indexColumns = requireNonNull(indexColumns, "indexColumns is null");
         this.indexed = indexColumns.isPresent() && indexColumns.get().length() > 0;
-        if (indexColumns.isPresent() && !indexColumns.get().isEmpty()) {
-            this.parsedIndexColumns =
-                    Splitter.on(',').trimResults().omitEmptyStrings().splitToList(indexColumns.get()).stream()
-                            .map(indexColumn -> {
-                                ImmutableList.Builder<String> builder = ImmutableList.builder();
-                                List<String> parsedIndexColumns = Splitter.on(':').trimResults().omitEmptyStrings().splitToList(indexColumn);
-                                for (int i = 0; i < parsedIndexColumns.size(); ++i) {
-                                    String column = parsedIndexColumns.get(i);
-                                    List<AccumuloColumnHandle> columnHandle = this.columns.stream().filter(x -> x.getName().equals(column)).collect(Collectors.toList());
-                                    checkArgument(columnHandle.size() == 1, "Specified index column is not defined: " + column);
-                                    checkArgument(!column.equals(rowId), "Specified index column cannot be the row ID: " + column);
-                                    if (columnHandle.get(0).getType().equals(TIMESTAMP)) {
-                                        checkArgument(i + 1 == parsedIndexColumns.size(), "Timestamp-type columns must be at the end of a composite index");
-                                    }
-                                    builder.add(column);
-                                }
-                                return new IndexColumn(builder.build());
-                            })
-                            .collect(Collectors.toList());
-        }
-        else {
-            this.parsedIndexColumns = ImmutableList.of();
-        }
 
         ImmutableList.Builder<AccumuloColumnHandle> allColumnsBuilder = ImmutableList.builder();
         allColumnsBuilder.addAll(columns);
@@ -170,6 +155,9 @@ public class AccumuloTable
         this.columnNameToHandle = columnHandleBuilder.build();
         this.columnFamQualToHandle = columnFamQualBuilder.build();
         this.schemaTableName = new SchemaTableName(this.schema, this.table);
+
+        // Parse index columns lasts as this operation depends on columnNameToHandle being non-null
+        this.parsedIndexColumns = parseIndexColumns();
     }
 
     @JsonProperty
@@ -190,10 +178,50 @@ public class AccumuloTable
         return table;
     }
 
-    @JsonIgnore
-    public String getIndexTableName()
+    private List<IndexColumn> parseIndexColumns()
     {
-        return Indexer.getIndexTableName(schema, table);
+        if (!indexColumns.isPresent() || indexColumns.get().isEmpty()) {
+            return ImmutableList.of();
+        }
+
+        return Splitter.on(',').trimResults().omitEmptyStrings().splitToList(indexColumns.get()).stream()
+                .map(indexColumn -> {
+                    ImmutableList.Builder<String> builder = ImmutableList.builder();
+                    List<String> parsedIndexColumns = Splitter.on(':').trimResults().omitEmptyStrings().splitToList(indexColumn);
+                    for (int i = 0; i < parsedIndexColumns.size(); ++i) {
+                        String column = parsedIndexColumns.get(i);
+                        List<AccumuloColumnHandle> columnHandle = this.columns.stream().filter(x -> x.getName().equals(column)).collect(Collectors.toList());
+                        checkArgument(columnHandle.size() == 1, "Specified index column is not defined: " + column);
+                        checkArgument(!column.equals(rowId), "Specified index column cannot be the row ID: " + column);
+                        if (columnHandle.get(0).getType().equals(TIMESTAMP)) {
+                            checkArgument(i + 1 == parsedIndexColumns.size(), "Timestamp-type columns must be at the end of a composite index");
+                        }
+                        builder.add(column);
+                    }
+
+                    List<String> parsedColumns = builder.build();
+                    return new IndexColumn(parsedColumns, getFullTableName() + "__" + StringUtils.join(parsedColumns, '_'), getLocalityGroups(parsedColumns));
+                })
+                .sorted(Comparator.comparing(IndexColumn::getTableName))
+                .collect(Collectors.toList());
+    }
+
+    private Map<String, Set<Text>> getLocalityGroups(List<String> indexColumns)
+    {
+        byte[] family = new byte[0];
+        for (String column : indexColumns) {
+            AccumuloColumnHandle columnHandle = getColumn(column);
+            byte[] concatFamily = Indexer.getIndexColumnFamily(columnHandle.getFamily().get().getBytes(UTF_8), columnHandle.getQualifier().get().getBytes(UTF_8));
+            family = family.length == 0
+                    ? concatFamily
+                    : Bytes.concat(family, HYPHEN_BYTE, concatFamily);
+        }
+
+        // Create a Text version of the index column family
+        Text indexColumnFamily = new Text(family);
+
+        // Add this to the locality groups, it is a 1:1 mapping of locality group to column families
+        return ImmutableMap.of(indexColumnFamily.toString(), ImmutableSet.of(indexColumnFamily));
     }
 
     @JsonIgnore

@@ -106,7 +106,6 @@ public class AccumuloRecordSet
                 List<Range> ranges = new IndexLookup().getIndexRanges(
                         connector,
                         session,
-                        split.getIndexTableName(),
                         ImmutableList.of(split.getIndexQueryParameters().get()),
                         split.getRowIdRanges(),
                         getScanAuthorizations(session, split, connector, username));

@@ -396,7 +396,7 @@ public class TabletSplitGenerationMachine
             requireNonNull(numRows, "Number of rows is null");
 
             // Get the ranges via the index table
-            List<Range> indexRanges = new IndexLookup().getIndexRanges(connector, session, table.getIndexTableName(), indexQueryParameters, rowIdRanges, getScanAuthorizations(session, table));
+            List<Range> indexRanges = new IndexLookup().getIndexRanges(connector, session, indexQueryParameters, rowIdRanges, getScanAuthorizations(session, table));
             if (!indexRanges.isEmpty()) {
                 // Okay, we now check how many rows we would scan by using the index vs. the overall number of rows
                 long numEntries = indexRanges.size();
