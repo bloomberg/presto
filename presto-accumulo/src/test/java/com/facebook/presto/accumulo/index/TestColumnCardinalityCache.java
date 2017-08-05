@@ -43,6 +43,7 @@ import com.facebook.presto.testing.TestingConnectorSession;
 import com.facebook.presto.testing.TestingNodeManager;
 import com.facebook.presto.type.TypeRegistry;
 import com.google.common.collect.ImmutableList;
+import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Multimap;
 import io.airlift.slice.Slices;
 import io.airlift.tpch.LineItem;
@@ -184,7 +185,7 @@ public class TestColumnCardinalityCache
         MultiTableBatchWriter multiTableBatchWriter = connector.createMultiTableBatchWriter(new BatchWriterConfig());
         BatchWriter writer = multiTableBatchWriter.getBatchWriter(table.getFullTableName());
         MetricsWriter metricsWriter = table.getMetricsStorageInstance(connector).newWriter(table);
-        Indexer indexer = new Indexer(connector, table, multiTableBatchWriter.getBatchWriter(table.getIndexTableName()), metricsWriter);
+        Indexer indexer = new Indexer(connector, table, multiTableBatchWriter, metricsWriter);
 
         for (LineItem item : TpchTable.LINE_ITEM.createGenerator(.01f, 1, 1)) {
             String line = item.toLine();
@@ -504,7 +505,7 @@ public class TestColumnCardinalityCache
         MultiTableBatchWriter multiTableBatchWriter = connector.createMultiTableBatchWriter(new BatchWriterConfig());
         BatchWriter writer = multiTableBatchWriter.getBatchWriter(table.getFullTableName());
         MetricsWriter metricsWriter = table.getMetricsStorageInstance(connector).newWriter(table);
-        Indexer indexer = new Indexer(connector, table, multiTableBatchWriter.getBatchWriter(table.getIndexTableName()), metricsWriter);
+        Indexer indexer = new Indexer(connector, table, multiTableBatchWriter, metricsWriter);
 
         Mutation m = new Mutation("1");
         m.put("___ROW___", "___ROW___", "1");
@@ -559,7 +560,7 @@ public class TestColumnCardinalityCache
      */
     private static IndexQueryParameters iqp(String name, Domain domain)
     {
-        IndexQueryParameters parameters = new IndexQueryParameters(new IndexColumn(ImmutableList.of(name)));
+        IndexQueryParameters parameters = new IndexQueryParameters(new IndexColumn(ImmutableList.of(name), "foo", ImmutableMap.of()));
         parameters.appendColumn(name.getBytes(UTF_8), TabletSplitGenerationMachine.getRangesFromDomain(Optional.of(domain), SERIALIZER), false);
         return parameters;
     }

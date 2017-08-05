@@ -19,6 +19,7 @@ import com.facebook.presto.accumulo.index.metrics.MetricCacheKey;
 import com.facebook.presto.accumulo.index.metrics.MetricsStorage;
 import com.facebook.presto.accumulo.metadata.AccumuloTable;
 import com.facebook.presto.accumulo.model.AccumuloColumnHandle;
+import com.facebook.presto.accumulo.model.IndexColumn;
 import com.facebook.presto.accumulo.model.Row;
 import com.facebook.presto.accumulo.serializers.LexicoderRowSerializer;
 import com.facebook.presto.spi.type.ArrayType;
@@ -42,6 +43,7 @@ import org.testng.annotations.Test;
 import java.util.Iterator;
 import java.util.Map.Entry;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 import static com.facebook.presto.accumulo.serializers.AccumuloRowSerializer.getBlockFromArray;
 import static com.facebook.presto.spi.type.BigintType.BIGINT;
@@ -154,8 +156,10 @@ public class TestPrestoBatchWriter
             connector.tableOperations().delete(table.getFullTableName());
         }
 
-        if (connector.tableOperations().exists(table.getIndexTableName())) {
-            connector.tableOperations().delete(table.getIndexTableName());
+        for (IndexColumn indexColumn : table.getParsedIndexColumns()) {
+            if (connector.tableOperations().exists(indexColumn.getTableName())) {
+                connector.tableOperations().delete(indexColumn.getTableName());
+            }
         }
 
         metricsStorage.drop(table);
@@ -166,7 +170,12 @@ public class TestPrestoBatchWriter
             throws Exception
     {
         connector.tableOperations().create(table.getFullTableName());
-        connector.tableOperations().create(table.getIndexTableName());
+        for (IndexColumn indexColumn : table.getParsedIndexColumns()) {
+            if (!connector.tableOperations().exists(indexColumn.getTableName())) {
+                connector.tableOperations().create(indexColumn.getTableName());
+            }
+        }
+
         metricsStorage.create(table);
 
         PrestoBatchWriter prestoBatchWriter = new PrestoBatchWriter(connector, connector.securityOperations().getUserAuthorizations("root"), table);
@@ -183,14 +192,26 @@ public class TestPrestoBatchWriter
         assertFalse(iter.hasNext());
         scan.close();
 
-        scan = connector.createScanner(table.getIndexTableName(), new Authorizations());
+        scan = connector.createScanner(table.getParsedIndexColumns().get(0).getTableName(), new Authorizations());
         iter = scan.iterator();
         assertTrue(iter.hasNext());
         assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age", "row1", "");
+        assertFalse(iter.hasNext());
+        scan.close();
+
+        scan = connector.createScanner(table.getParsedIndexColumns().get(1).getTableName(), new Authorizations());
+        iter = scan.iterator();
+        assertTrue(iter.hasNext());
         assertKeyValuePair(iter.next(), bytes("abc"), "cf_arr", "row1", "");
-        assertKeyValuePair(iter.next(), M1_FNAME_VALUE, "cf_firstname", "row1", "");
         assertKeyValuePair(iter.next(), bytes("def"), "cf_arr", "row1", "");
         assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr", "row1", "");
+        assertFalse(iter.hasNext());
+        scan.close();
+
+        scan = connector.createScanner(table.getParsedIndexColumns().get(2).getTableName(), new Authorizations());
+        iter = scan.iterator();
+        assertTrue(iter.hasNext());
+        assertKeyValuePair(iter.next(), M1_FNAME_VALUE, "cf_firstname", "row1", "");
         assertFalse(iter.hasNext());
         scan.close();
 
@@ -218,19 +239,31 @@ public class TestPrestoBatchWriter
         assertFalse(iter.hasNext());
         scan.close();
 
-        scan = connector.createScanner(table.getIndexTableName(), new Authorizations());
+        scan = connector.createScanner(table.getParsedIndexColumns().get(0).getTableName(), new Authorizations());
         iter = scan.iterator();
         assertTrue(iter.hasNext());
         assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age", "row1", "");
         assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age", "row2", "");
+        assertFalse(iter.hasNext());
+        scan.close();
+
+        scan = connector.createScanner(table.getParsedIndexColumns().get(1).getTableName(), new Authorizations());
+        iter = scan.iterator();
+        assertTrue(iter.hasNext());
         assertKeyValuePair(iter.next(), bytes("abc"), "cf_arr", "row1", "");
         assertKeyValuePair(iter.next(), bytes("abc"), "cf_arr", "row2", "");
-        assertKeyValuePair(iter.next(), M1_FNAME_VALUE, "cf_firstname", "row1", "");
-        assertKeyValuePair(iter.next(), M2_FNAME_VALUE, "cf_firstname", "row2", "");
         assertKeyValuePair(iter.next(), bytes("def"), "cf_arr", "row1", "");
         assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr", "row1", "");
         assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr", "row2", "");
         assertKeyValuePair(iter.next(), bytes("mno"), "cf_arr", "row2", "");
+        assertFalse(iter.hasNext());
+        scan.close();
+
+        scan = connector.createScanner(table.getParsedIndexColumns().get(2).getTableName(), new Authorizations());
+        iter = scan.iterator();
+        assertTrue(iter.hasNext());
+        assertKeyValuePair(iter.next(), M1_FNAME_VALUE, "cf_firstname", "row1", "");
+        assertKeyValuePair(iter.next(), M2_FNAME_VALUE, "cf_firstname", "row2", "");
         assertFalse(iter.hasNext());
         scan.close();
 
@@ -264,17 +297,20 @@ public class TestPrestoBatchWriter
         assertFalse(iter.hasNext());
         scan.close();
 
-        scan = connector.createScanner(table.getIndexTableName(), new Authorizations());
+        scan = connector.createScanner(table.getParsedIndexColumns().get(0).getTableName(), new Authorizations());
         iter = scan.iterator();
         assertTrue(iter.hasNext());
         assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age", "row1", "");
         assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age", "row2", "");
         assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age", "row3", "");
+        assertFalse(iter.hasNext());
+        scan.close();
+
+        scan = connector.createScanner(table.getParsedIndexColumns().get(1).getTableName(), new Authorizations());
+        iter = scan.iterator();
+        assertTrue(iter.hasNext());
         assertKeyValuePair(iter.next(), bytes("abc"), "cf_arr", "row1", "");
         assertKeyValuePair(iter.next(), bytes("abc"), "cf_arr", "row2", "");
-        assertKeyValuePair(iter.next(), M1_FNAME_VALUE, "cf_firstname", "row1", "");
-        assertKeyValuePair(iter.next(), M2_FNAME_VALUE, "cf_firstname", "row2", "");
-        assertKeyValuePair(iter.next(), M3_FNAME_VALUE, "cf_firstname", "row3", "");
         assertKeyValuePair(iter.next(), bytes("def"), "cf_arr", "row1", "");
         assertKeyValuePair(iter.next(), bytes("def"), "cf_arr", "row3", "");
         assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr", "row1", "");
@@ -282,6 +318,15 @@ public class TestPrestoBatchWriter
         assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr", "row3", "");
         assertKeyValuePair(iter.next(), bytes("jkl"), "cf_arr", "row3", "");
         assertKeyValuePair(iter.next(), bytes("mno"), "cf_arr", "row2", "");
+        assertFalse(iter.hasNext());
+        scan.close();
+
+        scan = connector.createScanner(table.getParsedIndexColumns().get(2).getTableName(), new Authorizations());
+        iter = scan.iterator();
+        assertTrue(iter.hasNext());
+        assertKeyValuePair(iter.next(), M1_FNAME_VALUE, "cf_firstname", "row1", "");
+        assertKeyValuePair(iter.next(), M2_FNAME_VALUE, "cf_firstname", "row2", "");
+        assertKeyValuePair(iter.next(), M3_FNAME_VALUE, "cf_firstname", "row3", "");
         assertFalse(iter.hasNext());
         scan.close();
 
@@ -302,7 +347,12 @@ public class TestPrestoBatchWriter
             throws Exception
     {
         connector.tableOperations().create(table.getFullTableName());
-        connector.tableOperations().create(table.getIndexTableName());
+        for (IndexColumn indexColumn : table.getParsedIndexColumns()) {
+            if (!connector.tableOperations().exists(indexColumn.getTableName())) {
+                connector.tableOperations().create(indexColumn.getTableName());
+            }
+        }
+
         metricsStorage.create(table);
 
         PrestoBatchWriter prestoBatchWriter = new PrestoBatchWriter(connector, connector.securityOperations().getUserAuthorizations("root"), table);
@@ -327,17 +377,20 @@ public class TestPrestoBatchWriter
         assertFalse(iter.hasNext());
         scan.close();
 
-        scan = connector.createScanner(table.getIndexTableName(), new Authorizations());
+        scan = connector.createScanner(table.getParsedIndexColumns().get(0).getTableName(), new Authorizations());
         iter = scan.iterator();
         assertTrue(iter.hasNext());
         assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age", "row1", "");
         assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age", "row2", "");
         assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age", "row3", "");
+        assertFalse(iter.hasNext());
+        scan.close();
+
+        scan = connector.createScanner(table.getParsedIndexColumns().get(1).getTableName(), new Authorizations());
+        iter = scan.iterator();
+        assertTrue(iter.hasNext());
         assertKeyValuePair(iter.next(), bytes("abc"), "cf_arr", "row1", "");
         assertKeyValuePair(iter.next(), bytes("abc"), "cf_arr", "row2", "");
-        assertKeyValuePair(iter.next(), M1_FNAME_VALUE, "cf_firstname", "row1", "");
-        assertKeyValuePair(iter.next(), M2_FNAME_VALUE, "cf_firstname", "row2", "");
-        assertKeyValuePair(iter.next(), M3_FNAME_VALUE, "cf_firstname", "row3", "");
         assertKeyValuePair(iter.next(), bytes("def"), "cf_arr", "row1", "");
         assertKeyValuePair(iter.next(), bytes("def"), "cf_arr", "row3", "");
         assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr", "row1", "");
@@ -345,6 +398,15 @@ public class TestPrestoBatchWriter
         assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr", "row3", "");
         assertKeyValuePair(iter.next(), bytes("jkl"), "cf_arr", "row3", "");
         assertKeyValuePair(iter.next(), bytes("mno"), "cf_arr", "row2", "");
+        assertFalse(iter.hasNext());
+        scan.close();
+
+        scan = connector.createScanner(table.getParsedIndexColumns().get(2).getTableName(), new Authorizations());
+        iter = scan.iterator();
+        assertTrue(iter.hasNext());
+        assertKeyValuePair(iter.next(), M1_FNAME_VALUE, "cf_firstname", "row1", "");
+        assertKeyValuePair(iter.next(), M2_FNAME_VALUE, "cf_firstname", "row2", "");
+        assertKeyValuePair(iter.next(), M3_FNAME_VALUE, "cf_firstname", "row3", "");
         assertFalse(iter.hasNext());
         scan.close();
 
@@ -365,7 +427,12 @@ public class TestPrestoBatchWriter
             throws Exception
     {
         connector.tableOperations().create(table.getFullTableName());
-        connector.tableOperations().create(table.getIndexTableName());
+        for (IndexColumn indexColumn : table.getParsedIndexColumns()) {
+            if (!connector.tableOperations().exists(indexColumn.getTableName())) {
+                connector.tableOperations().create(indexColumn.getTableName());
+            }
+        }
+
         metricsStorage.create(table);
 
         PrestoBatchWriter prestoBatchWriter = new PrestoBatchWriter(connector, connector.securityOperations().getUserAuthorizations("root"), table);
@@ -382,14 +449,26 @@ public class TestPrestoBatchWriter
         assertFalse(iter.hasNext());
         scan.close();
 
-        scan = connector.createScanner(table.getIndexTableName(), new Authorizations("private", "moreprivate"));
+        scan = connector.createScanner(table.getParsedIndexColumns().get(0).getTableName(), new Authorizations("private", "moreprivate"));
         iter = scan.iterator();
         assertTrue(iter.hasNext());
         assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age", "row1", "");
+        assertFalse(iter.hasNext());
+        scan.close();
+
+        scan = connector.createScanner(table.getParsedIndexColumns().get(1).getTableName(), new Authorizations("private", "moreprivate"));
+        iter = scan.iterator();
+        assertTrue(iter.hasNext());
         assertKeyValuePair(iter.next(), bytes("abc"), "cf_arr", "row1", "");
-        assertKeyValuePair(iter.next(), M1_FNAME_VALUE, "cf_firstname", "row1", "");
         assertKeyValuePair(iter.next(), bytes("def"), "cf_arr", "row1", "");
         assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr", "row1", "");
+        assertFalse(iter.hasNext());
+        scan.close();
+
+        scan = connector.createScanner(table.getParsedIndexColumns().get(2).getTableName(), new Authorizations("private", "moreprivate"));
+        iter = scan.iterator();
+        assertTrue(iter.hasNext());
+        assertKeyValuePair(iter.next(), M1_FNAME_VALUE, "cf_firstname", "row1", "");
         assertFalse(iter.hasNext());
         scan.close();
 
@@ -417,19 +496,31 @@ public class TestPrestoBatchWriter
         assertFalse(iter.hasNext());
         scan.close();
 
-        scan = connector.createScanner(table.getIndexTableName(), new Authorizations("private", "moreprivate"));
+        scan = connector.createScanner(table.getParsedIndexColumns().get(0).getTableName(), new Authorizations("private", "moreprivate"));
         iter = scan.iterator();
         assertTrue(iter.hasNext());
         assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age", "row1", "");
         assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age", "row2", "private", "");
+        assertFalse(iter.hasNext());
+        scan.close();
+
+        scan = connector.createScanner(table.getParsedIndexColumns().get(1).getTableName(), new Authorizations("private", "moreprivate"));
+        iter = scan.iterator();
+        assertTrue(iter.hasNext());
         assertKeyValuePair(iter.next(), bytes("abc"), "cf_arr", "row1", "");
         assertKeyValuePair(iter.next(), bytes("abc"), "cf_arr", "row2", "private", "");
-        assertKeyValuePair(iter.next(), M1_FNAME_VALUE, "cf_firstname", "row1", "");
-        assertKeyValuePair(iter.next(), M2_FNAME_VALUE, "cf_firstname", "row2", "private", "");
         assertKeyValuePair(iter.next(), bytes("def"), "cf_arr", "row1", "");
         assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr", "row1", "");
         assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr", "row2", "private", "");
         assertKeyValuePair(iter.next(), bytes("mno"), "cf_arr", "row2", "private", "");
+        assertFalse(iter.hasNext());
+        scan.close();
+
+        scan = connector.createScanner(table.getParsedIndexColumns().get(2).getTableName(), new Authorizations("private", "moreprivate"));
+        iter = scan.iterator();
+        assertTrue(iter.hasNext());
+        assertKeyValuePair(iter.next(), M1_FNAME_VALUE, "cf_firstname", "row1", "");
+        assertKeyValuePair(iter.next(), M2_FNAME_VALUE, "cf_firstname", "row2", "private", "");
         assertFalse(iter.hasNext());
         scan.close();
 
@@ -463,17 +554,20 @@ public class TestPrestoBatchWriter
         assertFalse(iter.hasNext());
         scan.close();
 
-        scan = connector.createScanner(table.getIndexTableName(), new Authorizations("private", "moreprivate"));
+        scan = connector.createScanner(table.getParsedIndexColumns().get(0).getTableName(), new Authorizations("private", "moreprivate"));
         iter = scan.iterator();
         assertTrue(iter.hasNext());
         assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age", "row1", "");
         assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age", "row2", "private", "");
         assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age", "row3", "moreprivate", "");
+        assertFalse(iter.hasNext());
+        scan.close();
+
+        scan = connector.createScanner(table.getParsedIndexColumns().get(1).getTableName(), new Authorizations("private", "moreprivate"));
+        iter = scan.iterator();
+        assertTrue(iter.hasNext());
         assertKeyValuePair(iter.next(), bytes("abc"), "cf_arr", "row1", "");
         assertKeyValuePair(iter.next(), bytes("abc"), "cf_arr", "row2", "private", "");
-        assertKeyValuePair(iter.next(), M1_FNAME_VALUE, "cf_firstname", "row1", "");
-        assertKeyValuePair(iter.next(), M2_FNAME_VALUE, "cf_firstname", "row2", "private", "");
-        assertKeyValuePair(iter.next(), M3_FNAME_VALUE, "cf_firstname", "row3", "moreprivate", "");
         assertKeyValuePair(iter.next(), bytes("def"), "cf_arr", "row1", "");
         assertKeyValuePair(iter.next(), bytes("def"), "cf_arr", "row3", "moreprivate", "");
         assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr", "row1", "");
@@ -481,6 +575,15 @@ public class TestPrestoBatchWriter
         assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr", "row3", "moreprivate", "");
         assertKeyValuePair(iter.next(), bytes("jkl"), "cf_arr", "row3", "moreprivate", "");
         assertKeyValuePair(iter.next(), bytes("mno"), "cf_arr", "row2", "private", "");
+        assertFalse(iter.hasNext());
+        scan.close();
+
+        scan = connector.createScanner(table.getParsedIndexColumns().get(2).getTableName(), new Authorizations("private", "moreprivate"));
+        iter = scan.iterator();
+        assertTrue(iter.hasNext());
+        assertKeyValuePair(iter.next(), M1_FNAME_VALUE, "cf_firstname", "row1", "");
+        assertKeyValuePair(iter.next(), M2_FNAME_VALUE, "cf_firstname", "row2", "private", "");
+        assertKeyValuePair(iter.next(), M3_FNAME_VALUE, "cf_firstname", "row3", "moreprivate", "");
         assertFalse(iter.hasNext());
         scan.close();
 
@@ -501,7 +604,12 @@ public class TestPrestoBatchWriter
             throws Exception
     {
         connector.tableOperations().create(table.getFullTableName());
-        connector.tableOperations().create(table.getIndexTableName());
+        for (IndexColumn indexColumn : table.getParsedIndexColumns()) {
+            if (!connector.tableOperations().exists(indexColumn.getTableName())) {
+                connector.tableOperations().create(indexColumn.getTableName());
+            }
+        }
+
         metricsStorage.create(table);
 
         PrestoBatchWriter prestoBatchWriter = new PrestoBatchWriter(connector, connector.securityOperations().getUserAuthorizations("root"), table);
@@ -528,17 +636,20 @@ public class TestPrestoBatchWriter
         assertFalse(iter.hasNext());
         scan.close();
 
-        scan = connector.createScanner(table.getIndexTableName(), new Authorizations("private", "moreprivate"));
+        scan = connector.createScanner(table.getParsedIndexColumns().get(0).getTableName(), new Authorizations("private", "moreprivate"));
         iter = scan.iterator();
         assertTrue(iter.hasNext());
         assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age", "row1", "");
         assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age", "row2", "private", "");
         assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age", "row3", "moreprivate", "");
+        assertFalse(iter.hasNext());
+        scan.close();
+
+        scan = connector.createScanner(table.getParsedIndexColumns().get(1).getTableName(), new Authorizations("private", "moreprivate"));
+        iter = scan.iterator();
+        assertTrue(iter.hasNext());
         assertKeyValuePair(iter.next(), bytes("abc"), "cf_arr", "row1", "");
         assertKeyValuePair(iter.next(), bytes("abc"), "cf_arr", "row2", "private", "");
-        assertKeyValuePair(iter.next(), M1_FNAME_VALUE, "cf_firstname", "row1", "");
-        assertKeyValuePair(iter.next(), M2_FNAME_VALUE, "cf_firstname", "row2", "private", "");
-        assertKeyValuePair(iter.next(), M3_FNAME_VALUE, "cf_firstname", "row3", "moreprivate", "");
         assertKeyValuePair(iter.next(), bytes("def"), "cf_arr", "row1", "");
         assertKeyValuePair(iter.next(), bytes("def"), "cf_arr", "row3", "moreprivate", "");
         assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr", "row1", "");
@@ -546,6 +657,15 @@ public class TestPrestoBatchWriter
         assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr", "row3", "moreprivate", "");
         assertKeyValuePair(iter.next(), bytes("jkl"), "cf_arr", "row3", "moreprivate", "");
         assertKeyValuePair(iter.next(), bytes("mno"), "cf_arr", "row2", "private", "");
+        assertFalse(iter.hasNext());
+        scan.close();
+
+        scan = connector.createScanner(table.getParsedIndexColumns().get(2).getTableName(), new Authorizations("private", "moreprivate"));
+        iter = scan.iterator();
+        assertTrue(iter.hasNext());
+        assertKeyValuePair(iter.next(), M1_FNAME_VALUE, "cf_firstname", "row1", "");
+        assertKeyValuePair(iter.next(), M2_FNAME_VALUE, "cf_firstname", "row2", "private", "");
+        assertKeyValuePair(iter.next(), M3_FNAME_VALUE, "cf_firstname", "row3", "moreprivate", "");
         assertFalse(iter.hasNext());
         scan.close();
 
@@ -566,7 +686,12 @@ public class TestPrestoBatchWriter
             throws Exception
     {
         connector.tableOperations().create(table.getFullTableName());
-        connector.tableOperations().create(table.getIndexTableName());
+        for (IndexColumn indexColumn : table.getParsedIndexColumns()) {
+            if (!connector.tableOperations().exists(indexColumn.getTableName())) {
+                connector.tableOperations().create(indexColumn.getTableName());
+            }
+        }
+
         metricsStorage.create(table);
 
         PrestoBatchWriter prestoBatchWriter = new PrestoBatchWriter(connector, connector.securityOperations().getUserAuthorizations("root"), table);
@@ -591,17 +716,20 @@ public class TestPrestoBatchWriter
         assertFalse(iter.hasNext());
         scan.close();
 
-        scan = connector.createScanner(table.getIndexTableName(), new Authorizations("private", "moreprivate"));
+        scan = connector.createScanner(table.getParsedIndexColumns().get(0).getTableName(), new Authorizations("private", "moreprivate"));
         iter = scan.iterator();
         assertTrue(iter.hasNext());
         assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age", "row1", "");
         assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age", "row2", "private", "");
         assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age", "row3", "moreprivate", "");
+        assertFalse(iter.hasNext());
+        scan.close();
+
+        scan = connector.createScanner(table.getParsedIndexColumns().get(1).getTableName(), new Authorizations("private", "moreprivate"));
+        iter = scan.iterator();
+        assertTrue(iter.hasNext());
         assertKeyValuePair(iter.next(), bytes("abc"), "cf_arr", "row1", "");
         assertKeyValuePair(iter.next(), bytes("abc"), "cf_arr", "row2", "private", "");
-        assertKeyValuePair(iter.next(), M1_FNAME_VALUE, "cf_firstname", "row1", "");
-        assertKeyValuePair(iter.next(), M2_FNAME_VALUE, "cf_firstname", "row2", "private", "");
-        assertKeyValuePair(iter.next(), M3_FNAME_VALUE, "cf_firstname", "row3", "moreprivate", "");
         assertKeyValuePair(iter.next(), bytes("def"), "cf_arr", "row1", "");
         assertKeyValuePair(iter.next(), bytes("def"), "cf_arr", "row3", "moreprivate", "");
         assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr", "row1", "");
@@ -609,6 +737,15 @@ public class TestPrestoBatchWriter
         assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr", "row3", "moreprivate", "");
         assertKeyValuePair(iter.next(), bytes("jkl"), "cf_arr", "row3", "moreprivate", "");
         assertKeyValuePair(iter.next(), bytes("mno"), "cf_arr", "row2", "private", "");
+        assertFalse(iter.hasNext());
+        scan.close();
+
+        scan = connector.createScanner(table.getParsedIndexColumns().get(2).getTableName(), new Authorizations("private", "moreprivate"));
+        iter = scan.iterator();
+        assertTrue(iter.hasNext());
+        assertKeyValuePair(iter.next(), M1_FNAME_VALUE, "cf_firstname", "row1", "");
+        assertKeyValuePair(iter.next(), M2_FNAME_VALUE, "cf_firstname", "row2", "private", "");
+        assertKeyValuePair(iter.next(), M3_FNAME_VALUE, "cf_firstname", "row3", "moreprivate", "");
         assertFalse(iter.hasNext());
         scan.close();
 
@@ -669,17 +806,20 @@ public class TestPrestoBatchWriter
         assertFalse(iter.hasNext());
         scan.close();
 
-        scan = connector.createScanner(table.getIndexTableName(), new Authorizations("private", "moreprivate"));
+        scan = connector.createScanner(table.getParsedIndexColumns().get(0).getTableName(), new Authorizations("private", "moreprivate"));
         iter = scan.iterator();
         assertTrue(iter.hasNext());
         assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age", "row1", "");
         assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age", "row2", "private", "");
         assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age", "row3", "moreprivate", "");
+        assertFalse(iter.hasNext());
+        scan.close();
+
+        scan = connector.createScanner(table.getParsedIndexColumns().get(1).getTableName(), new Authorizations("private", "moreprivate"));
+        iter = scan.iterator();
+        assertTrue(iter.hasNext());
         assertKeyValuePair(iter.next(), bytes("abc"), "cf_arr", "row1", "");
         assertKeyValuePair(iter.next(), bytes("abc"), "cf_arr", "row2", "private", "");
-        assertKeyValuePair(iter.next(), M1_FNAME_VALUE, "cf_firstname", "row3", "private", "");
-        assertKeyValuePair(iter.next(), M2_FNAME_VALUE, "cf_firstname", "row1", "");
-        assertKeyValuePair(iter.next(), M3_FNAME_VALUE, "cf_firstname", "row2", "moreprivate", "");
         assertKeyValuePair(iter.next(), bytes("def"), "cf_arr", "row1", "");
         assertKeyValuePair(iter.next(), bytes("def"), "cf_arr", "row3", "moreprivate", "");
         assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr", "row1", "");
@@ -687,6 +827,15 @@ public class TestPrestoBatchWriter
         assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr", "row3", "moreprivate", "");
         assertKeyValuePair(iter.next(), bytes("jkl"), "cf_arr", "row3", "moreprivate", "");
         assertKeyValuePair(iter.next(), bytes("mno"), "cf_arr", "row2", "private", "");
+        assertFalse(iter.hasNext());
+        scan.close();
+
+        scan = connector.createScanner(table.getParsedIndexColumns().get(2).getTableName(), new Authorizations("private", "moreprivate"));
+        iter = scan.iterator();
+        assertTrue(iter.hasNext());
+        assertKeyValuePair(iter.next(), M1_FNAME_VALUE, "cf_firstname", "row3", "private", "");
+        assertKeyValuePair(iter.next(), M2_FNAME_VALUE, "cf_firstname", "row1", "");
+        assertKeyValuePair(iter.next(), M3_FNAME_VALUE, "cf_firstname", "row2", "moreprivate", "");
         assertFalse(iter.hasNext());
         scan.close();
 
@@ -738,19 +887,31 @@ public class TestPrestoBatchWriter
         assertFalse(iter.hasNext());
         scan.close();
 
-        scan = connector.createScanner(table.getIndexTableName(), new Authorizations("private", "moreprivate"));
+        scan = connector.createScanner(table.getParsedIndexColumns().get(0).getTableName(), new Authorizations("private", "moreprivate"));
         iter = scan.iterator();
         assertTrue(iter.hasNext());
         assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age", "row2", "private", "");
         assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age", "row3", "moreprivate", "");
+        assertFalse(iter.hasNext());
+        scan.close();
+
+        scan = connector.createScanner(table.getParsedIndexColumns().get(1).getTableName(), new Authorizations("private", "moreprivate"));
+        iter = scan.iterator();
+        assertTrue(iter.hasNext());
         assertKeyValuePair(iter.next(), bytes("abc"), "cf_arr", "row1", "");
         assertKeyValuePair(iter.next(), bytes("abc"), "cf_arr", "row2", "private", "");
-        assertKeyValuePair(iter.next(), M1_FNAME_VALUE, "cf_firstname", "row1", "");
-        assertKeyValuePair(iter.next(), M3_FNAME_VALUE, "cf_firstname", "row3", "moreprivate", "");
         assertKeyValuePair(iter.next(), bytes("def"), "cf_arr", "row1", "");
         assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr", "row1", "");
         assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr", "row2", "private", "");
         assertKeyValuePair(iter.next(), bytes("mno"), "cf_arr", "row2", "private", "");
+        assertFalse(iter.hasNext());
+        scan.close();
+
+        scan = connector.createScanner(table.getParsedIndexColumns().get(2).getTableName(), new Authorizations("private", "moreprivate"));
+        iter = scan.iterator();
+        assertTrue(iter.hasNext());
+        assertKeyValuePair(iter.next(), M1_FNAME_VALUE, "cf_firstname", "row1", "");
+        assertKeyValuePair(iter.next(), M3_FNAME_VALUE, "cf_firstname", "row3", "moreprivate", "");
         assertFalse(iter.hasNext());
         scan.close();
 
@@ -799,10 +960,12 @@ public class TestPrestoBatchWriter
         assertFalse(iter.hasNext());
         scan.close();
 
-        scan = connector.createScanner(table.getIndexTableName(), new Authorizations("private", "moreprivate"));
-        iter = scan.iterator();
-        assertFalse(iter.hasNext());
-        scan.close();
+        for (String tableName : table.getParsedIndexColumns().stream().map(IndexColumn::getTableName).collect(Collectors.toList())) {
+            scan = connector.createScanner(tableName, new Authorizations("private", "moreprivate"));
+            iter = scan.iterator();
+            assertFalse(iter.hasNext());
+            scan.close();
+        }
 
         assertEquals(metricsStorage.newReader().getCardinality(mck("cf_age", AGE_VALUE, "private", "moreprivate")), 0);
         assertEquals(metricsStorage.newReader().getNumRowsInTable(table.getSchema(), table.getTable()), 3);
@@ -844,17 +1007,20 @@ public class TestPrestoBatchWriter
         assertFalse(iter.hasNext());
         scan.close();
 
-        scan = connector.createScanner(table.getIndexTableName(), new Authorizations("private", "moreprivate"));
+        scan = connector.createScanner(table.getParsedIndexColumns().get(0).getTableName(), new Authorizations("private", "moreprivate"));
         iter = scan.iterator();
         assertTrue(iter.hasNext());
         assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age", "row1", "");
         assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age", "row3", "moreprivate", "");
         assertKeyValuePair(iter.next(), UPDATED_AGE_VALUE, "cf_age", "row2", "", "");
+        assertFalse(iter.hasNext());
+        scan.close();
+
+        scan = connector.createScanner(table.getParsedIndexColumns().get(1).getTableName(), new Authorizations("private", "moreprivate"));
+        iter = scan.iterator();
+        assertTrue(iter.hasNext());
         assertKeyValuePair(iter.next(), bytes("abc"), "cf_arr", "row1", "");
         assertKeyValuePair(iter.next(), bytes("abc"), "cf_arr", "row2", "private", "");
-        assertKeyValuePair(iter.next(), M1_FNAME_VALUE, "cf_firstname", "row1", "");
-        assertKeyValuePair(iter.next(), M2_FNAME_VALUE, "cf_firstname", "row2", "private", "");
-        assertKeyValuePair(iter.next(), M3_FNAME_VALUE, "cf_firstname", "row3", "moreprivate", "");
         assertKeyValuePair(iter.next(), bytes("def"), "cf_arr", "row1", "");
         assertKeyValuePair(iter.next(), bytes("def"), "cf_arr", "row3", "moreprivate", "");
         assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr", "row1", "");
@@ -862,6 +1028,15 @@ public class TestPrestoBatchWriter
         assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr", "row3", "moreprivate", "");
         assertKeyValuePair(iter.next(), bytes("jkl"), "cf_arr", "row3", "moreprivate", "");
         assertKeyValuePair(iter.next(), bytes("mno"), "cf_arr", "row2", "private", "");
+        assertFalse(iter.hasNext());
+        scan.close();
+
+        scan = connector.createScanner(table.getParsedIndexColumns().get(2).getTableName(), new Authorizations("private", "moreprivate"));
+        iter = scan.iterator();
+        assertTrue(iter.hasNext());
+        assertKeyValuePair(iter.next(), M1_FNAME_VALUE, "cf_firstname", "row1", "");
+        assertKeyValuePair(iter.next(), M2_FNAME_VALUE, "cf_firstname", "row2", "private", "");
+        assertKeyValuePair(iter.next(), M3_FNAME_VALUE, "cf_firstname", "row3", "moreprivate", "");
         assertFalse(iter.hasNext());
         scan.close();
 
@@ -898,17 +1073,20 @@ public class TestPrestoBatchWriter
         assertFalse(iter.hasNext());
         scan.close();
 
-        scan = connector.createScanner(table.getIndexTableName(), new Authorizations("private", "moreprivate"));
+        scan = connector.createScanner(table.getParsedIndexColumns().get(0).getTableName(), new Authorizations("private", "moreprivate"));
         iter = scan.iterator();
         assertTrue(iter.hasNext());
         assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age", "row1", "");
         assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age", "row3", "moreprivate", "");
         assertKeyValuePair(iter.next(), UPDATED_AGE_VALUE, "cf_age", "row2", "", "");
+        assertFalse(iter.hasNext());
+        scan.close();
+
+        scan = connector.createScanner(table.getParsedIndexColumns().get(1).getTableName(), new Authorizations("private", "moreprivate"));
+        iter = scan.iterator();
+        assertTrue(iter.hasNext());
         assertKeyValuePair(iter.next(), bytes("abc"), "cf_arr", "row1", "");
         assertKeyValuePair(iter.next(), bytes("abc"), "cf_arr", "row2", "private", "");
-        assertKeyValuePair(iter.next(), M1_FNAME_VALUE, "cf_firstname", "row1", "");
-        assertKeyValuePair(iter.next(), M3_FNAME_VALUE, "cf_firstname", "row3", "moreprivate", "");
-        assertKeyValuePair(iter.next(), UPDATED_M2_FNAME_VALUE, "cf_firstname", "row2", "moreprivate", "");
         assertKeyValuePair(iter.next(), bytes("def"), "cf_arr", "row1", "");
         assertKeyValuePair(iter.next(), bytes("def"), "cf_arr", "row3", "moreprivate", "");
         assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr", "row1", "");
@@ -916,6 +1094,15 @@ public class TestPrestoBatchWriter
         assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr", "row3", "moreprivate", "");
         assertKeyValuePair(iter.next(), bytes("jkl"), "cf_arr", "row3", "moreprivate", "");
         assertKeyValuePair(iter.next(), bytes("mno"), "cf_arr", "row2", "private", "");
+        assertFalse(iter.hasNext());
+        scan.close();
+
+        scan = connector.createScanner(table.getParsedIndexColumns().get(2).getTableName(), new Authorizations("private", "moreprivate"));
+        iter = scan.iterator();
+        assertTrue(iter.hasNext());
+        assertKeyValuePair(iter.next(), M1_FNAME_VALUE, "cf_firstname", "row1", "");
+        assertKeyValuePair(iter.next(), M3_FNAME_VALUE, "cf_firstname", "row3", "moreprivate", "");
+        assertKeyValuePair(iter.next(), UPDATED_M2_FNAME_VALUE, "cf_firstname", "row2", "moreprivate", "");
         assertFalse(iter.hasNext());
         scan.close();
 
@@ -954,16 +1141,19 @@ public class TestPrestoBatchWriter
         assertFalse(iter.hasNext());
         scan.close();
 
-        scan = connector.createScanner(table.getIndexTableName(), new Authorizations("private", "moreprivate"));
+        scan = connector.createScanner(table.getParsedIndexColumns().get(0).getTableName(), new Authorizations("private", "moreprivate"));
         iter = scan.iterator();
         assertTrue(iter.hasNext());
         assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age", "row1", "");
         assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age", "row3", "moreprivate", "");
         assertKeyValuePair(iter.next(), UPDATED_AGE_VALUE, "cf_age", "row2", "", "");
+        assertFalse(iter.hasNext());
+        scan.close();
+
+        scan = connector.createScanner(table.getParsedIndexColumns().get(1).getTableName(), new Authorizations("private", "moreprivate"));
+        iter = scan.iterator();
+        assertTrue(iter.hasNext());
         assertKeyValuePair(iter.next(), bytes("abc"), "cf_arr", "row1", "");
-        assertKeyValuePair(iter.next(), M1_FNAME_VALUE, "cf_firstname", "row1", "");
-        assertKeyValuePair(iter.next(), M3_FNAME_VALUE, "cf_firstname", "row3", "moreprivate", "");
-        assertKeyValuePair(iter.next(), UPDATED_M2_FNAME_VALUE, "cf_firstname", "row2", "moreprivate", "");
         assertKeyValuePair(iter.next(), bytes("def"), "cf_arr", "row1", "");
         assertKeyValuePair(iter.next(), bytes("def"), "cf_arr", "row3", "moreprivate", "");
         assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr", "row1", "");
@@ -972,6 +1162,15 @@ public class TestPrestoBatchWriter
         assertKeyValuePair(iter.next(), bytes("jkl"), "cf_arr", "row3", "moreprivate", "");
         assertKeyValuePair(iter.next(), bytes("mno"), "cf_arr", "row2", "moreprivate", "");
         assertKeyValuePair(iter.next(), bytes("pqr"), "cf_arr", "row2", "moreprivate", "");
+        assertFalse(iter.hasNext());
+        scan.close();
+
+        scan = connector.createScanner(table.getParsedIndexColumns().get(2).getTableName(), new Authorizations("private", "moreprivate"));
+        iter = scan.iterator();
+        assertTrue(iter.hasNext());
+        assertKeyValuePair(iter.next(), M1_FNAME_VALUE, "cf_firstname", "row1", "");
+        assertKeyValuePair(iter.next(), M3_FNAME_VALUE, "cf_firstname", "row3", "moreprivate", "");
+        assertKeyValuePair(iter.next(), UPDATED_M2_FNAME_VALUE, "cf_firstname", "row2", "moreprivate", "");
         assertFalse(iter.hasNext());
         scan.close();
 
@@ -1020,16 +1219,19 @@ public class TestPrestoBatchWriter
         assertFalse(iter.hasNext());
         scan.close();
 
-        scan = connector.createScanner(table.getIndexTableName(), new Authorizations("private", "moreprivate"));
+        scan = connector.createScanner(table.getParsedIndexColumns().get(0).getTableName(), new Authorizations("private", "moreprivate"));
         iter = scan.iterator();
         assertTrue(iter.hasNext());
         assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age", "row1", "");
         assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age", "row3", "moreprivate", "");
         assertKeyValuePair(iter.next(), UPDATED_AGE_VALUE, "cf_age", "row2", "moreprivate", "");
+        assertFalse(iter.hasNext());
+        scan.close();
+
+        scan = connector.createScanner(table.getParsedIndexColumns().get(1).getTableName(), new Authorizations("private", "moreprivate"));
+        iter = scan.iterator();
+        assertTrue(iter.hasNext());
         assertKeyValuePair(iter.next(), bytes("abc"), "cf_arr", "row1", "");
-        assertKeyValuePair(iter.next(), M1_FNAME_VALUE, "cf_firstname", "row1", "");
-        assertKeyValuePair(iter.next(), M3_FNAME_VALUE, "cf_firstname", "row3", "moreprivate", "");
-        assertKeyValuePair(iter.next(), UPDATED_M2_FNAME_VALUE, "cf_firstname", "row2", "moreprivate", "");
         assertKeyValuePair(iter.next(), bytes("def"), "cf_arr", "row1", "");
         assertKeyValuePair(iter.next(), bytes("def"), "cf_arr", "row3", "moreprivate", "");
         assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr", "row1", "");
@@ -1038,6 +1240,15 @@ public class TestPrestoBatchWriter
         assertKeyValuePair(iter.next(), bytes("jkl"), "cf_arr", "row3", "moreprivate", "");
         assertKeyValuePair(iter.next(), bytes("mno"), "cf_arr", "row2", "moreprivate", "");
         assertKeyValuePair(iter.next(), bytes("pqr"), "cf_arr", "row2", "moreprivate", "");
+        assertFalse(iter.hasNext());
+        scan.close();
+
+        scan = connector.createScanner(table.getParsedIndexColumns().get(2).getTableName(), new Authorizations("private", "moreprivate"));
+        iter = scan.iterator();
+        assertTrue(iter.hasNext());
+        assertKeyValuePair(iter.next(), M1_FNAME_VALUE, "cf_firstname", "row1", "");
+        assertKeyValuePair(iter.next(), M3_FNAME_VALUE, "cf_firstname", "row3", "moreprivate", "");
+        assertKeyValuePair(iter.next(), UPDATED_M2_FNAME_VALUE, "cf_firstname", "row2", "moreprivate", "");
         assertFalse(iter.hasNext());
         scan.close();
 
@@ -1080,19 +1291,31 @@ public class TestPrestoBatchWriter
         assertFalse(iter.hasNext());
         scan.close();
 
-        scan = connector.createScanner(table.getIndexTableName(), new Authorizations("private", "moreprivate"));
+        scan = connector.createScanner(table.getParsedIndexColumns().get(0).getTableName(), new Authorizations("private", "moreprivate"));
         iter = scan.iterator();
         assertTrue(iter.hasNext());
         assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age", "row2", "private", "");
         assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age", "row3", "moreprivate", "");
+        assertFalse(iter.hasNext());
+        scan.close();
+
+        scan = connector.createScanner(table.getParsedIndexColumns().get(1).getTableName(), new Authorizations("private", "moreprivate"));
+        iter = scan.iterator();
+        assertTrue(iter.hasNext());
         assertKeyValuePair(iter.next(), bytes("abc"), "cf_arr", "row2", "private", "");
-        assertKeyValuePair(iter.next(), M2_FNAME_VALUE, "cf_firstname", "row2", "private", "");
-        assertKeyValuePair(iter.next(), M3_FNAME_VALUE, "cf_firstname", "row3", "moreprivate", "");
         assertKeyValuePair(iter.next(), bytes("def"), "cf_arr", "row3", "moreprivate", "");
         assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr", "row2", "private", "");
         assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr", "row3", "moreprivate", "");
         assertKeyValuePair(iter.next(), bytes("jkl"), "cf_arr", "row3", "moreprivate", "");
         assertKeyValuePair(iter.next(), bytes("mno"), "cf_arr", "row2", "private", "");
+        assertFalse(iter.hasNext());
+        scan.close();
+
+        scan = connector.createScanner(table.getParsedIndexColumns().get(2).getTableName(), new Authorizations("private", "moreprivate"));
+        iter = scan.iterator();
+        assertTrue(iter.hasNext());
+        assertKeyValuePair(iter.next(), M2_FNAME_VALUE, "cf_firstname", "row2", "private", "");
+        assertKeyValuePair(iter.next(), M3_FNAME_VALUE, "cf_firstname", "row3", "moreprivate", "");
         assertFalse(iter.hasNext());
         scan.close();
 
@@ -1120,14 +1343,26 @@ public class TestPrestoBatchWriter
         assertFalse(iter.hasNext());
         scan.close();
 
-        scan = connector.createScanner(table.getIndexTableName(), new Authorizations("private", "moreprivate"));
+        scan = connector.createScanner(table.getParsedIndexColumns().get(0).getTableName(), new Authorizations("private", "moreprivate"));
         iter = scan.iterator();
         assertTrue(iter.hasNext());
         assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age", "row3", "moreprivate", "");
-        assertKeyValuePair(iter.next(), M3_FNAME_VALUE, "cf_firstname", "row3", "moreprivate", "");
+        assertFalse(iter.hasNext());
+        scan.close();
+
+        scan = connector.createScanner(table.getParsedIndexColumns().get(1).getTableName(), new Authorizations("private", "moreprivate"));
+        iter = scan.iterator();
+        assertTrue(iter.hasNext());
         assertKeyValuePair(iter.next(), bytes("def"), "cf_arr", "row3", "moreprivate", "");
         assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr", "row3", "moreprivate", "");
         assertKeyValuePair(iter.next(), bytes("jkl"), "cf_arr", "row3", "moreprivate", "");
+        assertFalse(iter.hasNext());
+        scan.close();
+
+        scan = connector.createScanner(table.getParsedIndexColumns().get(2).getTableName(), new Authorizations("private", "moreprivate"));
+        iter = scan.iterator();
+        assertTrue(iter.hasNext());
+        assertKeyValuePair(iter.next(), M3_FNAME_VALUE, "cf_firstname", "row3", "moreprivate", "");
         assertFalse(iter.hasNext());
         scan.close();
 
@@ -1150,10 +1385,12 @@ public class TestPrestoBatchWriter
         assertFalse(iter.hasNext());
         scan.close();
 
-        scan = connector.createScanner(table.getIndexTableName(), new Authorizations("private", "moreprivate"));
-        iter = scan.iterator();
-        assertFalse(iter.hasNext());
-        scan.close();
+        for (String tableName : table.getParsedIndexColumns().stream().map(IndexColumn::getTableName).collect(Collectors.toList())) {
+            scan = connector.createScanner(tableName, new Authorizations("private", "moreprivate"));
+            iter = scan.iterator();
+            assertFalse(iter.hasNext());
+            scan.close();
+        }
 
         assertEquals(metricsStorage.newReader().getCardinality(mck("cf_age", AGE_VALUE, "private", "moreprivate")), 0);
         assertEquals(metricsStorage.newReader().getNumRowsInTable(table.getSchema(), table.getTable()), 0);
@@ -1172,7 +1409,6 @@ public class TestPrestoBatchWriter
             throws Exception
     {
         testAddMutations();
-
         PrestoBatchWriter prestoBatchWriter = new PrestoBatchWriter(connector, connector.securityOperations().getUserAuthorizations("root"), table);
         prestoBatchWriter.deleteRows(ImmutableList.of("row1", "row2", "row3"));
         prestoBatchWriter.close();
@@ -1182,10 +1418,12 @@ public class TestPrestoBatchWriter
         assertFalse(iter.hasNext());
         scan.close();
 
-        scan = connector.createScanner(table.getIndexTableName(), new Authorizations("private", "moreprivate"));
-        iter = scan.iterator();
-        assertFalse(iter.hasNext());
-        scan.close();
+        for (String tableName : table.getParsedIndexColumns().stream().map(IndexColumn::getTableName).collect(Collectors.toList())) {
+            scan = connector.createScanner(tableName, new Authorizations("private", "moreprivate"));
+            iter = scan.iterator();
+            assertFalse(iter.hasNext());
+            scan.close();
+        }
 
         assertEquals(metricsStorage.newReader().getCardinality(mck("cf_age", AGE_VALUE, "private", "moreprivate")), 0);
         assertEquals(metricsStorage.newReader().getNumRowsInTable(table.getSchema(), table.getTable()), 0);

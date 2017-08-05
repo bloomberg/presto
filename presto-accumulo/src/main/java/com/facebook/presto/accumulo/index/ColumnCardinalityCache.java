@@ -58,7 +58,6 @@ import static com.facebook.presto.accumulo.AccumuloErrorCode.UNEXPECTED_ACCUMULO
 import static com.facebook.presto.accumulo.conf.AccumuloSessionProperties.getIndexCardinalityCachePollingDuration;
 import static com.facebook.presto.accumulo.conf.AccumuloSessionProperties.isIndexShortCircuitEnabled;
 import static com.facebook.presto.accumulo.conf.AccumuloSessionProperties.isTracingEnabled;
-import static com.facebook.presto.accumulo.index.Indexer.getIndexTableName;
 import static io.airlift.concurrent.Threads.daemonThreadsNamed;
 import static java.util.Objects.requireNonNull;
 import static java.util.concurrent.Executors.newCachedThreadPool;
@@ -226,7 +225,7 @@ public class ColumnCardinalityCache
                 Optional<TraceScope> cardinalityTrace = Optional.empty();
                 try {
                     if (isTracingEnabled(session)) {
-                        String traceName = String.format("%s:%s_metrics:ColumnCardinalityCache:%s", session.getQueryId(), getIndexTableName(schema, table), metricParamEntry.getKey());
+                        String traceName = String.format("%s:%s:ColumnCardinalityCache:%s", session.getQueryId(), queryParameters.getIndexColumn().getTableName(), metricParamEntry.getKey());
                         cardinalityTrace = Optional.of(startSpan(traceName, Sampler.ALWAYS));
                     }
 
