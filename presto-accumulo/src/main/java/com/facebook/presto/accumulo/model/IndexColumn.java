@@ -16,9 +16,12 @@ package com.facebook.presto.accumulo.model;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import org.apache.hadoop.io.Text;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 
 import static com.google.common.base.MoreObjects.toStringHelper;
 import static java.util.Objects.requireNonNull;
@@ -26,17 +29,36 @@ import static java.util.Objects.requireNonNull;
 public class IndexColumn
 {
     private final List<String> columns;
+    private final String tableName;
+    private Map<String, Set<Text>> localityGroups;
 
     @JsonCreator
-    public IndexColumn(@JsonProperty("columns") List<String> columns)
+    public IndexColumn(
+            @JsonProperty("columns") List<String> columns,
+            @JsonProperty("tableName") String tableName,
+            @JsonProperty("localityGroups") Map<String, Set<Text>> localityGroups)
     {
         this.columns = requireNonNull(columns, "column is null");
+        this.tableName = requireNonNull(tableName, "tableName is null");
+        this.localityGroups = requireNonNull(localityGroups, "localityGroups is null");
     }
 
     @JsonProperty
     public List<String> getColumns()
     {
         return columns;
+    }
+
+    @JsonProperty
+    public String getTableName()
+    {
+        return tableName;
+    }
+
+    @JsonProperty
+    public Map<String, Set<Text>> getLocalityGroups()
+    {
+        return localityGroups;
     }
 
     @JsonIgnore
@@ -69,6 +91,6 @@ public class IndexColumn
     @Override
     public String toString()
     {
-        return toStringHelper(this).add("columns", columns).toString();
+        return toStringHelper(this).add("tableName", tableName).add("columns", columns).toString();
     }
 }

@@ -14,13 +14,13 @@
 package com.facebook.presto.accumulo;
 
 import com.facebook.presto.accumulo.conf.AccumuloConfig;
-import com.facebook.presto.accumulo.index.Indexer;
 import com.facebook.presto.accumulo.index.metrics.AccumuloMetricsStorage;
 import com.facebook.presto.accumulo.index.metrics.MetricsStorage;
 import com.facebook.presto.accumulo.io.PrestoBatchWriter;
 import com.facebook.presto.accumulo.iterators.ListCombiner;
 import com.facebook.presto.accumulo.metadata.AccumuloTable;
 import com.facebook.presto.accumulo.metadata.ZooKeeperMetadataManager;
+import com.facebook.presto.accumulo.model.IndexColumn;
 import com.facebook.presto.accumulo.model.RowSchema;
 import com.facebook.presto.accumulo.serializers.AccumuloRowSerializer;
 import com.facebook.presto.accumulo.serializers.LexicoderRowSerializer;
@@ -75,7 +75,6 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
-import java.util.stream.Collectors;
 
 import static com.facebook.presto.accumulo.AccumuloErrorCode.UNEXPECTED_ACCUMULO_ERROR;
 import static com.facebook.presto.accumulo.Types.getElementType;
@@ -410,18 +409,20 @@ public class AccumuloEventListener
             }
         }
 
-        if (!tableManager.exists(TABLE.getIndexTableName())) {
-            tableManager.createAccumuloTable(TABLE.getIndexTableName());
+        for (IndexColumn indexColumn : TABLE.getParsedIndexColumns()) {
+            if (!tableManager.exists(indexColumn.getTableName())) {
+                tableManager.createAccumuloTable(indexColumn.getTableName());
 
-            try {
-                connector.tableOperations().setLocalityGroups(TABLE.getIndexTableName(), Indexer.getLocalityGroups(TABLE));
-                LOG.info("Created Accumulo table %s", TABLE.getIndexTableName());
-            }
-            catch (AccumuloSecurityException | AccumuloException e) {
-                throw new PrestoException(AccumuloErrorCode.UNEXPECTED_ACCUMULO_ERROR, "Failed to set iterator", e);
-            }
-            catch (TableNotFoundException e) {
-                LOG.warn("Failed to set iterator, table %s does not exist", TABLE.getFullTableName());
+                try {
+                    connector.tableOperations().setLocalityGroups(indexColumn.getTableName(), indexColumn.getLocalityGroups());
+                    LOG.info("Created Accumulo table %s", indexColumn.getTableName());
+                }
+                catch (AccumuloSecurityException | AccumuloException e) {
+                    throw new PrestoException(AccumuloErrorCode.UNEXPECTED_ACCUMULO_ERROR, "Failed to set iterator", e);
+                }
+                catch (TableNotFoundException e) {
+                    LOG.warn("Failed to set iterator, table %s does not exist", TABLE.getFullTableName());
+                }
             }
         }
 
@@ -513,7 +514,7 @@ public class AccumuloEventListener
                         writer.addMutation(update.getMutation(), update.isIncrementNumRows());
                         written = true;
                     }
-                    catch (MutationsRejectedException | TableNotFoundException e) {
+                    catch (AccumuloException | AccumuloSecurityException | TableNotFoundException e) {
                         LOG.error("Failed to write mutation, sleeping for 10s", e);
                         sleep();
                         createBatchWriter();
@@ -936,8 +937,7 @@ public class AccumuloEventListener
             super(new TypeSignature(
                             ROW,
                             Lists.transform(fieldTypes, Type::getTypeSignature),
-                            ImmutableList.copyOf(fieldNames.orElse(ImmutableList.of()).stream()
-                                    .collect(Collectors.toList()))),
+                            ImmutableList.copyOf(new ArrayList<>(fieldNames.orElse(ImmutableList.of())))),
                     Block.class);
 
             ImmutableList.Builder<RowField> builder = ImmutableList.builder();

@@ -22,22 +22,21 @@ import com.facebook.presto.accumulo.model.IndexColumn;
 import com.facebook.presto.accumulo.serializers.AccumuloRowSerializer;
 import com.facebook.presto.accumulo.serializers.LexicoderRowSerializer;
 import com.facebook.presto.spi.PrestoException;
-import com.facebook.presto.spi.SchemaTableName;
 import com.facebook.presto.spi.StandardErrorCode;
 import com.facebook.presto.spi.type.Type;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableMultimap;
-import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.ListMultimap;
 import com.google.common.collect.Multimap;
 import com.google.common.collect.MultimapBuilder;
 import com.google.common.primitives.Bytes;
+import org.apache.accumulo.core.client.AccumuloException;
+import org.apache.accumulo.core.client.AccumuloSecurityException;
 import org.apache.accumulo.core.client.BatchScanner;
-import org.apache.accumulo.core.client.BatchWriter;
 import org.apache.accumulo.core.client.Connector;
 import org.apache.accumulo.core.client.IteratorSetting;
-import org.apache.accumulo.core.client.MutationsRejectedException;
+import org.apache.accumulo.core.client.MultiTableBatchWriter;
 import org.apache.accumulo.core.client.Scanner;
 import org.apache.accumulo.core.client.TableNotFoundException;
 import org.apache.accumulo.core.data.ColumnUpdate;
@@ -66,7 +65,6 @@ import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Optional;
 import java.util.OptionalLong;
-import java.util.Set;
 import java.util.stream.Collectors;
 
 import static com.facebook.presto.accumulo.AccumuloErrorCode.UNEXPECTED_ACCUMULO_ERROR;
@@ -143,7 +141,7 @@ public class Indexer
     public static final int WHOLE_ROW_ITERATOR_PRIORITY = 21;
 
     private final AccumuloTable table;
-    private final BatchWriter indexWriter;
+    private final MultiTableBatchWriter indexWriter;
     private final Connector connector;
     private final MetricsWriter metricsWriter;
     private final List<IndexColumn> indexColumns;
@@ -153,7 +151,7 @@ public class Indexer
     public Indexer(
             Connector connector,
             AccumuloTable table,
-            BatchWriter indexWriter,
+            MultiTableBatchWriter indexWriter,
             MetricsWriter metricsWriter)
             throws TableNotFoundException
     {
@@ -183,7 +181,7 @@ public class Indexer
      * @param mutation Mutation to index
      */
     public void index(Mutation mutation)
-            throws MutationsRejectedException
+            throws AccumuloException, AccumuloSecurityException, TableNotFoundException
     {
         index(mutation, true);
     }
@@ -201,7 +199,7 @@ public class Indexer
      * @param increment True to increment the row count in the metrics table
      */
     public void index(Mutation mutation, boolean increment)
-            throws MutationsRejectedException
+            throws AccumuloException, AccumuloSecurityException, TableNotFoundException
     {
         checkArgument(mutation.getUpdates().size() > 0, "Mutation must have at least one column update");
         checkArgument(mutation.getUpdates().stream().noneMatch(ColumnUpdate::isDeleted), "Mutation must not contain any delete entries. Use Indexer#delete, then index the Mutation");
@@ -223,7 +221,7 @@ public class Indexer
     }
 
     public void index(Iterable<Mutation> mutations)
-            throws MutationsRejectedException
+            throws AccumuloException, AccumuloSecurityException, TableNotFoundException
     {
         for (Mutation mutation : mutations) {
             index(mutation, true);
@@ -240,7 +238,7 @@ public class Indexer
      */
     @Deprecated
     public void update(byte[] rowBytes, Map<Triple<String, String, ColumnVisibility>, Object> columnUpdates, Authorizations auths)
-            throws MutationsRejectedException, TableNotFoundException
+            throws AccumuloException, TableNotFoundException, AccumuloSecurityException
     {
         Multimap<Pair<ByteBuffer, ByteBuffer>, Pair<ColumnVisibility, Object>> updates = MultimapBuilder.hashKeys().arrayListValues().build();
         columnUpdates.entrySet().forEach(
@@ -262,7 +260,7 @@ public class Indexer
      * @param auths Authorizations to scan the table for deleting the entries.  For proper deletes, these authorizations must encapsulate whatever the visibility of the existing row is, otherwise you'll have duplicate values
      */
     public void update(byte[] rowBytes, Multimap<Pair<ByteBuffer, ByteBuffer>, Pair<ColumnVisibility, Object>> columnUpdates, Authorizations auths)
-            throws MutationsRejectedException, TableNotFoundException
+            throws AccumuloException, TableNotFoundException, AccumuloSecurityException
     {
         // Delete the column updates
         long deleteTimestamp = System.currentTimeMillis();
@@ -334,7 +332,7 @@ public class Indexer
      * @param rowId The row to delete
      */
     public void delete(Authorizations auths, byte[] rowId)
-            throws MutationsRejectedException, TableNotFoundException
+            throws AccumuloException, TableNotFoundException, AccumuloSecurityException
     {
         delete(auths, ImmutableList.of(rowId));
     }
@@ -351,7 +349,7 @@ public class Indexer
      * @param rowIds The row to delete
      */
     public void delete(Authorizations auths, Iterable<byte[]> rowIds)
-            throws MutationsRejectedException, TableNotFoundException
+            throws AccumuloException, TableNotFoundException, AccumuloSecurityException
     {
         ImmutableList.Builder<Range> rangeBuilder = ImmutableList.builder();
         rowIds.forEach(x -> rangeBuilder.add(new Range(new Text(x))));
@@ -404,7 +402,7 @@ public class Indexer
      * @param mutation The mutation to delete index entries from
      */
     public void delete(Authorizations auths, Mutation mutation)
-            throws MutationsRejectedException, TableNotFoundException
+            throws AccumuloException, TableNotFoundException, AccumuloSecurityException
     {
         Scanner scanner = null;
         try {
@@ -490,7 +488,7 @@ public class Indexer
     }
 
     private void applyUpdate(byte[] row, Multimap<Pair<ByteBuffer, ByteBuffer>, ColumnUpdate> updates, boolean delete)
-            throws MutationsRejectedException
+            throws AccumuloException, AccumuloSecurityException, TableNotFoundException
     {
         // Start stepping through each index we want to create
         for (IndexColumn indexColumn : indexColumns) {
@@ -581,10 +579,10 @@ public class Indexer
                 // Now that we have aggregated the values for this index column, add or delete them
                 for (ColumnUpdate indexValue : indexValues.get(INDEX)) {
                     if (indexValue.isDeleted()) {
-                        deleteIndexMutation(wrap(indexValue.getColumnQualifier()), wrap(indexValue.getColumnFamily()), row, visibility, indexValue.hasTimestamp() ? Optional.of(indexValue.getTimestamp()) : Optional.empty());
+                        deleteIndexMutation(indexColumn, wrap(indexValue.getColumnQualifier()), wrap(indexValue.getColumnFamily()), row, visibility, indexValue.hasTimestamp() ? Optional.of(indexValue.getTimestamp()) : Optional.empty());
                     }
                     else {
-                        addIndexMutation(wrap(indexValue.getColumnQualifier()), wrap(indexValue.getColumnFamily()), row, visibility, indexValue.hasTimestamp() ? Optional.of(indexValue.getTimestamp()) : Optional.empty());
+                        addIndexMutation(indexColumn, wrap(indexValue.getColumnQualifier()), wrap(indexValue.getColumnFamily()), row, visibility, indexValue.hasTimestamp() ? Optional.of(indexValue.getTimestamp()) : Optional.empty());
                     }
                 }
 
@@ -684,8 +682,8 @@ public class Indexer
         return newIndexValues;
     }
 
-    private void addIndexMutation(ByteBuffer row, ByteBuffer family, byte[] qualifier, ColumnVisibility visibility, Optional<Long> timestamp)
-            throws MutationsRejectedException
+    private void addIndexMutation(IndexColumn column, ByteBuffer row, ByteBuffer family, byte[] qualifier, ColumnVisibility visibility, Optional<Long> timestamp)
+            throws AccumuloException, AccumuloSecurityException, TableNotFoundException
     {
         // Create the mutation and add it to the batch writer
         Mutation indexMutation = new Mutation(row.array());
@@ -696,11 +694,11 @@ public class Indexer
             indexMutation.put(family.array(), qualifier, visibility, EMPTY_BYTE);
         }
 
-        indexWriter.addMutation(indexMutation);
+        indexWriter.getBatchWriter(column.getTableName()).addMutation(indexMutation);
     }
 
-    private void deleteIndexMutation(ByteBuffer row, ByteBuffer family, byte[] qualifier, ColumnVisibility visibility, Optional<Long> timestamp)
-            throws MutationsRejectedException
+    private void deleteIndexMutation(IndexColumn column, ByteBuffer row, ByteBuffer family, byte[] qualifier, ColumnVisibility visibility, Optional<Long> timestamp)
+            throws AccumuloException, AccumuloSecurityException, TableNotFoundException
     {
         // Create the mutation and add it to the batch writer
         Mutation indexMutation = new Mutation(row.array());
@@ -711,7 +709,7 @@ public class Indexer
             indexMutation.putDelete(family.array(), qualifier, visibility);
         }
 
-        indexWriter.addMutation(indexMutation);
+        indexWriter.getBatchWriter(column.getTableName()).addMutation(indexMutation);
     }
 
     /**
@@ -725,59 +723,6 @@ public class Indexer
     public static byte[] getIndexColumnFamily(byte[] columnFamily, byte[] columnQualifier)
     {
         return ArrayUtils.addAll(ArrayUtils.add(columnFamily, UNDERSCORE), columnQualifier);
-    }
-
-    /**
-     * Gets a set of locality groups that should be added to the index table (not the metrics table).
-     *
-     * @param table Table for the locality groups, see AccumuloClient#getTable
-     * @return Mapping of locality group to column families in the locality group, 1:1 mapping in
-     * this case
-     */
-    public static Map<String, Set<Text>> getLocalityGroups(AccumuloTable table)
-    {
-        Map<String, Set<Text>> groups = new HashMap<>();
-        for (IndexColumn indexColumn : table.getParsedIndexColumns()) {
-            byte[] family = new byte[0];
-            for (String column : indexColumn.getColumns()) {
-                AccumuloColumnHandle columnHandle = table.getColumn(column);
-                byte[] concatFamily = getIndexColumnFamily(columnHandle.getFamily().get().getBytes(UTF_8), columnHandle.getQualifier().get().getBytes(UTF_8));
-                family = family.length == 0
-                        ? concatFamily
-                        : Bytes.concat(family, HYPHEN_BYTE, concatFamily);
-            }
-
-            // Create a Text version of the index column family
-            Text indexColumnFamily = new Text(family);
-
-            // Add this to the locality groups,
-            // it is a 1:1 mapping of locality group to column families
-            groups.put(indexColumnFamily.toString(), ImmutableSet.of(indexColumnFamily));
-        }
-        return groups;
-    }
-
-    /**
-     * Gets the fully-qualified index table name for the given table.
-     *
-     * @param schema Schema name
-     * @param table Table name
-     * @return Qualified index table name
-     */
-    public static String getIndexTableName(String schema, String table)
-    {
-        return schema.equals("default") ? table + "_idx" : schema + '.' + table + "_idx";
-    }
-
-    /**
-     * Gets the fully-qualified index table name for the given table.
-     *
-     * @param tableName Schema table name
-     * @return Qualified index table name
-     */
-    public static String getIndexTableName(SchemaTableName tableName)
-    {
-        return getIndexTableName(tableName.getSchemaName(), tableName.getTableName());
     }
 
     /**

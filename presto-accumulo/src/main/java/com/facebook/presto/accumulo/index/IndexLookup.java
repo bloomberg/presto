@@ -75,7 +75,7 @@ public class IndexLookup
         coreExecutor.shutdownNow();
     }
 
-    public List<Range> getIndexRanges(Connector connector, ConnectorSession session, String indexTable, List<IndexQueryParameters> indexParameters, Collection<AccumuloRange> rowIDRanges, Authorizations auths)
+    public List<Range> getIndexRanges(Connector connector, ConnectorSession session, List<IndexQueryParameters> indexParameters, Collection<AccumuloRange> rowIDRanges, Authorizations auths)
     {
         // For each column/constraint pair we submit a task to scan the index ranges
         Set<Range> finalRanges = new HashSet<>();
@@ -83,6 +83,7 @@ public class IndexLookup
         CompletionService<Set<Range>> executor = new ExecutorCompletionService<>(executorService);
         for (IndexQueryParameters queryParameters : indexParameters) {
             tasks.add(executor.submit(() -> {
+                String indexTable = queryParameters.getIndexColumn().getTableName();
                 Optional<TraceScope> indexTrace = Optional.empty();
                 BatchScanner scanner = null;
                 try {

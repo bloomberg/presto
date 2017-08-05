@@ -36,6 +36,7 @@ import java.util.concurrent.CompletableFuture;
 
 import static com.facebook.presto.accumulo.AccumuloErrorCode.ACCUMULO_TABLE_DNE;
 import static com.facebook.presto.accumulo.AccumuloErrorCode.UNEXPECTED_ACCUMULO_ERROR;
+import static com.facebook.presto.spi.StandardErrorCode.NOT_FOUND;
 import static io.airlift.concurrent.MoreFutures.getFutureValue;
 import static java.util.Objects.requireNonNull;
 import static java.util.concurrent.CompletableFuture.completedFuture;
@@ -79,6 +80,7 @@ public class AccumuloPageSink
 
     @Override
     public CompletableFuture<?> appendPage(Page page)
+            throws PrestoException
     {
         // For each position within the page, i.e. row
         for (int position = 0; position < page.getPositionCount(); ++position) {
@@ -102,6 +104,15 @@ public class AccumuloPageSink
             }
             catch (MutationsRejectedException e) {
                 throw new PrestoException(UNEXPECTED_ACCUMULO_ERROR, "Mutation rejected by server on flush", e);
+            }
+            catch (AccumuloSecurityException e) {
+                throw new PrestoException(UNEXPECTED_ACCUMULO_ERROR, "Accumulo security exception thrown on flush", e);
+            }
+            catch (TableNotFoundException e) {
+                throw new PrestoException(NOT_FOUND, "Table does not exist", e);
+            }
+            catch (AccumuloException e) {
+                throw new PrestoException(UNEXPECTED_ACCUMULO_ERROR, "Unknown Accumulo exception on flush", e);
             }
         }
 
