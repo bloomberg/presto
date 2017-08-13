@@ -18,7 +18,6 @@ import com.facebook.presto.accumulo.model.IndexColumn;
 import com.facebook.presto.accumulo.serializers.AccumuloRowSerializer;
 import com.facebook.presto.accumulo.serializers.LexicoderRowSerializer;
 import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
 import com.google.common.primitives.Bytes;
 import org.apache.accumulo.core.data.Range;
 import org.apache.hadoop.io.Text;
@@ -47,7 +46,7 @@ public class TestIndexQueryParameters
     private static final byte[] MIN_TIMESTAMP_VALUE = SERIALIZER.encode(TIMESTAMP, PARSER.parseDateTime("2001-08-22T03:04:05.321+0000").getMillis());
     private static final byte[] MAX_TIMESTAMP_VALUE = SERIALIZER.encode(TIMESTAMP, PARSER.parseDateTime("2001-09-22T03:04:05.321+0000").getMillis());
 
-    private static final IndexColumn INDEX_COLUMN = new IndexColumn(ImmutableList.of("email", "age", "born"), "foo", ImmutableMap.of());
+    private static final IndexColumn INDEX_COLUMN = new IndexColumn("foo", ImmutableList.of("email", "age", "born"));
 
     @Test
     public void testIndexQueryParameters()
@@ -71,8 +70,8 @@ public class TestIndexQueryParameters
     @Test
     public void testIndexQueryParametersExactValue()
     {
-        IndexQueryParameters parameters = new IndexQueryParameters(new IndexColumn(ImmutableList.of("email"), "foo", ImmutableMap.of()));
-        assertEquals(parameters.getIndexColumn(), new IndexColumn(ImmutableList.of("email"), "foo", ImmutableMap.of()));
+        IndexQueryParameters parameters = new IndexQueryParameters(new IndexColumn("foo", ImmutableList.of("email")));
+        assertEquals(parameters.getIndexColumn(), new IndexColumn("foo", ImmutableList.of("email")));
 
         parameters.appendColumn("cf_email".getBytes(UTF_8), ImmutableList.of(new AccumuloRange(FOO)), false);
 
@@ -85,8 +84,8 @@ public class TestIndexQueryParameters
     @Test
     public void testIndexQueryParametersMultipleExactValues()
     {
-        IndexQueryParameters parameters = new IndexQueryParameters(new IndexColumn(ImmutableList.of("email", "born"), "foo", ImmutableMap.of()));
-        assertEquals(parameters.getIndexColumn(), new IndexColumn(ImmutableList.of("email", "born"), "foo", ImmutableMap.of()));
+        IndexQueryParameters parameters = new IndexQueryParameters(new IndexColumn("foo", ImmutableList.of("email", "born")));
+        assertEquals(parameters.getIndexColumn(), new IndexColumn("foo", ImmutableList.of("email", "born")));
 
         parameters.appendColumn("cf_email".getBytes(UTF_8), ImmutableList.of(new AccumuloRange(FOO), new AccumuloRange(BAR)), false);
         parameters.appendColumn("cf_born".getBytes(UTF_8), ImmutableList.of(new AccumuloRange(MIN_TIMESTAMP_VALUE, MIN_TIMESTAMP_VALUE)), false);

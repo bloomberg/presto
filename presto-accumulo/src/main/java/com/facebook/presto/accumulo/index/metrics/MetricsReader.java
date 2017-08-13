@@ -13,6 +13,7 @@
  */
 package com.facebook.presto.accumulo.index.metrics;
 
+import com.facebook.presto.accumulo.metadata.AccumuloTable;
 import com.facebook.presto.spi.PrestoException;
 import org.apache.accumulo.core.data.Range;
 import org.apache.accumulo.core.security.Authorizations;
@@ -31,22 +32,18 @@ import static com.facebook.presto.spi.StandardErrorCode.FUNCTION_IMPLEMENTATION_
 public abstract class MetricsReader
         implements AutoCloseable
 {
-    private static final Range METRICS_TABLE_ROWID_RANGE = new Range(new Text(METRICS_TABLE_ROW_ID.array()));
-    private static final Text METRICS_TABLE_ROWS_COLUMN_TEXT = new Text(METRICS_TABLE_ROWS_COLUMN.array());
-    private static final Authorizations EMPTY_AUTHS = new Authorizations();
+    protected static final Range METRICS_TABLE_ROWID_RANGE = new Range(new Text(METRICS_TABLE_ROW_ID.array()));
+    protected static final Text METRICS_TABLE_ROWS_COLUMN_TEXT = new Text(METRICS_TABLE_ROWS_COLUMN.array());
+    protected static final Authorizations EMPTY_AUTHS = new Authorizations();
 
     /**
      * Gets the number of rows for the given table based on the user authorizations
      *
-     * @param schema Schema name
-     * @param table Table name
+     * @param table Accumulo table
      * @return Number of rows in the given table
      */
-    public long getNumRowsInTable(String schema, String table)
-            throws Exception
-    {
-        return getCardinality(new MetricCacheKey(schema, table, METRICS_TABLE_ROWS_COLUMN_TEXT, EMPTY_AUTHS, METRICS_TABLE_ROWID_RANGE));
-    }
+    public abstract long getNumRowsInTable(AccumuloTable table)
+            throws Exception;
 
     /**
      * Gets the number of rows in the table where a column contains a specific value,
@@ -100,7 +97,7 @@ public abstract class MetricsReader
     {
         MetricCacheKey anyKey = keys.stream().findAny().get();
         keys.forEach(k -> {
-            if (!k.schema.equals(anyKey.schema) || !k.table.equals(anyKey.table) || !k.family.equals(anyKey.family) || !k.auths.equals(anyKey.auths)) {
+            if (!k.indexTable.equals(anyKey.indexTable) || !k.family.equals(anyKey.family) || !k.auths.equals(anyKey.auths)) {
                 throw new PrestoException(FUNCTION_IMPLEMENTATION_ERROR, "loadAll called with a non-homogeneous collection of cache keys");
             }
         });

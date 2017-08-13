@@ -13,6 +13,7 @@
  */
 package com.facebook.presto.accumulo.index.metrics;
 
+import com.facebook.presto.accumulo.AccumuloQueryRunner;
 import com.facebook.presto.accumulo.conf.AccumuloConfig;
 import com.facebook.presto.accumulo.metadata.AccumuloTable;
 import com.facebook.presto.accumulo.model.AccumuloColumnHandle;
@@ -55,6 +56,7 @@ public abstract class TestAbstractMetricStorage
     protected AccumuloColumnHandle c4 = new AccumuloColumnHandle("arr", Optional.of("cf"), Optional.of("arr"), new ArrayType(VARCHAR), 3, "");
 
     protected LexicoderRowSerializer serializer = new LexicoderRowSerializer();
+    protected org.apache.accumulo.core.client.Connector connector;
     protected MetricsStorage storage;
 
     public abstract MetricsStorage getMetricsStorage(AccumuloConfig config);
@@ -99,9 +101,10 @@ public abstract class TestAbstractMetricStorage
     public void setupClass()
             throws Exception
     {
+        connector = AccumuloQueryRunner.getAccumuloConnector();
         storage = getMetricsStorage(config);
-        table = new AccumuloTable("default", "index_test_table", ImmutableList.of(c1, c2, c3, c4), "id", false, LexicoderRowSerializer.class.getCanonicalName(), null, Optional.of(storage.getClass().getCanonicalName()), false, Optional.of("age,firstname,arr"));
-        table2 = new AccumuloTable("default", "index_test_table_two", ImmutableList.of(c1, c2, c3, c4), "id", false, LexicoderRowSerializer.class.getCanonicalName(), null, Optional.of(storage.getClass().getCanonicalName()), false, Optional.of("age,firstname,arr"));
+        table = new AccumuloTable("default", "abstract_metrics_storage", ImmutableList.of(c1, c2, c3, c4), "id", false, LexicoderRowSerializer.class.getCanonicalName(), null, Optional.of(storage.getClass().getCanonicalName()), false, Optional.of("age,firstname,arr"));
+        table2 = new AccumuloTable("default", "abstract_metrics_storage_two", ImmutableList.of(c1, c2, c3, c4), "id", false, LexicoderRowSerializer.class.getCanonicalName(), null, Optional.of(storage.getClass().getCanonicalName()), false, Optional.of("age,firstname,arr"));
     }
 
     @Test
@@ -111,16 +114,16 @@ public abstract class TestAbstractMetricStorage
         storage.create(table);
 
         MetricsWriter writer = storage.newWriter(table);
-        assertEquals(storage.newReader().getNumRowsInTable(table.getSchema(), table.getTable()), 0);
+        assertEquals(storage.newReader().getNumRowsInTable(table), 0);
         writer.incrementRowCount();
         writer.flush();
-        assertEquals(storage.newReader().getNumRowsInTable(table.getSchema(), table.getTable()), 1);
+        assertEquals(storage.newReader().getNumRowsInTable(table), 1);
         writer.incrementRowCount();
         writer.flush();
-        assertEquals(storage.newReader().getNumRowsInTable(table.getSchema(), table.getTable()), 2);
+        assertEquals(storage.newReader().getNumRowsInTable(table), 2);
         writer.incrementRowCount();
         writer.flush();
-        assertEquals(storage.newReader().getNumRowsInTable(table.getSchema(), table.getTable()), 3);
+        assertEquals(storage.newReader().getNumRowsInTable(table), 3);
     }
 
     @Test
@@ -130,24 +133,24 @@ public abstract class TestAbstractMetricStorage
         storage.create(table);
 
         MetricsWriter writer = storage.newWriter(table);
-        assertEquals(storage.newReader().getNumRowsInTable(table.getSchema(), table.getTable()), 0);
+        assertEquals(storage.newReader().getNumRowsInTable(table), 0);
         writer.incrementRowCount();
         writer.flush();
-        assertEquals(storage.newReader().getNumRowsInTable(table.getSchema(), table.getTable()), 1);
+        assertEquals(storage.newReader().getNumRowsInTable(table), 1);
         writer.incrementRowCount();
         writer.flush();
-        assertEquals(storage.newReader().getNumRowsInTable(table.getSchema(), table.getTable()), 2);
+        assertEquals(storage.newReader().getNumRowsInTable(table), 2);
         writer.incrementRowCount();
         writer.flush();
-        assertEquals(storage.newReader().getNumRowsInTable(table.getSchema(), table.getTable()), 3);
+        assertEquals(storage.newReader().getNumRowsInTable(table), 3);
 
         writer.incrementRowCount();
         writer.flush();
-        assertEquals(storage.newReader().getNumRowsInTable(table.getSchema(), table.getTable()), 4);
+        assertEquals(storage.newReader().getNumRowsInTable(table), 4);
 
         writer.incrementRowCount();
         writer.flush();
-        assertEquals(storage.newReader().getNumRowsInTable(table.getSchema(), table.getTable()), 5);
+        assertEquals(storage.newReader().getNumRowsInTable(table), 5);
     }
 
     @Test
@@ -158,93 +161,93 @@ public abstract class TestAbstractMetricStorage
 
         MetricsWriter writer = storage.newWriter(table);
 
-        assertEquals(storage.newReader().getCardinality(mck("abc", "cf_firstname", new Authorizations())), 0);
-        assertEquals(storage.newReader().getCardinality(mck("def", "cf_firstname", new Authorizations())), 0);
-        assertEquals(storage.newReader().getCardinality(mck("ghi", "cf_firstname", new Authorizations())), 0);
-        assertEquals(storage.newReader().getCardinality(mck("1", "cf_age", new Authorizations())), 0);
-        assertEquals(storage.newReader().getCardinality(mck("2", "cf_age", new Authorizations())), 0);
-        assertEquals(storage.newReader().getCardinality(mck("3", "cf_age", new Authorizations())), 0);
+        assertEquals(storage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(2).getIndexTable(), "abc", "cf_firstname", new Authorizations())), 0);
+        assertEquals(storage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(2).getIndexTable(), "def", "cf_firstname", new Authorizations())), 0);
+        assertEquals(storage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(2).getIndexTable(), "ghi", "cf_firstname", new Authorizations())), 0);
+        assertEquals(storage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(0).getIndexTable(), "1", "cf_age", new Authorizations())), 0);
+        assertEquals(storage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(0).getIndexTable(), "2", "cf_age", new Authorizations())), 0);
+        assertEquals(storage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(0).getIndexTable(), "3", "cf_age", new Authorizations())), 0);
 
-        writer.incrementCardinality(bb("abc"), bb("cf_firstname"), new ColumnVisibility());
-        writer.incrementCardinality(bb("def"), bb("cf_firstname"), new ColumnVisibility());
-        writer.incrementCardinality(bb("ghi"), bb("cf_firstname"), new ColumnVisibility());
-        writer.incrementCardinality(bb("1"), bb("cf_age"), new ColumnVisibility());
-        writer.incrementCardinality(bb("2"), bb("cf_age"), new ColumnVisibility());
-        writer.incrementCardinality(bb("3"), bb("cf_age"), new ColumnVisibility());
+        writer.incrementCardinality(table.getParsedIndexColumns().get(2).getIndexTable(), bb("abc"), bb("cf_firstname"), new ColumnVisibility());
+        writer.incrementCardinality(table.getParsedIndexColumns().get(2).getIndexTable(), bb("def"), bb("cf_firstname"), new ColumnVisibility());
+        writer.incrementCardinality(table.getParsedIndexColumns().get(2).getIndexTable(), bb("ghi"), bb("cf_firstname"), new ColumnVisibility());
+        writer.incrementCardinality(table.getParsedIndexColumns().get(0).getIndexTable(), bb("1"), bb("cf_age"), new ColumnVisibility());
+        writer.incrementCardinality(table.getParsedIndexColumns().get(0).getIndexTable(), bb("2"), bb("cf_age"), new ColumnVisibility());
+        writer.incrementCardinality(table.getParsedIndexColumns().get(0).getIndexTable(), bb("3"), bb("cf_age"), new ColumnVisibility());
         writer.flush();
 
-        assertEquals(storage.newReader().getCardinality(mck("abc", "cf_firstname", new Authorizations())), 1);
-        assertEquals(storage.newReader().getCardinality(mck("def", "cf_firstname", new Authorizations())), 1);
-        assertEquals(storage.newReader().getCardinality(mck("ghi", "cf_firstname", new Authorizations())), 1);
-        assertEquals(storage.newReader().getCardinality(mck("1", "cf_age", new Authorizations())), 1);
-        assertEquals(storage.newReader().getCardinality(mck("2", "cf_age", new Authorizations())), 1);
-        assertEquals(storage.newReader().getCardinality(mck("3", "cf_age", new Authorizations())), 1);
+        assertEquals(storage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(2).getIndexTable(), "abc", "cf_firstname", new Authorizations())), 1);
+        assertEquals(storage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(2).getIndexTable(), "def", "cf_firstname", new Authorizations())), 1);
+        assertEquals(storage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(2).getIndexTable(), "ghi", "cf_firstname", new Authorizations())), 1);
+        assertEquals(storage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(0).getIndexTable(), "1", "cf_age", new Authorizations())), 1);
+        assertEquals(storage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(0).getIndexTable(), "2", "cf_age", new Authorizations())), 1);
+        assertEquals(storage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(0).getIndexTable(), "3", "cf_age", new Authorizations())), 1);
 
-        writer.incrementCardinality(bb("abc"), bb("cf_firstname"), new ColumnVisibility());
-        writer.incrementCardinality(bb("def"), bb("cf_firstname"), new ColumnVisibility());
-        writer.incrementCardinality(bb("ghi"), bb("cf_firstname"), new ColumnVisibility());
-        writer.incrementCardinality(bb("1"), bb("cf_age"), new ColumnVisibility());
-        writer.incrementCardinality(bb("2"), bb("cf_age"), new ColumnVisibility());
-        writer.incrementCardinality(bb("3"), bb("cf_age"), new ColumnVisibility());
+        writer.incrementCardinality(table.getParsedIndexColumns().get(2).getIndexTable(), bb("abc"), bb("cf_firstname"), new ColumnVisibility());
+        writer.incrementCardinality(table.getParsedIndexColumns().get(2).getIndexTable(), bb("def"), bb("cf_firstname"), new ColumnVisibility());
+        writer.incrementCardinality(table.getParsedIndexColumns().get(2).getIndexTable(), bb("ghi"), bb("cf_firstname"), new ColumnVisibility());
+        writer.incrementCardinality(table.getParsedIndexColumns().get(0).getIndexTable(), bb("1"), bb("cf_age"), new ColumnVisibility());
+        writer.incrementCardinality(table.getParsedIndexColumns().get(0).getIndexTable(), bb("2"), bb("cf_age"), new ColumnVisibility());
+        writer.incrementCardinality(table.getParsedIndexColumns().get(0).getIndexTable(), bb("3"), bb("cf_age"), new ColumnVisibility());
         writer.flush();
 
-        assertEquals(storage.newReader().getCardinality(mck("abc", "cf_firstname", new Authorizations())), 2);
-        assertEquals(storage.newReader().getCardinality(mck("def", "cf_firstname", new Authorizations())), 2);
-        assertEquals(storage.newReader().getCardinality(mck("ghi", "cf_firstname", new Authorizations())), 2);
-        assertEquals(storage.newReader().getCardinality(mck("1", "cf_age", new Authorizations())), 2);
-        assertEquals(storage.newReader().getCardinality(mck("2", "cf_age", new Authorizations())), 2);
-        assertEquals(storage.newReader().getCardinality(mck("3", "cf_age", new Authorizations())), 2);
+        assertEquals(storage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(2).getIndexTable(), "abc", "cf_firstname", new Authorizations())), 2);
+        assertEquals(storage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(2).getIndexTable(), "def", "cf_firstname", new Authorizations())), 2);
+        assertEquals(storage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(2).getIndexTable(), "ghi", "cf_firstname", new Authorizations())), 2);
+        assertEquals(storage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(0).getIndexTable(), "1", "cf_age", new Authorizations())), 2);
+        assertEquals(storage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(0).getIndexTable(), "2", "cf_age", new Authorizations())), 2);
+        assertEquals(storage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(0).getIndexTable(), "3", "cf_age", new Authorizations())), 2);
 
-        writer.incrementCardinality(bb("abc"), bb("cf_firstname"), new ColumnVisibility("foo"));
-        writer.incrementCardinality(bb("def"), bb("cf_firstname"), new ColumnVisibility("foo"));
-        writer.incrementCardinality(bb("ghi"), bb("cf_firstname"), new ColumnVisibility("foo"));
-        writer.incrementCardinality(bb("1"), bb("cf_age"), new ColumnVisibility("foo"));
-        writer.incrementCardinality(bb("2"), bb("cf_age"), new ColumnVisibility("foo"));
-        writer.incrementCardinality(bb("3"), bb("cf_age"), new ColumnVisibility("foo"));
+        writer.incrementCardinality(table.getParsedIndexColumns().get(2).getIndexTable(), bb("abc"), bb("cf_firstname"), new ColumnVisibility("foo"));
+        writer.incrementCardinality(table.getParsedIndexColumns().get(2).getIndexTable(), bb("def"), bb("cf_firstname"), new ColumnVisibility("foo"));
+        writer.incrementCardinality(table.getParsedIndexColumns().get(2).getIndexTable(), bb("ghi"), bb("cf_firstname"), new ColumnVisibility("foo"));
+        writer.incrementCardinality(table.getParsedIndexColumns().get(0).getIndexTable(), bb("1"), bb("cf_age"), new ColumnVisibility("foo"));
+        writer.incrementCardinality(table.getParsedIndexColumns().get(0).getIndexTable(), bb("2"), bb("cf_age"), new ColumnVisibility("foo"));
+        writer.incrementCardinality(table.getParsedIndexColumns().get(0).getIndexTable(), bb("3"), bb("cf_age"), new ColumnVisibility("foo"));
         writer.flush();
 
-        assertEquals(storage.newReader().getCardinality(mck("abc", "cf_firstname", new Authorizations())), 2);
-        assertEquals(storage.newReader().getCardinality(mck("def", "cf_firstname", new Authorizations())), 2);
-        assertEquals(storage.newReader().getCardinality(mck("ghi", "cf_firstname", new Authorizations())), 2);
-        assertEquals(storage.newReader().getCardinality(mck("1", "cf_age", new Authorizations())), 2);
-        assertEquals(storage.newReader().getCardinality(mck("2", "cf_age", new Authorizations())), 2);
-        assertEquals(storage.newReader().getCardinality(mck("3", "cf_age", new Authorizations())), 2);
+        assertEquals(storage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(2).getIndexTable(), "abc", "cf_firstname", new Authorizations())), 2);
+        assertEquals(storage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(2).getIndexTable(), "def", "cf_firstname", new Authorizations())), 2);
+        assertEquals(storage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(2).getIndexTable(), "ghi", "cf_firstname", new Authorizations())), 2);
+        assertEquals(storage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(0).getIndexTable(), "1", "cf_age", new Authorizations())), 2);
+        assertEquals(storage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(0).getIndexTable(), "2", "cf_age", new Authorizations())), 2);
+        assertEquals(storage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(0).getIndexTable(), "3", "cf_age", new Authorizations())), 2);
 
-        assertEquals(storage.newReader().getCardinality(mck("abc", "cf_firstname", new Authorizations("foo"))), 3);
-        assertEquals(storage.newReader().getCardinality(mck("def", "cf_firstname", new Authorizations("foo"))), 3);
-        assertEquals(storage.newReader().getCardinality(mck("ghi", "cf_firstname", new Authorizations("foo"))), 3);
-        assertEquals(storage.newReader().getCardinality(mck("1", "cf_age", new Authorizations("foo"))), 3);
-        assertEquals(storage.newReader().getCardinality(mck("2", "cf_age", new Authorizations("foo"))), 3);
-        assertEquals(storage.newReader().getCardinality(mck("3", "cf_age", new Authorizations("foo"))), 3);
+        assertEquals(storage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(2).getIndexTable(), "abc", "cf_firstname", new Authorizations("foo"))), 3);
+        assertEquals(storage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(2).getIndexTable(), "def", "cf_firstname", new Authorizations("foo"))), 3);
+        assertEquals(storage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(2).getIndexTable(), "ghi", "cf_firstname", new Authorizations("foo"))), 3);
+        assertEquals(storage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(0).getIndexTable(), "1", "cf_age", new Authorizations("foo"))), 3);
+        assertEquals(storage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(0).getIndexTable(), "2", "cf_age", new Authorizations("foo"))), 3);
+        assertEquals(storage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(0).getIndexTable(), "3", "cf_age", new Authorizations("foo"))), 3);
 
-        writer.incrementCardinality(bb("abc"), bb("cf_firstname"), new ColumnVisibility("bar"));
-        writer.incrementCardinality(bb("def"), bb("cf_firstname"), new ColumnVisibility("bar"));
-        writer.incrementCardinality(bb("ghi"), bb("cf_firstname"), new ColumnVisibility("bar"));
-        writer.incrementCardinality(bb("1"), bb("cf_age"), new ColumnVisibility("bar"));
-        writer.incrementCardinality(bb("2"), bb("cf_age"), new ColumnVisibility("bar"));
-        writer.incrementCardinality(bb("3"), bb("cf_age"), new ColumnVisibility("bar"));
+        writer.incrementCardinality(table.getParsedIndexColumns().get(2).getIndexTable(), bb("abc"), bb("cf_firstname"), new ColumnVisibility("bar"));
+        writer.incrementCardinality(table.getParsedIndexColumns().get(2).getIndexTable(), bb("def"), bb("cf_firstname"), new ColumnVisibility("bar"));
+        writer.incrementCardinality(table.getParsedIndexColumns().get(2).getIndexTable(), bb("ghi"), bb("cf_firstname"), new ColumnVisibility("bar"));
+        writer.incrementCardinality(table.getParsedIndexColumns().get(0).getIndexTable(), bb("1"), bb("cf_age"), new ColumnVisibility("bar"));
+        writer.incrementCardinality(table.getParsedIndexColumns().get(0).getIndexTable(), bb("2"), bb("cf_age"), new ColumnVisibility("bar"));
+        writer.incrementCardinality(table.getParsedIndexColumns().get(0).getIndexTable(), bb("3"), bb("cf_age"), new ColumnVisibility("bar"));
         writer.flush();
 
-        assertEquals(storage.newReader().getCardinality(mck("abc", "cf_firstname", new Authorizations())), 2);
-        assertEquals(storage.newReader().getCardinality(mck("def", "cf_firstname", new Authorizations())), 2);
-        assertEquals(storage.newReader().getCardinality(mck("ghi", "cf_firstname", new Authorizations())), 2);
-        assertEquals(storage.newReader().getCardinality(mck("1", "cf_age", new Authorizations())), 2);
-        assertEquals(storage.newReader().getCardinality(mck("2", "cf_age", new Authorizations())), 2);
-        assertEquals(storage.newReader().getCardinality(mck("3", "cf_age", new Authorizations())), 2);
+        assertEquals(storage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(2).getIndexTable(), "abc", "cf_firstname", new Authorizations())), 2);
+        assertEquals(storage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(2).getIndexTable(), "def", "cf_firstname", new Authorizations())), 2);
+        assertEquals(storage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(2).getIndexTable(), "ghi", "cf_firstname", new Authorizations())), 2);
+        assertEquals(storage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(0).getIndexTable(), "1", "cf_age", new Authorizations())), 2);
+        assertEquals(storage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(0).getIndexTable(), "2", "cf_age", new Authorizations())), 2);
+        assertEquals(storage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(0).getIndexTable(), "3", "cf_age", new Authorizations())), 2);
 
-        assertEquals(storage.newReader().getCardinality(mck("abc", "cf_firstname", new Authorizations("foo"))), 3);
-        assertEquals(storage.newReader().getCardinality(mck("def", "cf_firstname", new Authorizations("foo"))), 3);
-        assertEquals(storage.newReader().getCardinality(mck("ghi", "cf_firstname", new Authorizations("foo"))), 3);
-        assertEquals(storage.newReader().getCardinality(mck("1", "cf_age", new Authorizations("foo"))), 3);
-        assertEquals(storage.newReader().getCardinality(mck("2", "cf_age", new Authorizations("foo"))), 3);
-        assertEquals(storage.newReader().getCardinality(mck("3", "cf_age", new Authorizations("foo"))), 3);
+        assertEquals(storage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(2).getIndexTable(), "abc", "cf_firstname", new Authorizations("foo"))), 3);
+        assertEquals(storage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(2).getIndexTable(), "def", "cf_firstname", new Authorizations("foo"))), 3);
+        assertEquals(storage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(2).getIndexTable(), "ghi", "cf_firstname", new Authorizations("foo"))), 3);
+        assertEquals(storage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(0).getIndexTable(), "1", "cf_age", new Authorizations("foo"))), 3);
+        assertEquals(storage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(0).getIndexTable(), "2", "cf_age", new Authorizations("foo"))), 3);
+        assertEquals(storage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(0).getIndexTable(), "3", "cf_age", new Authorizations("foo"))), 3);
 
-        assertEquals(storage.newReader().getCardinality(mck("abc", "cf_firstname", new Authorizations("foo", "bar"))), 4);
-        assertEquals(storage.newReader().getCardinality(mck("def", "cf_firstname", new Authorizations("foo", "bar"))), 4);
-        assertEquals(storage.newReader().getCardinality(mck("ghi", "cf_firstname", new Authorizations("foo", "bar"))), 4);
-        assertEquals(storage.newReader().getCardinality(mck("1", "cf_age", new Authorizations("foo", "bar"))), 4);
-        assertEquals(storage.newReader().getCardinality(mck("2", "cf_age", new Authorizations("foo", "bar"))), 4);
-        assertEquals(storage.newReader().getCardinality(mck("3", "cf_age", new Authorizations("foo", "bar"))), 4);
+        assertEquals(storage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(2).getIndexTable(), "abc", "cf_firstname", new Authorizations("foo", "bar"))), 4);
+        assertEquals(storage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(2).getIndexTable(), "def", "cf_firstname", new Authorizations("foo", "bar"))), 4);
+        assertEquals(storage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(2).getIndexTable(), "ghi", "cf_firstname", new Authorizations("foo", "bar"))), 4);
+        assertEquals(storage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(0).getIndexTable(), "1", "cf_age", new Authorizations("foo", "bar"))), 4);
+        assertEquals(storage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(0).getIndexTable(), "2", "cf_age", new Authorizations("foo", "bar"))), 4);
+        assertEquals(storage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(0).getIndexTable(), "3", "cf_age", new Authorizations("foo", "bar"))), 4);
     }
 
     @Test
@@ -255,61 +258,61 @@ public abstract class TestAbstractMetricStorage
 
         MetricsWriter writer = storage.newWriter(table);
 
-        assertEquals(storage.newReader().getCardinality(mck("a", "z", "cf_firstname", new Authorizations())), 0);
-        assertEquals(storage.newReader().getCardinality(mck("0", "9", "cf_age", new Authorizations())), 0);
+        assertEquals(storage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(2).getIndexTable(), "a", "z", "cf_firstname", new Authorizations())), 0);
+        assertEquals(storage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(0).getIndexTable(), "0", "9", "cf_age", new Authorizations())), 0);
 
-        writer.incrementCardinality(bb("abc"), bb("cf_firstname"), new ColumnVisibility());
-        writer.incrementCardinality(bb("def"), bb("cf_firstname"), new ColumnVisibility());
-        writer.incrementCardinality(bb("ghi"), bb("cf_firstname"), new ColumnVisibility());
-        writer.incrementCardinality(bb("1"), bb("cf_age"), new ColumnVisibility());
-        writer.incrementCardinality(bb("2"), bb("cf_age"), new ColumnVisibility());
-        writer.incrementCardinality(bb("3"), bb("cf_age"), new ColumnVisibility());
+        writer.incrementCardinality(table.getParsedIndexColumns().get(2).getIndexTable(), bb("abc"), bb("cf_firstname"), new ColumnVisibility());
+        writer.incrementCardinality(table.getParsedIndexColumns().get(2).getIndexTable(), bb("def"), bb("cf_firstname"), new ColumnVisibility());
+        writer.incrementCardinality(table.getParsedIndexColumns().get(2).getIndexTable(), bb("ghi"), bb("cf_firstname"), new ColumnVisibility());
+        writer.incrementCardinality(table.getParsedIndexColumns().get(0).getIndexTable(), bb("1"), bb("cf_age"), new ColumnVisibility());
+        writer.incrementCardinality(table.getParsedIndexColumns().get(0).getIndexTable(), bb("2"), bb("cf_age"), new ColumnVisibility());
+        writer.incrementCardinality(table.getParsedIndexColumns().get(0).getIndexTable(), bb("3"), bb("cf_age"), new ColumnVisibility());
         writer.flush();
 
-        assertEquals(storage.newReader().getCardinality(mck("a", "z", "cf_firstname", new Authorizations())), 3);
-        assertEquals(storage.newReader().getCardinality(mck("0", "9", "cf_age", new Authorizations())), 3);
+        assertEquals(storage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(2).getIndexTable(), "a", "z", "cf_firstname", new Authorizations())), 3);
+        assertEquals(storage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(0).getIndexTable(), "0", "9", "cf_age", new Authorizations())), 3);
 
-        writer.incrementCardinality(bb("abc"), bb("cf_firstname"), new ColumnVisibility());
-        writer.incrementCardinality(bb("def"), bb("cf_firstname"), new ColumnVisibility());
-        writer.incrementCardinality(bb("ghi"), bb("cf_firstname"), new ColumnVisibility());
-        writer.incrementCardinality(bb("1"), bb("cf_age"), new ColumnVisibility());
-        writer.incrementCardinality(bb("2"), bb("cf_age"), new ColumnVisibility());
-        writer.incrementCardinality(bb("3"), bb("cf_age"), new ColumnVisibility());
+        writer.incrementCardinality(table.getParsedIndexColumns().get(2).getIndexTable(), bb("abc"), bb("cf_firstname"), new ColumnVisibility());
+        writer.incrementCardinality(table.getParsedIndexColumns().get(2).getIndexTable(), bb("def"), bb("cf_firstname"), new ColumnVisibility());
+        writer.incrementCardinality(table.getParsedIndexColumns().get(2).getIndexTable(), bb("ghi"), bb("cf_firstname"), new ColumnVisibility());
+        writer.incrementCardinality(table.getParsedIndexColumns().get(0).getIndexTable(), bb("1"), bb("cf_age"), new ColumnVisibility());
+        writer.incrementCardinality(table.getParsedIndexColumns().get(0).getIndexTable(), bb("2"), bb("cf_age"), new ColumnVisibility());
+        writer.incrementCardinality(table.getParsedIndexColumns().get(0).getIndexTable(), bb("3"), bb("cf_age"), new ColumnVisibility());
         writer.flush();
 
-        assertEquals(storage.newReader().getCardinality(mck("a", "z", "cf_firstname", new Authorizations())), 6);
-        assertEquals(storage.newReader().getCardinality(mck("0", "9", "cf_age", new Authorizations())), 6);
+        assertEquals(storage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(2).getIndexTable(), "a", "z", "cf_firstname", new Authorizations())), 6);
+        assertEquals(storage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(0).getIndexTable(), "0", "9", "cf_age", new Authorizations())), 6);
 
-        writer.incrementCardinality(bb("abc"), bb("cf_firstname"), new ColumnVisibility("foo"));
-        writer.incrementCardinality(bb("def"), bb("cf_firstname"), new ColumnVisibility("foo"));
-        writer.incrementCardinality(bb("ghi"), bb("cf_firstname"), new ColumnVisibility("foo"));
-        writer.incrementCardinality(bb("1"), bb("cf_age"), new ColumnVisibility("foo"));
-        writer.incrementCardinality(bb("2"), bb("cf_age"), new ColumnVisibility("foo"));
-        writer.incrementCardinality(bb("3"), bb("cf_age"), new ColumnVisibility("foo"));
+        writer.incrementCardinality(table.getParsedIndexColumns().get(2).getIndexTable(), bb("abc"), bb("cf_firstname"), new ColumnVisibility("foo"));
+        writer.incrementCardinality(table.getParsedIndexColumns().get(2).getIndexTable(), bb("def"), bb("cf_firstname"), new ColumnVisibility("foo"));
+        writer.incrementCardinality(table.getParsedIndexColumns().get(2).getIndexTable(), bb("ghi"), bb("cf_firstname"), new ColumnVisibility("foo"));
+        writer.incrementCardinality(table.getParsedIndexColumns().get(0).getIndexTable(), bb("1"), bb("cf_age"), new ColumnVisibility("foo"));
+        writer.incrementCardinality(table.getParsedIndexColumns().get(0).getIndexTable(), bb("2"), bb("cf_age"), new ColumnVisibility("foo"));
+        writer.incrementCardinality(table.getParsedIndexColumns().get(0).getIndexTable(), bb("3"), bb("cf_age"), new ColumnVisibility("foo"));
         writer.flush();
 
-        assertEquals(storage.newReader().getCardinality(mck("a", "z", "cf_firstname", new Authorizations())), 6);
-        assertEquals(storage.newReader().getCardinality(mck("0", "9", "cf_age", new Authorizations())), 6);
+        assertEquals(storage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(2).getIndexTable(), "a", "z", "cf_firstname", new Authorizations())), 6);
+        assertEquals(storage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(0).getIndexTable(), "0", "9", "cf_age", new Authorizations())), 6);
 
-        assertEquals(storage.newReader().getCardinality(mck("a", "z", "cf_firstname", new Authorizations("foo"))), 9);
-        assertEquals(storage.newReader().getCardinality(mck("0", "9", "cf_age", new Authorizations("foo"))), 9);
+        assertEquals(storage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(2).getIndexTable(), "a", "z", "cf_firstname", new Authorizations("foo"))), 9);
+        assertEquals(storage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(0).getIndexTable(), "0", "9", "cf_age", new Authorizations("foo"))), 9);
 
-        writer.incrementCardinality(bb("abc"), bb("cf_firstname"), new ColumnVisibility("bar"));
-        writer.incrementCardinality(bb("def"), bb("cf_firstname"), new ColumnVisibility("bar"));
-        writer.incrementCardinality(bb("ghi"), bb("cf_firstname"), new ColumnVisibility("bar"));
-        writer.incrementCardinality(bb("1"), bb("cf_age"), new ColumnVisibility("bar"));
-        writer.incrementCardinality(bb("2"), bb("cf_age"), new ColumnVisibility("bar"));
-        writer.incrementCardinality(bb("3"), bb("cf_age"), new ColumnVisibility("bar"));
+        writer.incrementCardinality(table.getParsedIndexColumns().get(2).getIndexTable(), bb("abc"), bb("cf_firstname"), new ColumnVisibility("bar"));
+        writer.incrementCardinality(table.getParsedIndexColumns().get(2).getIndexTable(), bb("def"), bb("cf_firstname"), new ColumnVisibility("bar"));
+        writer.incrementCardinality(table.getParsedIndexColumns().get(2).getIndexTable(), bb("ghi"), bb("cf_firstname"), new ColumnVisibility("bar"));
+        writer.incrementCardinality(table.getParsedIndexColumns().get(0).getIndexTable(), bb("1"), bb("cf_age"), new ColumnVisibility("bar"));
+        writer.incrementCardinality(table.getParsedIndexColumns().get(0).getIndexTable(), bb("2"), bb("cf_age"), new ColumnVisibility("bar"));
+        writer.incrementCardinality(table.getParsedIndexColumns().get(0).getIndexTable(), bb("3"), bb("cf_age"), new ColumnVisibility("bar"));
         writer.flush();
 
-        assertEquals(storage.newReader().getCardinality(mck("a", "z", "cf_firstname", new Authorizations())), 6);
-        assertEquals(storage.newReader().getCardinality(mck("0", "9", "cf_age", new Authorizations())), 6);
+        assertEquals(storage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(2).getIndexTable(), "a", "z", "cf_firstname", new Authorizations())), 6);
+        assertEquals(storage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(0).getIndexTable(), "0", "9", "cf_age", new Authorizations())), 6);
 
-        assertEquals(storage.newReader().getCardinality(mck("a", "z", "cf_firstname", new Authorizations("foo"))), 9);
-        assertEquals(storage.newReader().getCardinality(mck("0", "9", "cf_age", new Authorizations("foo"))), 9);
+        assertEquals(storage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(2).getIndexTable(), "a", "z", "cf_firstname", new Authorizations("foo"))), 9);
+        assertEquals(storage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(0).getIndexTable(), "0", "9", "cf_age", new Authorizations("foo"))), 9);
 
-        assertEquals(storage.newReader().getCardinality(mck("a", "z", "cf_firstname", new Authorizations("foo", "bar"))), 12);
-        assertEquals(storage.newReader().getCardinality(mck("0", "9", "cf_age", new Authorizations("foo", "bar"))), 12);
+        assertEquals(storage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(2).getIndexTable(), "a", "z", "cf_firstname", new Authorizations("foo", "bar"))), 12);
+        assertEquals(storage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(0).getIndexTable(), "0", "9", "cf_age", new Authorizations("foo", "bar"))), 12);
     }
 
     @Test
@@ -321,24 +324,24 @@ public abstract class TestAbstractMetricStorage
         MetricsWriter writer = storage.newWriter(table);
 
         List<MetricCacheKey> keys = ImmutableList.of(
-                mck("abc", "cf_firstname", new Authorizations()),
-                mck("def", "cf_firstname", new Authorizations()),
-                mck("ghi", "cf_firstname", new Authorizations()));
+                mck(table.getParsedIndexColumns().get(2).getIndexTable(), "abc", "cf_firstname", new Authorizations()),
+                mck(table.getParsedIndexColumns().get(2).getIndexTable(), "def", "cf_firstname", new Authorizations()),
+                mck(table.getParsedIndexColumns().get(2).getIndexTable(), "ghi", "cf_firstname", new Authorizations()));
 
         List<MetricCacheKey> fooKeys = ImmutableList.of(
-                mck("abc", "cf_firstname", new Authorizations("foo")),
-                mck("def", "cf_firstname", new Authorizations("foo")),
-                mck("ghi", "cf_firstname", new Authorizations("foo")));
+                mck(table.getParsedIndexColumns().get(2).getIndexTable(), "abc", "cf_firstname", new Authorizations("foo")),
+                mck(table.getParsedIndexColumns().get(2).getIndexTable(), "def", "cf_firstname", new Authorizations("foo")),
+                mck(table.getParsedIndexColumns().get(2).getIndexTable(), "ghi", "cf_firstname", new Authorizations("foo")));
 
         List<MetricCacheKey> barKeys = ImmutableList.of(
-                mck("abc", "cf_firstname", new Authorizations("bar")),
-                mck("def", "cf_firstname", new Authorizations("bar")),
-                mck("ghi", "cf_firstname", new Authorizations("bar")));
+                mck(table.getParsedIndexColumns().get(2).getIndexTable(), "abc", "cf_firstname", new Authorizations("bar")),
+                mck(table.getParsedIndexColumns().get(2).getIndexTable(), "def", "cf_firstname", new Authorizations("bar")),
+                mck(table.getParsedIndexColumns().get(2).getIndexTable(), "ghi", "cf_firstname", new Authorizations("bar")));
 
         List<MetricCacheKey> fooBarKeys = ImmutableList.of(
-                mck("abc", "cf_firstname", new Authorizations("foo", "bar")),
-                mck("def", "cf_firstname", new Authorizations("foo", "bar")),
-                mck("ghi", "cf_firstname", new Authorizations("foo", "bar")));
+                mck(table.getParsedIndexColumns().get(2).getIndexTable(), "abc", "cf_firstname", new Authorizations("foo", "bar")),
+                mck(table.getParsedIndexColumns().get(2).getIndexTable(), "def", "cf_firstname", new Authorizations("foo", "bar")),
+                mck(table.getParsedIndexColumns().get(2).getIndexTable(), "ghi", "cf_firstname", new Authorizations("foo", "bar")));
 
         Map<MetricCacheKey, Long> cardinalities = storage.newReader().getCardinalities(keys);
         for (MetricCacheKey key : keys) {
@@ -346,9 +349,9 @@ public abstract class TestAbstractMetricStorage
             assertEquals(cardinalities.get(key).longValue(), 0);
         }
 
-        writer.incrementCardinality(bb("abc"), bb("cf_firstname"), new ColumnVisibility());
-        writer.incrementCardinality(bb("def"), bb("cf_firstname"), new ColumnVisibility());
-        writer.incrementCardinality(bb("ghi"), bb("cf_firstname"), new ColumnVisibility());
+        writer.incrementCardinality(table.getParsedIndexColumns().get(2).getIndexTable(), bb("abc"), bb("cf_firstname"), new ColumnVisibility());
+        writer.incrementCardinality(table.getParsedIndexColumns().get(2).getIndexTable(), bb("def"), bb("cf_firstname"), new ColumnVisibility());
+        writer.incrementCardinality(table.getParsedIndexColumns().get(2).getIndexTable(), bb("ghi"), bb("cf_firstname"), new ColumnVisibility());
         writer.flush();
 
         cardinalities = storage.newReader().getCardinalities(keys);
@@ -357,9 +360,9 @@ public abstract class TestAbstractMetricStorage
             assertEquals(cardinalities.get(key).longValue(), 1);
         }
 
-        writer.incrementCardinality(bb("abc"), bb("cf_firstname"), new ColumnVisibility());
-        writer.incrementCardinality(bb("def"), bb("cf_firstname"), new ColumnVisibility());
-        writer.incrementCardinality(bb("ghi"), bb("cf_firstname"), new ColumnVisibility());
+        writer.incrementCardinality(table.getParsedIndexColumns().get(2).getIndexTable(), bb("abc"), bb("cf_firstname"), new ColumnVisibility());
+        writer.incrementCardinality(table.getParsedIndexColumns().get(2).getIndexTable(), bb("def"), bb("cf_firstname"), new ColumnVisibility());
+        writer.incrementCardinality(table.getParsedIndexColumns().get(2).getIndexTable(), bb("ghi"), bb("cf_firstname"), new ColumnVisibility());
         writer.flush();
 
         cardinalities = storage.newReader().getCardinalities(keys);
@@ -368,9 +371,9 @@ public abstract class TestAbstractMetricStorage
             assertEquals(cardinalities.get(key).longValue(), 2);
         }
 
-        writer.incrementCardinality(bb("abc"), bb("cf_firstname"), new ColumnVisibility("foo"));
-        writer.incrementCardinality(bb("def"), bb("cf_firstname"), new ColumnVisibility("foo"));
-        writer.incrementCardinality(bb("ghi"), bb("cf_firstname"), new ColumnVisibility("foo"));
+        writer.incrementCardinality(table.getParsedIndexColumns().get(2).getIndexTable(), bb("abc"), bb("cf_firstname"), new ColumnVisibility("foo"));
+        writer.incrementCardinality(table.getParsedIndexColumns().get(2).getIndexTable(), bb("def"), bb("cf_firstname"), new ColumnVisibility("foo"));
+        writer.incrementCardinality(table.getParsedIndexColumns().get(2).getIndexTable(), bb("ghi"), bb("cf_firstname"), new ColumnVisibility("foo"));
         writer.flush();
 
         cardinalities = storage.newReader().getCardinalities(keys);
@@ -385,9 +388,9 @@ public abstract class TestAbstractMetricStorage
             assertEquals(cardinalities.get(key).longValue(), 3);
         }
 
-        writer.incrementCardinality(bb("abc"), bb("cf_firstname"), new ColumnVisibility("bar"));
-        writer.incrementCardinality(bb("def"), bb("cf_firstname"), new ColumnVisibility("bar"));
-        writer.incrementCardinality(bb("ghi"), bb("cf_firstname"), new ColumnVisibility("bar"));
+        writer.incrementCardinality(table.getParsedIndexColumns().get(2).getIndexTable(), bb("abc"), bb("cf_firstname"), new ColumnVisibility("bar"));
+        writer.incrementCardinality(table.getParsedIndexColumns().get(2).getIndexTable(), bb("def"), bb("cf_firstname"), new ColumnVisibility("bar"));
+        writer.incrementCardinality(table.getParsedIndexColumns().get(2).getIndexTable(), bb("ghi"), bb("cf_firstname"), new ColumnVisibility("bar"));
         writer.flush();
 
         cardinalities = storage.newReader().getCardinalities(keys);
@@ -425,13 +428,13 @@ public abstract class TestAbstractMetricStorage
         return v.getBytes(UTF_8);
     }
 
-    protected MetricCacheKey mck(String value, String family, Authorizations auths)
+    protected MetricCacheKey mck(String indexTable, String value, String family, Authorizations auths)
     {
-        return new MetricCacheKey(table.getSchema(), table.getTable(), new Text(family), auths, new Range(new Text(value.getBytes(UTF_8))));
+        return new MetricCacheKey(indexTable, new Text(family), auths, new Range(new Text(value.getBytes(UTF_8))), storage);
     }
 
-    protected MetricCacheKey mck(String begin, String end, String family, Authorizations auths)
+    protected MetricCacheKey mck(String indexTable, String begin, String end, String family, Authorizations auths)
     {
-        return new MetricCacheKey(table.getSchema(), table.getTable(), new Text(family), auths, new Range(new Text(begin.getBytes(UTF_8)), new Text(end.getBytes(UTF_8))));
+        return new MetricCacheKey(indexTable, new Text(family), auths, new Range(new Text(begin.getBytes(UTF_8)), new Text(end.getBytes(UTF_8))), storage);
     }
 }

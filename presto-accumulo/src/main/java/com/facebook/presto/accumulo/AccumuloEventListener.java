@@ -407,19 +407,9 @@ public class AccumuloEventListener
         }
 
         for (IndexColumn indexColumn : TABLE.getParsedIndexColumns()) {
-            if (!tableManager.exists(indexColumn.getTableName())) {
-                tableManager.createAccumuloTable(indexColumn.getTableName());
-
-                try {
-                    connector.tableOperations().setLocalityGroups(indexColumn.getTableName(), indexColumn.getLocalityGroups());
-                    LOG.info("Created Accumulo table %s", indexColumn.getTableName());
-                }
-                catch (AccumuloSecurityException | AccumuloException e) {
-                    throw new PrestoException(AccumuloErrorCode.UNEXPECTED_ACCUMULO_ERROR, "Failed to set iterator", e);
-                }
-                catch (TableNotFoundException e) {
-                    LOG.warn("Failed to set iterator, table %s does not exist", TABLE.getFullTableName());
-                }
+            if (!tableManager.exists(indexColumn.getIndexTable())) {
+                tableManager.createAccumuloTable(indexColumn.getIndexTable());
+                LOG.info("Created Accumulo table %s", indexColumn.getIndexTable());
             }
         }
 

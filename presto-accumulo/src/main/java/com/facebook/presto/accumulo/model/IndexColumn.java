@@ -16,12 +16,9 @@ package com.facebook.presto.accumulo.model;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
-import org.apache.hadoop.io.Text;
 
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
 
 import static com.google.common.base.MoreObjects.toStringHelper;
 import static java.util.Objects.requireNonNull;
@@ -29,18 +26,15 @@ import static java.util.Objects.requireNonNull;
 public class IndexColumn
 {
     private final List<String> columns;
-    private final String tableName;
-    private Map<String, Set<Text>> localityGroups;
+    private final String indexTable;
 
     @JsonCreator
     public IndexColumn(
-            @JsonProperty("columns") List<String> columns,
-            @JsonProperty("tableName") String tableName,
-            @JsonProperty("localityGroups") Map<String, Set<Text>> localityGroups)
+            @JsonProperty("indexTable") String indexTable,
+            @JsonProperty("columns") List<String> columns)
     {
+        this.indexTable = requireNonNull(indexTable, "indexTable is null");
         this.columns = requireNonNull(columns, "column is null");
-        this.tableName = requireNonNull(tableName, "tableName is null");
-        this.localityGroups = requireNonNull(localityGroups, "localityGroups is null");
     }
 
     @JsonProperty
@@ -50,15 +44,9 @@ public class IndexColumn
     }
 
     @JsonProperty
-    public String getTableName()
+    public String getIndexTable()
     {
-        return tableName;
-    }
-
-    @JsonProperty
-    public Map<String, Set<Text>> getLocalityGroups()
-    {
-        return localityGroups;
+        return indexTable;
     }
 
     @JsonIgnore
@@ -70,7 +58,7 @@ public class IndexColumn
     @Override
     public int hashCode()
     {
-        return Objects.hash(columns);
+        return Objects.hash(indexTable, columns);
     }
 
     @Override
@@ -85,12 +73,13 @@ public class IndexColumn
         }
 
         IndexColumn other = (IndexColumn) obj;
-        return Objects.equals(this.columns, other.columns);
+        return Objects.equals(this.indexTable, other.indexTable) &&
+                Objects.equals(this.columns, other.columns);
     }
 
     @Override
     public String toString()
     {
-        return toStringHelper(this).add("tableName", tableName).add("columns", columns).toString();
+        return toStringHelper(this).add("indexTable", indexTable).add("columns", columns).toString();
     }
 }

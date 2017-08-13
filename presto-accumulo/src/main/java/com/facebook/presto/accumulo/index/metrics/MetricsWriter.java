@@ -42,6 +42,7 @@ public abstract class MetricsWriter
     protected final LexicoderRowSerializer serializer = new LexicoderRowSerializer();
 
     private static final ColumnVisibility EMPTY_VISIBILITY = new ColumnVisibility();
+    private String metricsTable;
 
     /**
      * Creates a new instance of {@link MetricsWriter}
@@ -51,6 +52,7 @@ public abstract class MetricsWriter
     public MetricsWriter(AccumuloTable table)
     {
         this.table = requireNonNull(table, "table is null");
+        this.metricsTable = AccumuloMetricsStorage.getMetricsTableName(table);
     }
 
     /**
@@ -58,7 +60,7 @@ public abstract class MetricsWriter
      */
     public void incrementRowCount()
     {
-        incrementCardinality(METRICS_TABLE_ROW_ID, METRICS_TABLE_ROWS_COLUMN, EMPTY_VISIBILITY);
+        incrementCardinality(metricsTable, METRICS_TABLE_ROW_ID, METRICS_TABLE_ROWS_COLUMN, EMPTY_VISIBILITY);
     }
 
     /**
@@ -68,9 +70,9 @@ public abstract class MetricsWriter
      * @param column Column of the row
      * @param visibility Row's visibility
      */
-    public void incrementCardinality(ByteBuffer value, ByteBuffer column, ColumnVisibility visibility)
+    public void incrementCardinality(String table, ByteBuffer value, ByteBuffer column, ColumnVisibility visibility)
     {
-        metrics.computeIfAbsent(new CardinalityKey(value, column, visibility), key -> new AtomicLong(0L)).incrementAndGet();
+        metrics.computeIfAbsent(new CardinalityKey(table, value, column, visibility), key -> new AtomicLong(0L)).incrementAndGet();
     }
 
     /**
@@ -78,7 +80,7 @@ public abstract class MetricsWriter
      */
     public void decrementRowCount()
     {
-        decrementCardinality(METRICS_TABLE_ROW_ID, METRICS_TABLE_ROWS_COLUMN, EMPTY_VISIBILITY);
+        decrementCardinality(metricsTable, METRICS_TABLE_ROW_ID, METRICS_TABLE_ROWS_COLUMN, EMPTY_VISIBILITY);
     }
 
     /**
@@ -88,9 +90,9 @@ public abstract class MetricsWriter
      * @param column Column of the row
      * @param visibility Row's visibility
      */
-    public void decrementCardinality(ByteBuffer value, ByteBuffer column, ColumnVisibility visibility)
+    public void decrementCardinality(String table, ByteBuffer value, ByteBuffer column, ColumnVisibility visibility)
     {
-        metrics.computeIfAbsent(new CardinalityKey(value, column, visibility), key -> new AtomicLong(0L)).decrementAndGet();
+        metrics.computeIfAbsent(new CardinalityKey(table, value, column, visibility), key -> new AtomicLong(0L)).decrementAndGet();
     }
 
     /**
@@ -109,6 +111,7 @@ public abstract class MetricsWriter
 
     protected static class CardinalityKey
     {
+        public String table;
         public ByteBuffer value;
         public ByteBuffer column;
         public ColumnVisibility visibility;
@@ -117,12 +120,14 @@ public abstract class MetricsWriter
         /**
          * Creates a new instance of {@link CardinalityKey}
          *
+         * @param table The destination table for the index column
          * @param value The value of the cell
          * @param column The column of the row
          * @param visibility The column visibility
          */
-        public CardinalityKey(ByteBuffer value, ByteBuffer column, ColumnVisibility visibility)
+        public CardinalityKey(String table, ByteBuffer value, ByteBuffer column, ColumnVisibility visibility)
         {
+            this.table = requireNonNull(table, "table is null");
             this.value = requireNonNull(value, "value is null");
             this.column = requireNonNull(column, "column is null");
             requireNonNull(visibility, "visibility is null");

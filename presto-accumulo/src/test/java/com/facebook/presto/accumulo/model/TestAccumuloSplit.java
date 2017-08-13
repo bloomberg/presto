@@ -60,7 +60,7 @@ public class TestAccumuloSplit
                 ImmutableList.of(new AccumuloRange(), new AccumuloRange("bar".getBytes(UTF_8), "foo".getBytes(UTF_8)), new AccumuloRange("bar".getBytes(UTF_8), false, "baz".getBytes(UTF_8), false)),
                 Optional.of(
                         new IndexQueryParameters(
-                                new IndexColumn(ImmutableList.of("bar", "baz"), "table", ImmutableMap.of()),
+                                new IndexColumn("table", ImmutableList.of("bar", "baz")),
                                 "index-family",
                                 ImmutableList.of(new AccumuloRange("b".getBytes(UTF_8), "c".getBytes(UTF_8))))),
                 ImmutableList.of(

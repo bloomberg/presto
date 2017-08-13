@@ -14,6 +14,7 @@
 package com.facebook.presto.accumulo;
 
 import com.facebook.presto.spi.PrestoException;
+import com.google.common.collect.ImmutableMap;
 import io.airlift.log.Logger;
 import org.apache.accumulo.core.client.AccumuloException;
 import org.apache.accumulo.core.client.AccumuloSecurityException;
@@ -122,6 +123,19 @@ public class AccumuloTableManager
         }
         catch (TableExistsException e) {
             throw new PrestoException(ACCUMULO_TABLE_EXISTS, "Accumulo table already exists", e);
+        }
+    }
+
+    public Map<String, Set<Text>> getLocalityGroups(String tableName)
+    {
+        try {
+            return ImmutableMap.copyOf(connector.tableOperations().getLocalityGroups(tableName));
+        }
+        catch (AccumuloException e) {
+            throw new PrestoException(UNEXPECTED_ACCUMULO_ERROR, "Failed to get locality groups", e);
+        }
+        catch (TableNotFoundException e) {
+            throw new PrestoException(ACCUMULO_TABLE_DNE, "Failed to get locality groups, table does not exist", e);
         }
     }
 

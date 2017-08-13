@@ -13,7 +13,6 @@
  */
 package com.facebook.presto.accumulo.metadata;
 
-import com.facebook.presto.accumulo.index.Indexer;
 import com.facebook.presto.accumulo.index.metrics.AccumuloMetricsStorage;
 import com.facebook.presto.accumulo.index.metrics.MetricsStorage;
 import com.facebook.presto.accumulo.model.AccumuloColumnHandle;
@@ -28,22 +27,17 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.google.common.base.Splitter;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSet;
-import com.google.common.primitives.Bytes;
 import org.apache.accumulo.core.client.Connector;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.tuple.Pair;
-import org.apache.hadoop.io.Text;
 
 import java.lang.reflect.InvocationTargetException;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
 import java.util.stream.Collectors;
 
-import static com.facebook.presto.accumulo.index.Indexer.HYPHEN_BYTE;
 import static com.facebook.presto.spi.StandardErrorCode.FUNCTION_IMPLEMENTATION_ERROR;
 import static com.facebook.presto.spi.StandardErrorCode.NOT_FOUND;
 import static com.facebook.presto.spi.type.TimestampType.TIMESTAMP;
@@ -51,7 +45,6 @@ import static com.facebook.presto.spi.type.VarcharType.VARCHAR;
 import static com.google.common.base.MoreObjects.toStringHelper;
 import static com.google.common.base.Preconditions.checkArgument;
 import static java.lang.String.format;
-import static java.nio.charset.StandardCharsets.UTF_8;
 import static java.util.Objects.requireNonNull;
 
 /**
@@ -200,28 +193,10 @@ public class AccumuloTable
                     }
 
                     List<String> parsedColumns = builder.build();
-                    return new IndexColumn(parsedColumns, getFullTableName() + "__" + StringUtils.join(parsedColumns, '_'), getLocalityGroups(parsedColumns));
+                    return new IndexColumn(getFullTableName() + "__" + StringUtils.join(parsedColumns, '_'), parsedColumns);
                 })
-                .sorted(Comparator.comparing(IndexColumn::getTableName))
+                .sorted(Comparator.comparing(IndexColumn::getIndexTable))
                 .collect(Collectors.toList());
-    }
-
-    private Map<String, Set<Text>> getLocalityGroups(List<String> indexColumns)
-    {
-        byte[] family = new byte[0];
-        for (String column : indexColumns) {
-            AccumuloColumnHandle columnHandle = getColumn(column);
-            byte[] concatFamily = Indexer.getIndexColumnFamily(columnHandle.getFamily().get().getBytes(UTF_8), columnHandle.getQualifier().get().getBytes(UTF_8));
-            family = family.length == 0
-                    ? concatFamily
-                    : Bytes.concat(family, HYPHEN_BYTE, concatFamily);
-        }
-
-        // Create a Text version of the index column family
-        Text indexColumnFamily = new Text(family);
-
-        // Add this to the locality groups, it is a 1:1 mapping of locality group to column families
-        return ImmutableMap.of(indexColumnFamily.toString(), ImmutableSet.of(indexColumnFamily));
     }
 
     @JsonIgnore

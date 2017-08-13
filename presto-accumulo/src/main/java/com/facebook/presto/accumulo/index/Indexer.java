@@ -588,10 +588,10 @@ public class Indexer
 
                 for (ColumnUpdate indexValue : indexValues.get(METRIC)) {
                     if (delete) {
-                        metricsWriter.decrementCardinality(wrap(indexValue.getColumnQualifier()), wrap(indexValue.getColumnFamily()), visibility);
+                        metricsWriter.decrementCardinality(indexColumn.getIndexTable(), wrap(indexValue.getColumnQualifier()), wrap(indexValue.getColumnFamily()), visibility);
                     }
                     else {
-                        metricsWriter.incrementCardinality(wrap(indexValue.getColumnQualifier()), wrap(indexValue.getColumnFamily()), visibility);
+                        metricsWriter.incrementCardinality(indexColumn.getIndexTable(), wrap(indexValue.getColumnQualifier()), wrap(indexValue.getColumnFamily()), visibility);
                     }
                 }
             }
@@ -694,7 +694,7 @@ public class Indexer
             indexMutation.put(family.array(), qualifier, visibility, EMPTY_BYTE);
         }
 
-        indexWriter.getBatchWriter(column.getTableName()).addMutation(indexMutation);
+        indexWriter.getBatchWriter(column.getIndexTable()).addMutation(indexMutation);
     }
 
     private void deleteIndexMutation(IndexColumn column, ByteBuffer row, ByteBuffer family, byte[] qualifier, ColumnVisibility visibility, Optional<Long> timestamp)
@@ -709,7 +709,7 @@ public class Indexer
             indexMutation.putDelete(family.array(), qualifier, visibility);
         }
 
-        indexWriter.getBatchWriter(column.getTableName()).addMutation(indexMutation);
+        indexWriter.getBatchWriter(column.getIndexTable()).addMutation(indexMutation);
     }
 
     /**

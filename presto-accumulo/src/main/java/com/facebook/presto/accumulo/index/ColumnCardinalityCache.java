@@ -22,6 +22,7 @@ import com.facebook.presto.spi.PrestoException;
 import com.google.common.cache.CacheBuilder;
 import com.google.common.cache.CacheLoader;
 import com.google.common.cache.LoadingCache;
+import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableMultimap;
 import com.google.common.collect.ListMultimap;
 import com.google.common.collect.Multimap;
@@ -144,8 +145,6 @@ public class ColumnCardinalityCache
             return ImmutableMultimap.of();
         }
 
-        cacheLoader.setMetricsStorage(metricsStorage);
-
         // Submit tasks to the executor to fetch column cardinality, adding it to the Guava cache if necessary
         CompletionService<Pair<Long, IndexQueryParameters>> executor = new ExecutorCompletionService<>(executorService);
         queryParameters.forEach(queryParameter ->
@@ -225,7 +224,7 @@ public class ColumnCardinalityCache
                 Optional<TraceScope> cardinalityTrace = Optional.empty();
                 try {
                     if (isTracingEnabled(session)) {
-                        String traceName = String.format("%s:%s:ColumnCardinalityCache:%s", session.getQueryId(), queryParameters.getIndexColumn().getTableName(), metricParamEntry.getKey());
+                        String traceName = String.format("%s:%s:ColumnCardinalityCache:%s", session.getQueryId(), queryParameters.getIndexColumn().getIndexTable(), metricParamEntry.getKey());
                         cardinalityTrace = Optional.of(startSpan(traceName, Sampler.ALWAYS));
                     }
 
@@ -234,7 +233,7 @@ public class ColumnCardinalityCache
                     List<MetricCacheKey> nonExactRanges = new ArrayList<>();
                     metricParamEntry.getValue()
                             .forEach(range -> {
-                                MetricCacheKey key = new MetricCacheKey(schema, table, metricParamEntry.getKey(), auths, range);
+                                MetricCacheKey key = new MetricCacheKey(queryParameters.getIndexColumn().getIndexTable(), metricParamEntry.getKey(), auths, range, metricsStorage);
                                 if (isExact(range)) {
                                     exactRanges.add(key);
                                 }
@@ -290,13 +289,6 @@ public class ColumnCardinalityCache
     private class CardinalityCacheLoader
             extends CacheLoader<MetricCacheKey, Long>
     {
-        private MetricsStorage metricsStorage;
-
-        public void setMetricsStorage(MetricsStorage metricsStorage)
-        {
-            this.metricsStorage = metricsStorage;
-        }
-
         /**
          * Loads the cardinality for the given Range. Uses a BatchScanner and sums the cardinality for all values that encapsulate the Range.
          *
@@ -307,7 +299,7 @@ public class ColumnCardinalityCache
         public Long load(@Nonnull MetricCacheKey key)
                 throws Exception
         {
-            return metricsStorage.newReader().getCardinality(key);
+            return key.metricsStorage.newReader().getCardinality(key);
         }
 
         @Override
@@ -316,7 +308,13 @@ public class ColumnCardinalityCache
         {
             @SuppressWarnings("unchecked")
             Collection<MetricCacheKey> cacheKeys = (Collection<MetricCacheKey>) keys;
-            return metricsStorage.newReader().getCardinalities(cacheKeys);
+            Optional<MetricCacheKey> cacheKey = cacheKeys.stream().findAny();
+            if (cacheKey.isPresent()) {
+                return cacheKey.get().metricsStorage.newReader().getCardinalities(cacheKeys);
+            }
+            else {
+                return ImmutableMap.of();
+            }
         }
     }
 }
