@@ -26,11 +26,13 @@ import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.primitives.Bytes;
+import org.apache.accumulo.core.client.AccumuloException;
+import org.apache.accumulo.core.client.AccumuloSecurityException;
 import org.apache.accumulo.core.client.BatchScanner;
-import org.apache.accumulo.core.client.BatchWriter;
 import org.apache.accumulo.core.client.BatchWriterConfig;
 import org.apache.accumulo.core.client.Connector;
 import org.apache.accumulo.core.client.IteratorSetting;
+import org.apache.accumulo.core.client.MultiTableBatchWriter;
 import org.apache.accumulo.core.client.MutationsRejectedException;
 import org.apache.accumulo.core.client.TableNotFoundException;
 import org.apache.accumulo.core.data.Key;
@@ -39,6 +41,7 @@ import org.apache.accumulo.core.data.Range;
 import org.apache.accumulo.core.data.Value;
 import org.apache.accumulo.core.iterators.LongCombiner;
 import org.apache.accumulo.core.iterators.TypedValueCombiner;
+import org.apache.accumulo.core.iterators.user.RegExFilter;
 import org.apache.accumulo.core.iterators.user.SummingCombiner;
 import org.apache.hadoop.io.Text;
 
@@ -55,6 +58,7 @@ import java.util.stream.Collectors;
 import static com.facebook.presto.accumulo.AccumuloErrorCode.ACCUMULO_TABLE_DNE;
 import static com.facebook.presto.accumulo.AccumuloErrorCode.UNEXPECTED_ACCUMULO_ERROR;
 import static com.facebook.presto.accumulo.index.Indexer.TIMESTAMP_CARDINALITY_FAMILIES;
+import static com.facebook.presto.accumulo.metadata.AccumuloTable.getFullTableName;
 import static com.facebook.presto.spi.StandardErrorCode.FUNCTION_IMPLEMENTATION_ERROR;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static java.util.Objects.requireNonNull;
@@ -78,84 +82,93 @@ public class AccumuloMetricsStorage
     @Override
     public void create(AccumuloTable table)
     {
-        String metricsTableName = getMetricsTableName(table.getSchema(), table.getTable());
-        if (!tableManager.exists(metricsTableName)) {
-            tableManager.createAccumuloTable(metricsTableName);
+        if (!tableManager.exists(getMetricsTableName(table))) {
+            tableManager.createAccumuloTable(getMetricsTableName(table));
+
+            // Summing combiner for rows
+            IteratorSetting setting1 = new IteratorSetting(1, SummingCombiner.class);
+            SummingCombiner.setEncodingType(setting1, ENCODER_TYPE);
+            SummingCombiner.setColumns(setting1, ImmutableList.of(new IteratorSetting.Column(new String(METRICS_TABLE_ROWS_COLUMN.array(), UTF_8), new String(CARDINALITY_CQ, UTF_8))));
+            tableManager.setIterator(getMetricsTableName(table), setting1);
+
+            // Filter out all entries with a value of zero
+            IteratorSetting setting2 = new IteratorSetting(2, RegExFilter.class);
+            RegExFilter.setRegexs(setting2, ".*", ".*", "___card___", "0", false);
+            RegExFilter.setNegate(setting2, true);
+            tableManager.setIterator(getMetricsTableName(table), setting2);
         }
 
-        tableManager.setLocalityGroups(metricsTableName, getLocalityGroups(table));
-
-        // Attach iterators to metrics table
-        for (IteratorSetting setting : getMetricIterators(table)) {
-            tableManager.setIterator(metricsTableName, setting);
-        }
+        // Attach iterators to index tables
+        table.getParsedIndexColumns().forEach(column -> {
+            tableManager.setLocalityGroups(column.getIndexTable(), getLocalityGroups(table, column));
+            getMetricIterators(table, column).forEach(setting -> tableManager.setIterator(column.getIndexTable(), setting));
+        });
     }
 
-    private Map<String, Set<Text>> getLocalityGroups(AccumuloTable table)
+    private Map<String, Set<Text>> getLocalityGroups(AccumuloTable table, IndexColumn indexColumn)
     {
         ImmutableMap.Builder<String, Set<Text>> groups = ImmutableMap.builder();
-
-        for (IndexColumn indexColumn : table.getParsedIndexColumns()) {
-            List<byte[]> families = new ArrayList<>();
-            for (String column : indexColumn.getColumns()) {
-                AccumuloColumnHandle columnHandle = table.getColumn(column);
-                byte[] concatFamily = Indexer.getIndexColumnFamily(columnHandle.getFamily().get().getBytes(UTF_8), columnHandle.getQualifier().get().getBytes(UTF_8));
-                if (columnHandle.getType().equals(TimestampType.TIMESTAMP)) {
-                    if (families.size() == 0) {
-                        for (byte[] tsFamily : TIMESTAMP_CARDINALITY_FAMILIES.values()) {
-                            families.add(Bytes.concat(concatFamily, tsFamily));
-                        }
-                    }
-                    else {
-                        List<byte[]> newFamilies = new ArrayList<>();
-                        for (byte[] family : families) {
-                            for (byte[] tsFamily : TIMESTAMP_CARDINALITY_FAMILIES.values()) {
-                                newFamilies.add(Bytes.concat(family, HYPHEN, Bytes.concat(concatFamily, tsFamily)));
-                            }
-                        }
-                        families = newFamilies;
+        List<byte[]> families = new ArrayList<>();
+        for (String column : indexColumn.getColumns()) {
+            AccumuloColumnHandle columnHandle = table.getColumn(column);
+            byte[] concatFamily = Indexer.getIndexColumnFamily(columnHandle.getFamily().get().getBytes(UTF_8), columnHandle.getQualifier().get().getBytes(UTF_8));
+            if (columnHandle.getType().equals(TimestampType.TIMESTAMP)) {
+                if (families.size() == 0) {
+                    for (byte[] tsFamily : TIMESTAMP_CARDINALITY_FAMILIES.values()) {
+                        families.add(Bytes.concat(concatFamily, tsFamily));
                     }
                 }
                 else {
-                    if (families.size() == 0) {
-                        families.add(concatFamily);
-                    }
-                    else {
-                        List<byte[]> newFamilies = new ArrayList<>();
-                        for (byte[] family : families) {
-                            newFamilies.add(Bytes.concat(family, HYPHEN, concatFamily));
+                    List<byte[]> newFamilies = new ArrayList<>();
+                    for (byte[] family : families) {
+                        for (byte[] tsFamily : TIMESTAMP_CARDINALITY_FAMILIES.values()) {
+                            newFamilies.add(Bytes.concat(family, HYPHEN, Bytes.concat(concatFamily, tsFamily)));
                         }
-                        families = newFamilies;
                     }
+                    families = newFamilies;
                 }
             }
-
-            for (byte[] family : families) {
-                // Create a Text version of the index column family
-                Text indexColumnFamily = new Text(family);
-
-                // Add this to the locality groups,
-                // it is a 1:1 mapping of locality group to column families
-                groups.put(indexColumnFamily.toString(), ImmutableSet.of(indexColumnFamily));
+            else {
+                if (families.size() == 0) {
+                    families.add(concatFamily);
+                }
+                else {
+                    List<byte[]> newFamilies = new ArrayList<>();
+                    for (byte[] family : families) {
+                        newFamilies.add(Bytes.concat(family, HYPHEN, concatFamily));
+                    }
+                    families = newFamilies;
+                }
             }
+        }
+
+        for (byte[] family : families) {
+            // Create a Text version of the index column family
+            Text indexColumnFamily = new Text(family);
+
+            // Add this to the locality groups,
+            // it is a 1:1 mapping of locality group to column families
+            groups.put(indexColumnFamily.toString(), ImmutableSet.of(indexColumnFamily));
         }
 
         return groups.build();
     }
 
+    public static String getMetricsTableName(AccumuloTable table)
+    {
+        return table.getFullTableName() + "_metrics";
+    }
+
     @Override
     public void rename(AccumuloTable oldTable, AccumuloTable newTable)
     {
-        String oldTableName = getMetricsTableName(oldTable.getSchema(), oldTable.getTable());
-        String newTableName = getMetricsTableName(newTable.getSchema(), newTable.getTable());
-        tableManager.renameAccumuloTable(oldTableName, newTableName);
+        tableManager.renameAccumuloTable(getMetricsTableName(oldTable), getMetricsTableName(newTable));
     }
 
     @Override
     public boolean exists(SchemaTableName table)
     {
-        String metricsTableName = getMetricsTableName(table.getSchemaName(), table.getTableName());
-        return tableManager.exists(metricsTableName);
+        return tableManager.exists(getFullTableName(table.getSchemaName(), table.getTableName()) + "_metrics");
     }
 
     @Override
@@ -165,9 +178,8 @@ public class AccumuloMetricsStorage
             return;
         }
 
-        String metricsTableName = getMetricsTableName(table.getSchema(), table.getTable());
-        if (tableManager.exists(metricsTableName)) {
-            tableManager.deleteAccumuloTable(metricsTableName);
+        if (tableManager.exists(getMetricsTableName(table))) {
+            tableManager.deleteAccumuloTable(getMetricsTableName(table));
         }
     }
 
@@ -180,48 +192,37 @@ public class AccumuloMetricsStorage
     @Override
     public MetricsReader newReader()
     {
-        return new AccumuloMetricsReader(connector);
-    }
-
-    /**
-     * Gets the fully-qualified index metrics table name for the given table
-     *
-     * @param schema Schema name
-     * @param table Table name
-     * @return Qualified index metrics table name
-     */
-    private static String getMetricsTableName(String schema, String table)
-    {
-        return schema.equals("default")
-                ? table + "_idx_metrics"
-                : schema + '.' + table + "_idx_metrics";
+        return new AccumuloMetricsReader(connector, this);
     }
 
     /**
      * Gets a collection of iterator settings that should be added to the metric table for the given
      * Accumulo table. Don't forget! Please!
      *
-     * @param table Table for retrieving metrics iterators, see AccumuloClient#getTable
+     * @param column Column for the table
      * @return Collection of iterator settings
      */
-    private Collection<IteratorSetting> getMetricIterators(AccumuloTable table)
+    private Collection<IteratorSetting> getMetricIterators(AccumuloTable table, IndexColumn column)
     {
         String cardQualifier = new String(CARDINALITY_CQ, UTF_8);
-        String rowsFamily = new String(METRICS_TABLE_ROWS_COLUMN.array(), UTF_8);
-
         // Build a string for all columns where the summing combiner should be applied, i.e. all indexed columns
         ImmutableList.Builder<IteratorSetting.Column> columnBuilder = ImmutableList.builder();
-        columnBuilder.add(new IteratorSetting.Column(rowsFamily, cardQualifier));
-        for (String s : getLocalityGroups(table).keySet()) {
-            columnBuilder.add(new IteratorSetting.Column(s, cardQualifier));
+
+        for (String indexFamily : getLocalityGroups(table, column).keySet()) {
+            columnBuilder.add(new IteratorSetting.Column(indexFamily, cardQualifier));
         }
 
         // Summing combiner for cardinality columns
-        IteratorSetting s1 = new IteratorSetting(1, SummingCombiner.class);
-        SummingCombiner.setEncodingType(s1, LongCombiner.Type.STRING);
-        SummingCombiner.setColumns(s1, columnBuilder.build());
+        IteratorSetting setting1 = new IteratorSetting(1, SummingCombiner.class);
+        SummingCombiner.setEncodingType(setting1, ENCODER_TYPE);
+        SummingCombiner.setColumns(setting1, columnBuilder.build());
 
-        return ImmutableList.of(s1);
+        // Filter out all entries with a value of zero
+        IteratorSetting setting2 = new IteratorSetting(2, RegExFilter.class);
+        RegExFilter.setRegexs(setting2, ".*", ".*", "___card___", "0", false);
+        RegExFilter.setNegate(setting2, true);
+
+        return ImmutableList.of(setting1, setting2);
     }
 
     private static class AccumuloMetricsWriter
@@ -243,32 +244,44 @@ public class AccumuloMetricsStorage
         public void flush()
         {
             // Write out metrics mutations
-            try {
-                Collection<Mutation> mutations = this.getMetricsMutations();
-                if (mutations.size() > 0) {
-                    BatchWriter metricsWriter = connector.createBatchWriter(getMetricsTableName(table.getSchema(), table.getTable()), writerConfig);
-                    metricsWriter.addMutations(mutations);
-                    metricsWriter.close();
+            MultiTableBatchWriter multiTableBatchWriter = connector.createMultiTableBatchWriter(writerConfig);
+            getMetricsMutations().forEach((table, mutations) -> {
+                if (mutations.isEmpty()) {
+                    return;
                 }
+
+                try {
+                    multiTableBatchWriter.getBatchWriter(table).addMutations(mutations);
+                }
+                catch (MutationsRejectedException e) {
+                    throw new PrestoException(UNEXPECTED_ACCUMULO_ERROR, "Mutation(s) were rejected by server on close", e);
+                }
+                catch (TableNotFoundException e) {
+                    throw new PrestoException(ACCUMULO_TABLE_DNE, "Accumulo table does not exist", e);
+                }
+                catch (AccumuloException | AccumuloSecurityException e) {
+                    throw new PrestoException(UNEXPECTED_ACCUMULO_ERROR, "Flush of mutations failed", e);
+                }
+            });
+
+            try {
+                multiTableBatchWriter.close();
             }
             catch (MutationsRejectedException e) {
-                throw new PrestoException(UNEXPECTED_ACCUMULO_ERROR, "Mutation was rejected by server on close", e);
-            }
-            catch (TableNotFoundException e) {
-                throw new PrestoException(ACCUMULO_TABLE_DNE, "Accumulo table does not exist", e);
+                throw new PrestoException(UNEXPECTED_ACCUMULO_ERROR, "Mutation(s) were rejected by server on close", e);
             }
         }
 
         /**
          * Gets a collection of mutations based on the current metric map
          *
-         * @return A collection of Mutations
+         * @return A map of table name to the collection of Mutations
          */
-        private Collection<Mutation> getMetricsMutations()
+        private Map<String, Collection<Mutation>> getMetricsMutations()
         {
             // Synchronize here to avoid ConcurrentModificationException while iterating the entries
             synchronized (metrics) {
-                ImmutableList.Builder<Mutation> mutationBuilder = ImmutableList.builder();
+                Map<String, Collection<Mutation>> tableToMutations = new HashMap<>();
                 // Mapping of column value to column to number of row IDs that contain that value
                 for (Map.Entry<CardinalityKey, AtomicLong> entry : metrics.entrySet()) {
                     if (entry.getValue().get() != 0) {
@@ -277,7 +290,6 @@ public class AccumuloMetricsStorage
                         // Qualifier: CARDINALITY_CQ
                         // Visibility: Inherited from indexed Mutation
                         // Value: Cardinality
-
                         Mutation mut = new Mutation(entry.getKey().value.array());
                         mut.put(
                                 entry.getKey().column.array(),
@@ -286,12 +298,12 @@ public class AccumuloMetricsStorage
                                 ENCODER.encode(entry.getValue().get()));
 
                         // Add to our list of mutations
-                        mutationBuilder.add(mut);
+                        tableToMutations.computeIfAbsent(entry.getKey().table, table -> new ArrayList<>()).add(mut);
                     }
                 }
 
                 metrics.clear();
-                return mutationBuilder.build();
+                return ImmutableMap.copyOf(tableToMutations);
             }
         }
     }
@@ -302,10 +314,19 @@ public class AccumuloMetricsStorage
         private static final Text CARDINALITY_CQ_TEXT = new Text(CARDINALITY_CQ);
 
         private final Connector connector;
+        private final MetricsStorage metricsStorage;
 
-        public AccumuloMetricsReader(Connector connector)
+        public AccumuloMetricsReader(Connector connector, MetricsStorage metricsStorage)
         {
             this.connector = requireNonNull(connector, "connector is null");
+            this.metricsStorage = requireNonNull(metricsStorage, "metricsStorage is null");
+        }
+
+        @Override
+        public long getNumRowsInTable(AccumuloTable table)
+                throws Exception
+        {
+            return getCardinality(new MetricCacheKey(getMetricsTableName(table), METRICS_TABLE_ROWS_COLUMN_TEXT, EMPTY_AUTHS, METRICS_TABLE_ROWID_RANGE, metricsStorage));
         }
 
         @Override
@@ -313,15 +334,14 @@ public class AccumuloMetricsStorage
                 throws Exception
         {
             // Get metrics table name and the column family for the scanner
-            String metricsTable = getMetricsTableName(key.schema, key.table);
             IteratorSetting setting = new IteratorSetting(Integer.MAX_VALUE, "valuesummingcombiner", ValueSummingIterator.class);
             ValueSummingIterator.setEncodingType(setting, ENCODER_TYPE);
 
             // Create scanner for querying the range
             BatchScanner scanner = null;
             try {
-                scanner = connector.createBatchScanner(metricsTable, key.auths, 10);
-                scanner.setRanges(connector.tableOperations().splitRangeByTablets(metricsTable, key.range, Integer.MAX_VALUE));
+                scanner = connector.createBatchScanner(key.indexTable, key.auths, 10);
+                scanner.setRanges(connector.tableOperations().splitRangeByTablets(key.indexTable, key.range, Integer.MAX_VALUE));
                 scanner.fetchColumn(key.family, CARDINALITY_CQ_TEXT);
                 scanner.addScanIterator(setting);
 
@@ -355,17 +375,15 @@ public class AccumuloMetricsStorage
 
             // Create a copy of the map which we will use to fill out the zeroes
             Map<Range, MetricCacheKey> remainingKeys = new HashMap<>(rangeToKey);
-
             MetricCacheKey anyKey = super.getAnyKey(keys);
 
             // Get metrics table name and the column family for the scanner
-            String metricsTable = getMetricsTableName(anyKey.schema, anyKey.table);
             Text columnFamily = new Text(anyKey.family);
 
             // Create batch scanner for querying all ranges
             BatchScanner scanner = null;
             try {
-                scanner = connector.createBatchScanner(metricsTable, anyKey.auths, 10);
+                scanner = connector.createBatchScanner(anyKey.indexTable, anyKey.auths, 10);
                 scanner.setRanges(keys.parallelStream().map(k -> k.range).collect(Collectors.toList()));
                 scanner.fetchColumn(columnFamily, CARDINALITY_CQ_TEXT);
 
@@ -416,13 +434,12 @@ public class AccumuloMetricsStorage
             MetricCacheKey anyKey = super.getAnyKey(keys);
 
             // Get metrics table name and the column family for the scanner
-            String metricsTable = getMetricsTableName(anyKey.schema, anyKey.table);
             Text columnFamily = new Text(anyKey.family);
 
             // Create batch scanner for querying all ranges
             BatchScanner scanner = null;
             try {
-                scanner = connector.createBatchScanner(metricsTable, anyKey.auths, 10);
+                scanner = connector.createBatchScanner(anyKey.indexTable, anyKey.auths, 10);
                 scanner.setRanges(keys.parallelStream().map(k -> k.range).collect(Collectors.toList()));
                 scanner.fetchColumn(columnFamily, CARDINALITY_CQ_TEXT);
 
