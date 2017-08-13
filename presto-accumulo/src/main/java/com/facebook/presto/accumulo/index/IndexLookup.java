@@ -83,7 +83,7 @@ public class IndexLookup
         CompletionService<Set<Range>> executor = new ExecutorCompletionService<>(executorService);
         for (IndexQueryParameters queryParameters : indexParameters) {
             tasks.add(executor.submit(() -> {
-                String indexTable = queryParameters.getIndexColumn().getTableName();
+                String indexTable = queryParameters.getIndexColumn().getIndexTable();
                 Optional<TraceScope> indexTrace = Optional.empty();
                 BatchScanner scanner = null;
                 try {

@@ -17,16 +17,24 @@ import com.facebook.presto.accumulo.AccumuloQueryRunner;
 import com.facebook.presto.accumulo.conf.AccumuloConfig;
 import com.facebook.presto.accumulo.index.metrics.MetricsStorage.TimestampPrecision;
 import com.facebook.presto.accumulo.metadata.AccumuloTable;
+import com.facebook.presto.accumulo.model.IndexColumn;
 import com.facebook.presto.spi.PrestoException;
+import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
+import org.apache.accumulo.core.client.AccumuloException;
+import org.apache.accumulo.core.client.AccumuloSecurityException;
 import org.apache.accumulo.core.client.Connector;
+import org.apache.accumulo.core.client.TableExistsException;
+import org.apache.accumulo.core.client.TableNotFoundException;
 import org.apache.accumulo.core.security.Authorizations;
 import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeClass;
+import org.testng.annotations.BeforeMethod;
 import org.testng.annotations.Test;
 
 import java.util.Map;
 
+import static com.facebook.presto.accumulo.index.metrics.AccumuloMetricsStorage.getMetricsTableName;
 import static com.facebook.presto.accumulo.index.metrics.MetricsStorage.TimestampPrecision.DAY;
 import static com.facebook.presto.accumulo.index.metrics.MetricsStorage.TimestampPrecision.HOUR;
 import static com.facebook.presto.accumulo.index.metrics.MetricsStorage.TimestampPrecision.MINUTE;
@@ -67,14 +75,39 @@ public class TestAccumuloMetricStorage
         super.setupClass();
     }
 
+    @BeforeMethod
+    public void setup()
+            throws Exception
+    {
+        for (AccumuloTable accumuloTable : ImmutableList.of(table, table2)) {
+            connector.tableOperations().create(accumuloTable.getFullTableName());
+            for (IndexColumn indexColumn : accumuloTable.getParsedIndexColumns()) {
+                if (!connector.tableOperations().exists(indexColumn.getIndexTable())) {
+                    connector.tableOperations().create(indexColumn.getIndexTable());
+                }
+            }
+        }
+    }
+
     @AfterMethod
     public void cleanup()
             throws Exception
     {
-        for (String table : connector.tableOperations().list()) {
-            if (table.contains(super.table.getFullTableName()) || table.contains(super.table2.getFullTableName())) {
-                connector.tableOperations().delete(table);
+        for (AccumuloTable accumuloTable : ImmutableList.of(table, table2)) {
+            connector.tableOperations().delete(accumuloTable.getFullTableName());
+            for (IndexColumn indexColumn : accumuloTable.getParsedIndexColumns()) {
+                if (connector.tableOperations().exists(indexColumn.getIndexTable())) {
+                    connector.tableOperations().delete(indexColumn.getIndexTable());
+                }
             }
+        }
+
+        if (connector.tableOperations().exists(getMetricsTableName(table))) {
+            connector.tableOperations().delete(getMetricsTableName(table));
+        }
+
+        if (connector.tableOperations().exists(getMetricsTableName(table2))) {
+            connector.tableOperations().delete(getMetricsTableName(table2));
         }
     }
 
@@ -83,8 +116,14 @@ public class TestAccumuloMetricStorage
             throws Exception
     {
         AccumuloTable table = getTable("test_accumulo_metric_storage_create");
-        storage.create(table);
-        assertTrue(connector.tableOperations().exists(table.getFullTableName() + "_idx_metrics"));
+        try {
+            createIndexTables(table);
+            storage.create(table);
+            assertTrue(connector.tableOperations().exists(getMetricsTableName(table)));
+        }
+        finally {
+            destroyIndexTables(table);
+        }
     }
 
     @Test
@@ -92,9 +131,15 @@ public class TestAccumuloMetricStorage
             throws Exception
     {
         AccumuloTable table = getTable("test_accumulo_metric_storage_create_already_exists");
-        connector.tableOperations().create(table.getFullTableName() + "_idx_metrics");
-        storage.create(table);
-        assertTrue(connector.tableOperations().exists(table.getFullTableName() + "_idx_metrics"));
+        try {
+            createIndexTables(table);
+            connector.tableOperations().create(getMetricsTableName(table));
+            storage.create(table);
+            assertTrue(connector.tableOperations().exists(getMetricsTableName(table)));
+        }
+        finally {
+            destroyIndexTables(table);
+        }
     }
 
     @Test
@@ -102,10 +147,17 @@ public class TestAccumuloMetricStorage
             throws Exception
     {
         AccumuloTable table = getTable("test_accumulo_metric_storage_drop_table");
-        storage.create(table);
-        assertTrue(connector.tableOperations().exists(table.getFullTableName() + "_idx_metrics"));
-        storage.drop(table);
-        assertFalse(connector.tableOperations().exists(table.getFullTableName() + "_idx_metrics"));
+        try {
+            createIndexTables(table);
+
+            storage.create(table);
+            assertTrue(connector.tableOperations().exists(getMetricsTableName(table)));
+            storage.drop(table);
+            assertFalse(connector.tableOperations().exists(getMetricsTableName(table)));
+        }
+        finally {
+            destroyIndexTables(table);
+        }
     }
 
     @Test
@@ -114,7 +166,7 @@ public class TestAccumuloMetricStorage
     {
         AccumuloTable table = getTable("test_accumulo_metric_storage_drop_table_does_not_exist");
         storage.drop(table);
-        assertFalse(connector.tableOperations().exists(table.getFullTableName() + "_idx_metrics"));
+        assertFalse(connector.tableOperations().exists(getMetricsTableName(table)));
     }
 
     @Override
@@ -122,10 +174,16 @@ public class TestAccumuloMetricStorage
             throws Exception
     {
         AccumuloTable externalTable = getTable("test_accumulo_metric_storage_drop_external_table", true);
-        storage.create(externalTable);
-        assertTrue(connector.tableOperations().exists(externalTable.getFullTableName() + "_idx_metrics"));
-        storage.drop(externalTable);
-        assertTrue(connector.tableOperations().exists(externalTable.getFullTableName() + "_idx_metrics"));
+        try {
+            createIndexTables(externalTable);
+            storage.create(externalTable);
+            assertTrue(connector.tableOperations().exists(getMetricsTableName(externalTable)));
+            storage.drop(externalTable);
+            assertTrue(connector.tableOperations().exists(getMetricsTableName(externalTable)));
+        }
+        finally {
+            destroyIndexTables(externalTable);
+        }
     }
 
     @Test
@@ -134,10 +192,18 @@ public class TestAccumuloMetricStorage
     {
         AccumuloTable table = getTable("test_accumulo_metric_storage_rename_table");
         AccumuloTable table2 = getTable("test_accumulo_metric_storage_rename_table2");
-        storage.create(table);
-        storage.rename(table, table2);
-        assertFalse(connector.tableOperations().exists(table.getFullTableName() + "_idx_metrics"));
-        assertTrue(connector.tableOperations().exists(table2.getFullTableName() + "_idx_metrics"));
+        try {
+            createIndexTables(table);
+            createIndexTables(table2);
+            storage.create(table);
+            storage.rename(table, table2);
+            assertFalse(connector.tableOperations().exists(getMetricsTableName(table)));
+            assertTrue(connector.tableOperations().exists(getMetricsTableName(table2)));
+        }
+        finally {
+            destroyIndexTables(table);
+            destroyIndexTables(table2);
+        }
     }
 
     @Test(expectedExceptions = PrestoException.class)
@@ -155,9 +221,15 @@ public class TestAccumuloMetricStorage
     {
         AccumuloTable table = getTable("test_accumulo_metric_storage_rename_new_table_exists");
         AccumuloTable table2 = getTable("test_accumulo_metric_storage_rename_new_table_exists2");
-        storage.create(table);
-        connector.tableOperations().create(table2.getFullTableName() + "_idx_metrics");
-        storage.rename(table, table2);
+        try {
+            createIndexTables(table);
+            storage.create(table);
+            connector.tableOperations().create(AccumuloMetricsStorage.getMetricsTableName(table2));
+            storage.rename(table, table2);
+        }
+        finally {
+            destroyIndexTables(table);
+        }
     }
 
     @Test
@@ -165,9 +237,16 @@ public class TestAccumuloMetricStorage
             throws Exception
     {
         AccumuloTable table = getTable("test_accumulo_metric_storage_exists");
-        assertFalse(storage.exists(table.getSchemaTableName()));
-        storage.create(table);
-        assertTrue(storage.exists(table.getSchemaTableName()));
+        try {
+            createIndexTables(table);
+
+            assertFalse(storage.exists(table.getSchemaTableName()));
+            storage.create(table);
+            assertTrue(storage.exists(table.getSchemaTableName()));
+        }
+        finally {
+            destroyIndexTables(table);
+        }
     }
 
     private AccumuloTable getTable(String tablename)
@@ -178,5 +257,25 @@ public class TestAccumuloMetricStorage
     private AccumuloTable getTable(String tablename, boolean external)
     {
         return new AccumuloTable(table.getSchema(), tablename, table.getColumns(), table.getRowId(), external, table.getSerializerClassName(), table.getScanAuthorizations(), table.getMetricsStorageClass(), table.isTruncateTimestamps(), table.getIndexColumns());
+    }
+
+    private void createIndexTables(AccumuloTable table)
+            throws TableExistsException, AccumuloSecurityException, AccumuloException
+    {
+        for (IndexColumn indexColumn : table.getParsedIndexColumns()) {
+            if (!connector.tableOperations().exists(indexColumn.getIndexTable())) {
+                connector.tableOperations().create(indexColumn.getIndexTable());
+            }
+        }
+    }
+
+    private void destroyIndexTables(AccumuloTable table)
+            throws AccumuloSecurityException, AccumuloException, TableNotFoundException
+    {
+        for (IndexColumn indexColumn : table.getParsedIndexColumns()) {
+            if (connector.tableOperations().exists(indexColumn.getIndexTable())) {
+                connector.tableOperations().delete(indexColumn.getIndexTable());
+            }
+        }
     }
 }

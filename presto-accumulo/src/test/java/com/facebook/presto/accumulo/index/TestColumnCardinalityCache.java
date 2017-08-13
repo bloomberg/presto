@@ -21,7 +21,7 @@ import com.facebook.presto.accumulo.conf.AccumuloConfig;
 import com.facebook.presto.accumulo.conf.AccumuloSessionProperties;
 import com.facebook.presto.accumulo.conf.AccumuloTableProperties;
 import com.facebook.presto.accumulo.index.metrics.MetricsStorage;
-import com.facebook.presto.accumulo.index.metrics.MetricsWriter;
+import com.facebook.presto.accumulo.io.PrestoBatchWriter;
 import com.facebook.presto.accumulo.metadata.AccumuloTable;
 import com.facebook.presto.accumulo.metadata.ZooKeeperMetadataManager;
 import com.facebook.presto.accumulo.model.AccumuloColumnHandle;
@@ -43,17 +43,13 @@ import com.facebook.presto.testing.TestingConnectorSession;
 import com.facebook.presto.testing.TestingNodeManager;
 import com.facebook.presto.type.TypeRegistry;
 import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Multimap;
 import io.airlift.slice.Slices;
 import io.airlift.tpch.LineItem;
 import io.airlift.tpch.TpchColumn;
 import io.airlift.tpch.TpchTable;
 import io.airlift.units.Duration;
-import org.apache.accumulo.core.client.BatchWriter;
-import org.apache.accumulo.core.client.BatchWriterConfig;
 import org.apache.accumulo.core.client.Connector;
-import org.apache.accumulo.core.client.MultiTableBatchWriter;
 import org.apache.accumulo.core.data.Mutation;
 import org.apache.accumulo.core.security.Authorizations;
 import org.apache.accumulo.core.security.ColumnVisibility;
@@ -120,6 +116,7 @@ public class TestColumnCardinalityCache
     }
 
     private AccumuloClient client;
+    private AccumuloTable table;
     private Connector connector;
     private MetricsStorage storage;
 
@@ -135,6 +132,7 @@ public class TestColumnCardinalityCache
 
         client = new AccumuloClient(connector, CONFIG, new ZooKeeperMetadataManager(CONFIG, new TypeRegistry()), new AccumuloTableManager(connector), new TestingNodeManager(), new TabletSplitGenerationMachine(CONFIG, connector, new ColumnCardinalityCache(CONFIG)));
         connector.securityOperations().changeUserAuthorizations("root", new Authorizations("private", "moreprivate", "foo", "bar", "xyzzy"));
+        table = client.createTable(getTableMetadata(SCHEMA, TpchTable.LINE_ITEM));
         writeTestData();
     }
 
@@ -177,27 +175,21 @@ public class TestColumnCardinalityCache
     private void writeTestData()
             throws Exception
     {
-        AccumuloTable table = client.createTable(getTableMetadata(SCHEMA, TpchTable.LINE_ITEM));
         RowSchema schema = fromColumns(TpchTable.LINE_ITEM.getColumns());
 
         List<AccumuloColumnHandle> columns = fromTpchColumns(TpchTable.LINE_ITEM.getColumns());
         AccumuloRowSerializer serializer = new LexicoderRowSerializer();
-        MultiTableBatchWriter multiTableBatchWriter = connector.createMultiTableBatchWriter(new BatchWriterConfig());
-        BatchWriter writer = multiTableBatchWriter.getBatchWriter(table.getFullTableName());
-        MetricsWriter metricsWriter = table.getMetricsStorageInstance(connector).newWriter(table);
-        Indexer indexer = new Indexer(connector, table, multiTableBatchWriter, metricsWriter);
+        PrestoBatchWriter batchWriter = new PrestoBatchWriter(connector, connector.securityOperations().getUserAuthorizations("root"), table);
 
         for (LineItem item : TpchTable.LINE_ITEM.createGenerator(.01f, 1, 1)) {
             String line = item.toLine();
             line = UUID.randomUUID() + "|" + item.toLine().substring(0, line.length() - 1);
             Row row = Row.fromString(schema, line, '|');
             Mutation data = toMutation(row, 0, columns, serializer);
-            writer.addMutation(data);
-            indexer.index(data);
+            batchWriter.addMutation(data);
         }
 
-        metricsWriter.close();
-        multiTableBatchWriter.close();
+        batchWriter.close();
     }
 
     @Test(expectedExceptions = NullPointerException.class)
@@ -262,7 +254,7 @@ public class TestColumnCardinalityCache
     {
         ColumnCardinalityCache cache = new ColumnCardinalityCache(CONFIG);
         Range range = Range.equal(DATE, tld("1998-01-01"));
-        List<IndexQueryParameters> queryParameters = ImmutableList.of(iqp("l_receiptdate_l_receiptdate", Domain.create(ValueSet.ofRanges(range), false)));
+        List<IndexQueryParameters> queryParameters = ImmutableList.of(iqp(table.getFullTableName() + "__l_receiptdate", "l_receiptdate_l_receiptdate", Domain.create(ValueSet.ofRanges(range), false)));
 
         Multimap<Long, IndexQueryParameters> cardinalities = cache.getCardinalities(SESSION, SCHEMA, TABLE, AUTHS, queryParameters, EARLY_RETURN_THRESHOLD, storage);
         assertEquals(cardinalities.size(), 1);
@@ -280,7 +272,7 @@ public class TestColumnCardinalityCache
         ColumnCardinalityCache cache = new ColumnCardinalityCache(CONFIG);
         Range range1 = Range.equal(DATE, tld("1998-01-01"));
         Range range2 = Range.equal(DATE, tld("1998-01-02"));
-        List<IndexQueryParameters> queryParameters = ImmutableList.of(iqp("l_receiptdate_l_receiptdate", Domain.create(ValueSet.ofRanges(range1, range2), false)));
+        List<IndexQueryParameters> queryParameters = ImmutableList.of(iqp(table.getFullTableName() + "__l_receiptdate", "l_receiptdate_l_receiptdate", Domain.create(ValueSet.ofRanges(range1, range2), false)));
 
         Multimap<Long, IndexQueryParameters> cardinalities = cache.getCardinalities(SESSION, SCHEMA, TABLE, AUTHS, queryParameters, EARLY_RETURN_THRESHOLD, storage);
         assertEquals(cardinalities.size(), 1);
@@ -297,7 +289,7 @@ public class TestColumnCardinalityCache
     {
         ColumnCardinalityCache cache = new ColumnCardinalityCache(CONFIG);
         Range range = Range.range(DATE, tld("1998-01-01"), false, tld("1998-01-03"), false);
-        List<IndexQueryParameters> queryParameters = ImmutableList.of(iqp("l_receiptdate_l_receiptdate", Domain.create(ValueSet.ofRanges(range), false)));
+        List<IndexQueryParameters> queryParameters = ImmutableList.of(iqp(table.getFullTableName() + "__l_receiptdate", "l_receiptdate_l_receiptdate", Domain.create(ValueSet.ofRanges(range), false)));
 
         Multimap<Long, IndexQueryParameters> cardinalities = cache.getCardinalities(SESSION, SCHEMA, TABLE, AUTHS, queryParameters, EARLY_RETURN_THRESHOLD, storage);
         assertEquals(cardinalities.size(), 1);
@@ -315,7 +307,7 @@ public class TestColumnCardinalityCache
         ColumnCardinalityCache cache = new ColumnCardinalityCache(CONFIG);
         Range range1 = Range.range(DATE, tld("1998-01-01"), false, tld("1998-01-03"), false);
         Range range2 = Range.range(DATE, tld("1998-01-10"), true, tld("1998-01-13"), true);
-        List<IndexQueryParameters> queryParameters = ImmutableList.of(iqp("l_receiptdate_l_receiptdate", Domain.create(ValueSet.ofRanges(range1, range2), false)));
+        List<IndexQueryParameters> queryParameters = ImmutableList.of(iqp(table.getFullTableName() + "__l_receiptdate", "l_receiptdate_l_receiptdate", Domain.create(ValueSet.ofRanges(range1, range2), false)));
 
         Multimap<Long, IndexQueryParameters> cardinalities = cache.getCardinalities(SESSION, SCHEMA, TABLE, AUTHS, queryParameters, EARLY_RETURN_THRESHOLD, storage);
         assertEquals(cardinalities.size(), 1);
@@ -335,8 +327,8 @@ public class TestColumnCardinalityCache
         Range lnRange = Range.equal(INTEGER, 7L);
         List<IndexQueryParameters> queryParameters =
                 ImmutableList.of(
-                        iqp("l_receiptdate_l_receiptdate", Domain.create(ValueSet.ofRanges(rdRange), false)),
-                        iqp("l_linenumber_l_linenumber", Domain.create(ValueSet.ofRanges(lnRange), false)));
+                        iqp(table.getFullTableName() + "__l_receiptdate", "l_receiptdate_l_receiptdate", Domain.create(ValueSet.ofRanges(rdRange), false)),
+                        iqp(table.getFullTableName() + "__l_linenumber", "l_linenumber_l_linenumber", Domain.create(ValueSet.ofRanges(lnRange), false)));
 
         Multimap<Long, IndexQueryParameters> cardinalities = cache.getCardinalities(SESSION, SCHEMA, TABLE, AUTHS, queryParameters, EARLY_RETURN_THRESHOLD, storage);
         assertEquals(cardinalities.size(), 2);
@@ -368,8 +360,8 @@ public class TestColumnCardinalityCache
 
         List<IndexQueryParameters> queryParameters =
                 ImmutableList.of(
-                        iqp("l_receiptdate_l_receiptdate", Domain.create(ValueSet.ofRanges(rdRange1, rdRange2), false)),
-                        iqp("l_linenumber_l_linenumber", Domain.create(ValueSet.ofRanges(lnRange1, lnRange2), false)));
+                        iqp(table.getFullTableName() + "__l_receiptdate", "l_receiptdate_l_receiptdate", Domain.create(ValueSet.ofRanges(rdRange1, rdRange2), false)),
+                        iqp(table.getFullTableName() + "__l_linenumber", "l_linenumber_l_linenumber", Domain.create(ValueSet.ofRanges(lnRange1, lnRange2), false)));
 
         Multimap<Long, IndexQueryParameters> cardinalities = cache.getCardinalities(SESSION, SCHEMA, TABLE, AUTHS, queryParameters, EARLY_RETURN_THRESHOLD, storage);
         assertEquals(cardinalities.size(), 2);
@@ -399,8 +391,8 @@ public class TestColumnCardinalityCache
 
         List<IndexQueryParameters> queryParameters =
                 ImmutableList.of(
-                        iqp("l_receiptdate_l_receiptdate", Domain.create(ValueSet.ofRanges(rdRange), false)),
-                        iqp("l_linenumber_l_linenumber", Domain.create(ValueSet.ofRanges(lnRange), false)));
+                        iqp(table.getFullTableName() + "__l_receiptdate", "l_receiptdate_l_receiptdate", Domain.create(ValueSet.ofRanges(rdRange), false)),
+                        iqp(table.getFullTableName() + "__l_linenumber", "l_linenumber_l_linenumber", Domain.create(ValueSet.ofRanges(lnRange), false)));
 
         Multimap<Long, IndexQueryParameters> cardinalities = cache.getCardinalities(SESSION, SCHEMA, TABLE, AUTHS, queryParameters, EARLY_RETURN_THRESHOLD, storage);
         assertEquals(cardinalities.size(), 2);
@@ -432,8 +424,8 @@ public class TestColumnCardinalityCache
 
         List<IndexQueryParameters> queryParameters =
                 ImmutableList.of(
-                        iqp("l_receiptdate_l_receiptdate", Domain.create(ValueSet.ofRanges(rdRange1, rdRange2), false)),
-                        iqp("l_linenumber_l_linenumber", Domain.create(ValueSet.ofRanges(lnRange1, lnRange2), false)));
+                        iqp(table.getFullTableName() + "__l_receiptdate", "l_receiptdate_l_receiptdate", Domain.create(ValueSet.ofRanges(rdRange1, rdRange2), false)),
+                        iqp(table.getFullTableName() + "__l_linenumber", "l_linenumber_l_linenumber", Domain.create(ValueSet.ofRanges(lnRange1, lnRange2), false)));
 
         Multimap<Long, IndexQueryParameters> cardinalities = cache.getCardinalities(SESSION, SCHEMA, TABLE, AUTHS, queryParameters, EARLY_RETURN_THRESHOLD, storage);
         assertEquals(cardinalities.size(), 2);
@@ -463,8 +455,8 @@ public class TestColumnCardinalityCache
 
         List<IndexQueryParameters> queryParameters =
                 ImmutableList.of(
-                        iqp("l_receiptdate_l_receiptdate", Domain.create(ValueSet.ofRanges(rdRange), false)),
-                        iqp("l_linenumber_l_linenumber", Domain.create(ValueSet.ofRanges(lnRange), false)));
+                        iqp(table.getFullTableName() + "__l_receiptdate", "l_receiptdate_l_receiptdate", Domain.create(ValueSet.ofRanges(rdRange), false)),
+                        iqp(table.getFullTableName() + "__l_linenumber", "l_linenumber_l_linenumber", Domain.create(ValueSet.ofRanges(lnRange), false)));
 
         Multimap<Long, IndexQueryParameters> cardinalities = cache.getCardinalities(SESSION, SCHEMA, TABLE, AUTHS, queryParameters, EARLY_RETURN_THRESHOLD, storage);
         assertEquals(cardinalities.size(), 2);
@@ -502,31 +494,25 @@ public class TestColumnCardinalityCache
 
         AccumuloTable table = client.createTable(metadata);
 
-        MultiTableBatchWriter multiTableBatchWriter = connector.createMultiTableBatchWriter(new BatchWriterConfig());
-        BatchWriter writer = multiTableBatchWriter.getBatchWriter(table.getFullTableName());
-        MetricsWriter metricsWriter = table.getMetricsStorageInstance(connector).newWriter(table);
-        Indexer indexer = new Indexer(connector, table, multiTableBatchWriter, metricsWriter);
+        PrestoBatchWriter writer = new PrestoBatchWriter(connector, connector.securityOperations().getUserAuthorizations("root"), table);
 
         Mutation m = new Mutation("1");
         m.put("___ROW___", "___ROW___", "1");
         m.put("b", "b", "2");
         m.put("c", "c", "3");
         writer.addMutation(m);
-        indexer.index(m);
 
         m = new Mutation("2");
         m.put("___ROW___", "___ROW___", new ColumnVisibility("private"), "2");
         m.put("b", "b", new ColumnVisibility("private"), "2");
         m.put("c", "c", new ColumnVisibility("private"), "3");
         writer.addMutation(m);
-        indexer.index(m);
-        metricsWriter.close();
-        multiTableBatchWriter.close();
+        writer.close();
 
         ColumnCardinalityCache cache = new ColumnCardinalityCache(CONFIG);
         Range range = Range.equal(VARCHAR, Slices.copiedBuffer("2", UTF_8));
 
-        List<IndexQueryParameters> queryParameters = ImmutableList.of(iqp("b_b", Domain.create(ValueSet.ofRanges(range), false)));
+        List<IndexQueryParameters> queryParameters = ImmutableList.of(iqp(table.getFullTableName() + "__b", "b_b", Domain.create(ValueSet.ofRanges(range), false)));
 
         Multimap<Long, IndexQueryParameters> cardinalities = cache.getCardinalities(SESSION, tableName.getSchemaName(), tableName.getTableName(), new Authorizations("private"), queryParameters, EARLY_RETURN_THRESHOLD, storage);
         assertEquals(cardinalities.size(), 1);
@@ -558,9 +544,9 @@ public class TestColumnCardinalityCache
      * @param domain Presto Domain
      * @return Constraint
      */
-    private static IndexQueryParameters iqp(String name, Domain domain)
+    private IndexQueryParameters iqp(String indexTable, String name, Domain domain)
     {
-        IndexQueryParameters parameters = new IndexQueryParameters(new IndexColumn(ImmutableList.of(name), "foo", ImmutableMap.of()));
+        IndexQueryParameters parameters = new IndexQueryParameters(new IndexColumn(indexTable, ImmutableList.of(name)));
         parameters.appendColumn(name.getBytes(UTF_8), TabletSplitGenerationMachine.getRangesFromDomain(Optional.of(domain), SERIALIZER), false);
         return parameters;
     }

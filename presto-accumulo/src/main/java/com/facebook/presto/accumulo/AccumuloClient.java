@@ -260,7 +260,7 @@ public class AccumuloClient
 
         if (table.isIndexed()) {
             for (IndexColumn indexColumn : table.getParsedIndexColumns()) {
-                if (tableManager.exists(indexColumn.getTableName()) || table.getMetricsStorageInstance(connector).exists(table.getSchemaTableName())) {
+                if (tableManager.exists(indexColumn.getIndexTable()) || table.getMetricsStorageInstance(connector).exists(table.getSchemaTableName())) {
                     throw new PrestoException(ACCUMULO_TABLE_EXISTS, "Internal table is indexed, but the index table and/or index metrics table(s) already exist");
                 }
             }
@@ -368,12 +368,9 @@ public class AccumuloClient
 
         // Create index table if it does not exist
         for (IndexColumn indexColumn : table.getParsedIndexColumns()) {
-            if (!tableManager.exists(indexColumn.getTableName())) {
-                tableManager.createAccumuloTable(indexColumn.getTableName());
+            if (!tableManager.exists(indexColumn.getIndexTable())) {
+                tableManager.createAccumuloTable(indexColumn.getIndexTable());
             }
-
-            // Set locality groups on index table
-            tableManager.setLocalityGroups(indexColumn.getTableName(), indexColumn.getLocalityGroups());
         }
 
         // Create the index metrics storage
@@ -435,8 +432,8 @@ public class AccumuloClient
 
             if (table.isIndexed()) {
                 for (IndexColumn indexColumn : table.getParsedIndexColumns()) {
-                    if (tableManager.exists(indexColumn.getTableName())) {
-                        tableManager.deleteAccumuloTable(indexColumn.getTableName());
+                    if (tableManager.exists(indexColumn.getIndexTable())) {
+                        tableManager.deleteAccumuloTable(indexColumn.getIndexTable());
                     }
 
                     table.getMetricsStorageInstance(connector).drop(table);
@@ -501,14 +498,14 @@ public class AccumuloClient
         }
 
         for (IndexColumn indexColumn : oldTable.getParsedIndexColumns()) {
-            if (!tableManager.exists(indexColumn.getTableName())) {
-                throw new PrestoException(ACCUMULO_TABLE_DNE, format("Table %s does not exist", indexColumn.getTableName()));
+            if (!tableManager.exists(indexColumn.getIndexTable())) {
+                throw new PrestoException(ACCUMULO_TABLE_DNE, format("Table %s does not exist", indexColumn.getIndexTable()));
             }
         }
 
         for (IndexColumn indexColumn : newTable.getParsedIndexColumns()) {
-            if (tableManager.exists(indexColumn.getTableName())) {
-                throw new PrestoException(ACCUMULO_TABLE_EXISTS, format("Table %s already exists", indexColumn.getTableName()));
+            if (tableManager.exists(indexColumn.getIndexTable())) {
+                throw new PrestoException(ACCUMULO_TABLE_EXISTS, format("Table %s already exists", indexColumn.getIndexTable()));
             }
         }
 
@@ -529,7 +526,7 @@ public class AccumuloClient
 
             // Sanity check it is for the same column; the lists should be parallel
             if (join(oldColumn.getColumns(), ',').equals(join(newColumn.getColumns(), ','))) {
-                tableManager.renameAccumuloTable(oldColumn.getTableName(), newColumn.getTableName());
+                tableManager.renameAccumuloTable(oldColumn.getIndexTable(), newColumn.getIndexTable());
             }
             else {
                 throw new PrestoException(FUNCTION_IMPLEMENTATION_ERROR, format("Failed to rename table, column %s does not match column %s", oldColumn.getColumns(), newColumn.getColumns()));

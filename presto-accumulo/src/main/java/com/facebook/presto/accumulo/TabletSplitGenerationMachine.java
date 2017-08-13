@@ -158,7 +158,7 @@ public class TabletSplitGenerationMachine
             try {
                 this.rowIdRanges = getRangesFromDomain(rowIdDomain, table.getSerializerInstance());
 
-                numRows = table.isIndexed() ? metricsReader.getNumRowsInTable(table.getSchema(), table.getTable()) : -1;
+                numRows = table.isIndexed() ? metricsReader.getNumRowsInTable(table) : -1;
 
                 setInitialState();
 

@@ -27,34 +27,34 @@ import static com.google.common.base.MoreObjects.toStringHelper;
  */
 public class MetricCacheKey
 {
-    public final String schema;
-    public final String table;
+    public final String indexTable;
     public final Text family;
     public final Authorizations auths;
     public final Range range;
+    public final MetricsStorage metricsStorage;
 
     /**
      * Creates a new instance of a MetricCacheKey
      *
-     * @param schema Schema name
-     * @param table Table name
+     * @param indexTable Index table name
      * @param family Column family
      * @param auths Authorizations for this metric
      * @param range Range representing the cell value
+     * @param metricsStorage Storage device for the metrics
      */
-    public MetricCacheKey(String schema, String table, Text family, Authorizations auths, Range range)
+    public MetricCacheKey(String indexTable, Text family, Authorizations auths, Range range, MetricsStorage metricsStorage)
     {
-        this.schema = schema;
-        this.table = table;
+        this.indexTable = indexTable;
         this.family = family;
         this.auths = auths;
         this.range = range;
+        this.metricsStorage = metricsStorage;
     }
 
     @Override
     public int hashCode()
     {
-        return Objects.hash(schema, table, family, auths, range);
+        return Objects.hash(indexTable, family, auths, range);
     }
 
     @Override
@@ -69,8 +69,7 @@ public class MetricCacheKey
 
         MetricCacheKey other = (MetricCacheKey) obj;
         return Objects.equals(this.range, other.range)
-                && Objects.equals(this.schema, other.schema)
-                && Objects.equals(this.table, other.table)
+                && Objects.equals(this.indexTable, other.indexTable)
                 && Objects.equals(this.family, other.family)
                 && Objects.equals(this.auths, other.auths);
     }
@@ -79,8 +78,7 @@ public class MetricCacheKey
     public String toString()
     {
         return toStringHelper(this)
-                .add("schema", schema)
-                .add("table", table)
+                .add("indexTable", indexTable)
                 .add("family", family)
                 .add("auths", auths)
                 .add("range", range)
