@@ -39,8 +39,8 @@ public abstract class MetricsStorage
         DAY
     }
 
-    public static final ByteBuffer METRICS_TABLE_ROW_ID = wrap("___METRICS_TABLE___".getBytes(UTF_8));
-    public static final ByteBuffer METRICS_TABLE_ROWS_COLUMN = wrap("___rows___".getBytes(UTF_8));
+    public static final ByteBuffer METRICS_TABLE_ROW_ID = wrap("METRICS_TABLE".getBytes(UTF_8));
+    public static final ByteBuffer METRICS_TABLE_ROWS_COLUMN = wrap("row".getBytes(UTF_8));
 
     protected final Connector connector;
 

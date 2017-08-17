@@ -14,7 +14,6 @@
 package com.facebook.presto.accumulo.index.metrics;
 
 import com.facebook.presto.accumulo.AccumuloTableManager;
-import com.facebook.presto.accumulo.index.Indexer;
 import com.facebook.presto.accumulo.iterators.ValueSummingIterator;
 import com.facebook.presto.accumulo.metadata.AccumuloTable;
 import com.facebook.presto.accumulo.model.AccumuloColumnHandle;
@@ -58,6 +57,7 @@ import java.util.stream.Collectors;
 import static com.facebook.presto.accumulo.AccumuloErrorCode.ACCUMULO_TABLE_DNE;
 import static com.facebook.presto.accumulo.AccumuloErrorCode.UNEXPECTED_ACCUMULO_ERROR;
 import static com.facebook.presto.accumulo.index.Indexer.TIMESTAMP_CARDINALITY_FAMILIES;
+import static com.facebook.presto.accumulo.index.Indexer.getIndexColumnFamily;
 import static com.facebook.presto.accumulo.metadata.AccumuloTable.getFullTableName;
 import static com.facebook.presto.spi.StandardErrorCode.FUNCTION_IMPLEMENTATION_ERROR;
 import static java.nio.charset.StandardCharsets.UTF_8;
@@ -66,9 +66,11 @@ import static java.util.Objects.requireNonNull;
 public class AccumuloMetricsStorage
         extends MetricsStorage
 {
-    private static final byte[] CARDINALITY_CQ = "___card___".getBytes(UTF_8);
+    private static final byte[] CARDINALITY_CF = "_car".getBytes(UTF_8);
+    private static final byte[] CARDINALITY_CQ = "car".getBytes(UTF_8);
     private static final LongCombiner.Type ENCODER_TYPE = LongCombiner.Type.STRING;
     private static final TypedValueCombiner.Encoder<Long> ENCODER = new LongCombiner.StringEncoder();
+    private static final byte[] EMPTY_BYTES = new byte[] {};
     private static final byte[] HYPHEN = new byte[] {'-'};
 
     private final AccumuloTableManager tableManager;
@@ -88,12 +90,12 @@ public class AccumuloMetricsStorage
             // Summing combiner for rows
             IteratorSetting setting1 = new IteratorSetting(1, SummingCombiner.class);
             SummingCombiner.setEncodingType(setting1, ENCODER_TYPE);
-            SummingCombiner.setColumns(setting1, ImmutableList.of(new IteratorSetting.Column(new String(METRICS_TABLE_ROWS_COLUMN.array(), UTF_8), new String(CARDINALITY_CQ, UTF_8))));
+            SummingCombiner.setColumns(setting1, ImmutableList.of(new IteratorSetting.Column(new String(Bytes.concat(METRICS_TABLE_ROWS_COLUMN.array(), CARDINALITY_CF), UTF_8), new String(CARDINALITY_CQ, UTF_8))));
             tableManager.setIterator(getMetricsTableName(table), setting1);
 
             // Filter out all entries with a value of zero
             IteratorSetting setting2 = new IteratorSetting(2, RegExFilter.class);
-            RegExFilter.setRegexs(setting2, ".*", ".*", "___card___", "0", false);
+            RegExFilter.setRegexs(setting2, ".*", ".*" + new String(CARDINALITY_CF, UTF_8), new String(CARDINALITY_CQ, UTF_8), "0", false);
             RegExFilter.setNegate(setting2, true);
             tableManager.setIterator(getMetricsTableName(table), setting2);
         }
@@ -109,20 +111,21 @@ public class AccumuloMetricsStorage
     {
         ImmutableMap.Builder<String, Set<Text>> groups = ImmutableMap.builder();
         List<byte[]> families = new ArrayList<>();
+        int columnIndex = 0;
         for (String column : indexColumn.getColumns()) {
             AccumuloColumnHandle columnHandle = table.getColumn(column);
-            byte[] concatFamily = Indexer.getIndexColumnFamily(columnHandle.getFamily().get().getBytes(UTF_8), columnHandle.getQualifier().get().getBytes(UTF_8));
+            byte[] concatFamily = getIndexColumnFamily(columnHandle.getFamily().get().getBytes(UTF_8), columnHandle.getQualifier().get().getBytes(UTF_8));
             if (columnHandle.getType().equals(TimestampType.TIMESTAMP)) {
                 if (families.size() == 0) {
                     for (byte[] tsFamily : TIMESTAMP_CARDINALITY_FAMILIES.values()) {
-                        families.add(Bytes.concat(concatFamily, tsFamily));
+                        families.add(Bytes.concat(concatFamily, tsFamily, CARDINALITY_CF));
                     }
                 }
                 else {
                     List<byte[]> newFamilies = new ArrayList<>();
                     for (byte[] family : families) {
                         for (byte[] tsFamily : TIMESTAMP_CARDINALITY_FAMILIES.values()) {
-                            newFamilies.add(Bytes.concat(family, HYPHEN, Bytes.concat(concatFamily, tsFamily)));
+                            newFamilies.add(Bytes.concat(family, HYPHEN, Bytes.concat(concatFamily, tsFamily, CARDINALITY_CF)));
                         }
                     }
                     families = newFamilies;
@@ -130,16 +133,17 @@ public class AccumuloMetricsStorage
             }
             else {
                 if (families.size() == 0) {
-                    families.add(concatFamily);
+                    families.add(Bytes.concat(concatFamily, columnIndex < indexColumn.getColumns().size() - 1 ? EMPTY_BYTES : CARDINALITY_CF));
                 }
                 else {
                     List<byte[]> newFamilies = new ArrayList<>();
                     for (byte[] family : families) {
-                        newFamilies.add(Bytes.concat(family, HYPHEN, concatFamily));
+                        newFamilies.add(Bytes.concat(family, HYPHEN, concatFamily, columnIndex < indexColumn.getColumns().size() - 1 ? EMPTY_BYTES : CARDINALITY_CF));
                     }
                     families = newFamilies;
                 }
             }
+            ++columnIndex;
         }
 
         for (byte[] family : families) {
@@ -219,7 +223,7 @@ public class AccumuloMetricsStorage
 
         // Filter out all entries with a value of zero
         IteratorSetting setting2 = new IteratorSetting(2, RegExFilter.class);
-        RegExFilter.setRegexs(setting2, ".*", ".*", "___card___", "0", false);
+        RegExFilter.setRegexs(setting2, ".*", ".*" + new String(CARDINALITY_CF, UTF_8), new String(CARDINALITY_CQ, UTF_8), "0", false);
         RegExFilter.setNegate(setting2, true);
 
         return ImmutableList.of(setting1, setting2);
@@ -228,8 +232,6 @@ public class AccumuloMetricsStorage
     private static class AccumuloMetricsWriter
             extends MetricsWriter
     {
-        private static final byte[] CARDINALITY_CQ = "___card___".getBytes(UTF_8);
-
         private final BatchWriterConfig writerConfig;
         private final Connector connector;
 
@@ -292,7 +294,7 @@ public class AccumuloMetricsStorage
                         // Value: Cardinality
                         Mutation mut = new Mutation(entry.getKey().value.array());
                         mut.put(
-                                entry.getKey().column.array(),
+                                Bytes.concat(entry.getKey().column.array(), CARDINALITY_CF),
                                 CARDINALITY_CQ,
                                 entry.getKey().visibility,
                                 ENCODER.encode(entry.getValue().get()));
@@ -342,7 +344,7 @@ public class AccumuloMetricsStorage
             try {
                 scanner = connector.createBatchScanner(key.indexTable, key.auths, 10);
                 scanner.setRanges(connector.tableOperations().splitRangeByTablets(key.indexTable, key.range, Integer.MAX_VALUE));
-                scanner.fetchColumn(key.family, CARDINALITY_CQ_TEXT);
+                scanner.fetchColumn(new Text(Bytes.concat(key.family.copyBytes(), CARDINALITY_CF)), CARDINALITY_CQ_TEXT);
                 scanner.addScanIterator(setting);
 
                 // Sum the entries to get the cardinality
@@ -378,7 +380,7 @@ public class AccumuloMetricsStorage
             MetricCacheKey anyKey = super.getAnyKey(keys);
 
             // Get metrics table name and the column family for the scanner
-            Text columnFamily = new Text(anyKey.family);
+            Text columnFamily = new Text(Bytes.concat(anyKey.family.copyBytes(), CARDINALITY_CF));
 
             // Create batch scanner for querying all ranges
             BatchScanner scanner = null;
@@ -434,7 +436,7 @@ public class AccumuloMetricsStorage
             MetricCacheKey anyKey = super.getAnyKey(keys);
 
             // Get metrics table name and the column family for the scanner
-            Text columnFamily = new Text(anyKey.family);
+            Text columnFamily = new Text(Bytes.concat(anyKey.family.copyBytes(), CARDINALITY_CF));
 
             // Create batch scanner for querying all ranges
             BatchScanner scanner = null;
