@@ -48,7 +48,6 @@ import org.apache.accumulo.core.data.Value;
 import org.apache.accumulo.core.iterators.user.WholeRowIterator;
 import org.apache.accumulo.core.security.Authorizations;
 import org.apache.accumulo.core.security.ColumnVisibility;
-import org.apache.commons.lang.ArrayUtils;
 import org.apache.commons.lang3.tuple.Pair;
 import org.apache.commons.lang3.tuple.Triple;
 import org.apache.hadoop.io.Text;
@@ -722,7 +721,7 @@ public class Indexer
 
     public static byte[] getIndexColumnFamily(byte[] columnFamily, byte[] columnQualifier)
     {
-        return ArrayUtils.addAll(ArrayUtils.add(columnFamily, UNDERSCORE), columnQualifier);
+        return Bytes.concat(columnFamily, new byte[] {UNDERSCORE}, columnQualifier);
     }
 
     /**
