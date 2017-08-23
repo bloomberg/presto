@@ -13,6 +13,9 @@
  */
 package com.facebook.presto.accumulo.index.storage;
 
+import com.fasterxml.jackson.annotation.JsonTypeInfo;
+
+@JsonTypeInfo(use = JsonTypeInfo.Id.CLASS, include = JsonTypeInfo.As.PROPERTY, property = "@class")
 public interface IndexStorage
 {
     /**

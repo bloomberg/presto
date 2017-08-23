@@ -46,7 +46,7 @@ public class TestIndexQueryParameters
     private static final byte[] MIN_TIMESTAMP_VALUE = SERIALIZER.encode(TIMESTAMP, PARSER.parseDateTime("2001-08-22T03:04:05.321+0000").getMillis());
     private static final byte[] MAX_TIMESTAMP_VALUE = SERIALIZER.encode(TIMESTAMP, PARSER.parseDateTime("2001-09-22T03:04:05.321+0000").getMillis());
 
-    private static final IndexColumn INDEX_COLUMN = new IndexColumn("foo", ImmutableList.of("email", "age", "born"));
+    private static final IndexColumn INDEX_COLUMN = new IndexColumn("foo", ImmutableList.of(), ImmutableList.of("email", "age", "born"));
 
     @Test
     public void testIndexQueryParameters()
@@ -70,8 +70,8 @@ public class TestIndexQueryParameters
     @Test
     public void testIndexQueryParametersExactValue()
     {
-        IndexQueryParameters parameters = new IndexQueryParameters(new IndexColumn("foo", ImmutableList.of("email")));
-        assertEquals(parameters.getIndexColumn(), new IndexColumn("foo", ImmutableList.of("email")));
+        IndexQueryParameters parameters = new IndexQueryParameters(new IndexColumn("foo", ImmutableList.of(), ImmutableList.of("email")));
+        assertEquals(parameters.getIndexColumn(), new IndexColumn("foo", ImmutableList.of(), ImmutableList.of("email")));
 
         parameters.appendColumn("cf_email".getBytes(UTF_8), ImmutableList.of(new AccumuloRange(FOO)), false);
 
@@ -84,8 +84,8 @@ public class TestIndexQueryParameters
     @Test
     public void testIndexQueryParametersMultipleExactValues()
     {
-        IndexQueryParameters parameters = new IndexQueryParameters(new IndexColumn("foo", ImmutableList.of("email", "born")));
-        assertEquals(parameters.getIndexColumn(), new IndexColumn("foo", ImmutableList.of("email", "born")));
+        IndexQueryParameters parameters = new IndexQueryParameters(new IndexColumn("foo", ImmutableList.of(), ImmutableList.of("email", "born")));
+        assertEquals(parameters.getIndexColumn(), new IndexColumn("foo", ImmutableList.of(), ImmutableList.of("email", "born")));
 
         parameters.appendColumn("cf_email".getBytes(UTF_8), ImmutableList.of(new AccumuloRange(FOO), new AccumuloRange(BAR)), false);
         parameters.appendColumn("cf_born".getBytes(UTF_8), ImmutableList.of(new AccumuloRange(MIN_TIMESTAMP_VALUE, MIN_TIMESTAMP_VALUE)), false);
