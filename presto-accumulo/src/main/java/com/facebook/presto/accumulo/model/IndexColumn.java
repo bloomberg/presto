@@ -13,6 +13,7 @@
  */
 package com.facebook.presto.accumulo.model;
 
+import com.facebook.presto.accumulo.index.storage.IndexStorage;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
@@ -25,15 +26,18 @@ import static java.util.Objects.requireNonNull;
 
 public class IndexColumn
 {
-    private final List<String> columns;
     private final String indexTable;
+    private final List<IndexStorage> indexStorageMethods;
+    private final List<String> columns;
 
     @JsonCreator
     public IndexColumn(
             @JsonProperty("indexTable") String indexTable,
+            @JsonProperty("indexStorageMethods") List<IndexStorage> indexStorageMethods,
             @JsonProperty("columns") List<String> columns)
     {
         this.indexTable = requireNonNull(indexTable, "indexTable is null");
+        this.indexStorageMethods = requireNonNull(indexStorageMethods, "indexStorageMethods is null");
         this.columns = requireNonNull(columns, "column is null");
     }
 
@@ -47,6 +51,12 @@ public class IndexColumn
     public String getIndexTable()
     {
         return indexTable;
+    }
+
+    @JsonProperty
+    public List<IndexStorage> getIndexStorageMethods()
+    {
+        return indexStorageMethods;
     }
 
     @JsonIgnore

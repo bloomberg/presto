@@ -14,6 +14,8 @@
 package com.facebook.presto.accumulo.model;
 
 import com.facebook.presto.accumulo.index.IndexQueryParameters;
+import com.facebook.presto.accumulo.index.storage.PostfixedIndexStorage;
+import com.facebook.presto.accumulo.index.storage.ShardedIndexStorage;
 import com.facebook.presto.accumulo.serializers.LexicoderRowSerializer;
 import com.facebook.presto.spi.type.StandardTypes;
 import com.facebook.presto.spi.type.Type;
@@ -60,7 +62,7 @@ public class TestAccumuloSplit
                 ImmutableList.of(new AccumuloRange(), new AccumuloRange("bar".getBytes(UTF_8), "foo".getBytes(UTF_8)), new AccumuloRange("bar".getBytes(UTF_8), false, "baz".getBytes(UTF_8), false)),
                 Optional.of(
                         new IndexQueryParameters(
-                                new IndexColumn("table", ImmutableList.of("bar", "baz")),
+                                new IndexColumn("table", ImmutableList.of(new PostfixedIndexStorage(8), new ShardedIndexStorage(10)), ImmutableList.of("bar", "baz")),
                                 "index-family",
                                 ImmutableList.of(new AccumuloRange("b".getBytes(UTF_8), "c".getBytes(UTF_8))))),
                 ImmutableList.of(

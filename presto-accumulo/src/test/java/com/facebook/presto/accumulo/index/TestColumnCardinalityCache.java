@@ -21,6 +21,7 @@ import com.facebook.presto.accumulo.conf.AccumuloConfig;
 import com.facebook.presto.accumulo.conf.AccumuloSessionProperties;
 import com.facebook.presto.accumulo.conf.AccumuloTableProperties;
 import com.facebook.presto.accumulo.index.metrics.MetricsStorage;
+import com.facebook.presto.accumulo.index.storage.IndexStorage;
 import com.facebook.presto.accumulo.io.PrestoBatchWriter;
 import com.facebook.presto.accumulo.metadata.AccumuloTable;
 import com.facebook.presto.accumulo.metadata.ZooKeeperMetadataManager;
@@ -72,6 +73,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 import static com.facebook.presto.accumulo.io.PrestoBatchWriter.toMutation;
+import static com.facebook.presto.accumulo.metadata.AccumuloTable.getDefaultStorageStrategy;
+import static com.facebook.presto.spi.type.BigintType.BIGINT;
 import static com.facebook.presto.spi.type.DateType.DATE;
 import static com.facebook.presto.spi.type.IntegerType.INTEGER;
 import static com.facebook.presto.spi.type.VarcharType.VARCHAR;
@@ -254,7 +257,7 @@ public class TestColumnCardinalityCache
     {
         ColumnCardinalityCache cache = new ColumnCardinalityCache(CONFIG);
         Range range = Range.equal(DATE, tld("1998-01-01"));
-        List<IndexQueryParameters> queryParameters = ImmutableList.of(iqp(table.getFullTableName() + "__l_receiptdate", "l_receiptdate_l_receiptdate", Domain.create(ValueSet.ofRanges(range), false)));
+        List<IndexQueryParameters> queryParameters = ImmutableList.of(iqp(table.getFullTableName() + "__l_receiptdate", "l_receiptdate_l_receiptdate", Domain.create(ValueSet.ofRanges(range), false), getDefaultStorageStrategy(DATE)));
 
         Multimap<Long, IndexQueryParameters> cardinalities = cache.getCardinalities(SESSION, SCHEMA, TABLE, AUTHS, queryParameters, EARLY_RETURN_THRESHOLD, storage);
         assertEquals(cardinalities.size(), 1);
@@ -272,7 +275,7 @@ public class TestColumnCardinalityCache
         ColumnCardinalityCache cache = new ColumnCardinalityCache(CONFIG);
         Range range1 = Range.equal(DATE, tld("1998-01-01"));
         Range range2 = Range.equal(DATE, tld("1998-01-02"));
-        List<IndexQueryParameters> queryParameters = ImmutableList.of(iqp(table.getFullTableName() + "__l_receiptdate", "l_receiptdate_l_receiptdate", Domain.create(ValueSet.ofRanges(range1, range2), false)));
+        List<IndexQueryParameters> queryParameters = ImmutableList.of(iqp(table.getFullTableName() + "__l_receiptdate", "l_receiptdate_l_receiptdate", Domain.create(ValueSet.ofRanges(range1, range2), false), getDefaultStorageStrategy(DATE)));
 
         Multimap<Long, IndexQueryParameters> cardinalities = cache.getCardinalities(SESSION, SCHEMA, TABLE, AUTHS, queryParameters, EARLY_RETURN_THRESHOLD, storage);
         assertEquals(cardinalities.size(), 1);
@@ -289,7 +292,7 @@ public class TestColumnCardinalityCache
     {
         ColumnCardinalityCache cache = new ColumnCardinalityCache(CONFIG);
         Range range = Range.range(DATE, tld("1998-01-01"), false, tld("1998-01-03"), false);
-        List<IndexQueryParameters> queryParameters = ImmutableList.of(iqp(table.getFullTableName() + "__l_receiptdate", "l_receiptdate_l_receiptdate", Domain.create(ValueSet.ofRanges(range), false)));
+        List<IndexQueryParameters> queryParameters = ImmutableList.of(iqp(table.getFullTableName() + "__l_receiptdate", "l_receiptdate_l_receiptdate", Domain.create(ValueSet.ofRanges(range), false), getDefaultStorageStrategy(DATE)));
 
         Multimap<Long, IndexQueryParameters> cardinalities = cache.getCardinalities(SESSION, SCHEMA, TABLE, AUTHS, queryParameters, EARLY_RETURN_THRESHOLD, storage);
         assertEquals(cardinalities.size(), 1);
@@ -307,7 +310,7 @@ public class TestColumnCardinalityCache
         ColumnCardinalityCache cache = new ColumnCardinalityCache(CONFIG);
         Range range1 = Range.range(DATE, tld("1998-01-01"), false, tld("1998-01-03"), false);
         Range range2 = Range.range(DATE, tld("1998-01-10"), true, tld("1998-01-13"), true);
-        List<IndexQueryParameters> queryParameters = ImmutableList.of(iqp(table.getFullTableName() + "__l_receiptdate", "l_receiptdate_l_receiptdate", Domain.create(ValueSet.ofRanges(range1, range2), false)));
+        List<IndexQueryParameters> queryParameters = ImmutableList.of(iqp(table.getFullTableName() + "__l_receiptdate", "l_receiptdate_l_receiptdate", Domain.create(ValueSet.ofRanges(range1, range2), false), getDefaultStorageStrategy(DATE)));
 
         Multimap<Long, IndexQueryParameters> cardinalities = cache.getCardinalities(SESSION, SCHEMA, TABLE, AUTHS, queryParameters, EARLY_RETURN_THRESHOLD, storage);
         assertEquals(cardinalities.size(), 1);
@@ -327,8 +330,8 @@ public class TestColumnCardinalityCache
         Range lnRange = Range.equal(INTEGER, 7L);
         List<IndexQueryParameters> queryParameters =
                 ImmutableList.of(
-                        iqp(table.getFullTableName() + "__l_receiptdate", "l_receiptdate_l_receiptdate", Domain.create(ValueSet.ofRanges(rdRange), false)),
-                        iqp(table.getFullTableName() + "__l_linenumber", "l_linenumber_l_linenumber", Domain.create(ValueSet.ofRanges(lnRange), false)));
+                        iqp(table.getFullTableName() + "__l_receiptdate", "l_receiptdate_l_receiptdate", Domain.create(ValueSet.ofRanges(rdRange), false), getDefaultStorageStrategy(DATE)),
+                        iqp(table.getFullTableName() + "__l_linenumber", "l_linenumber_l_linenumber", Domain.create(ValueSet.ofRanges(lnRange), false), getDefaultStorageStrategy(BIGINT)));
 
         Multimap<Long, IndexQueryParameters> cardinalities = cache.getCardinalities(SESSION, SCHEMA, TABLE, AUTHS, queryParameters, EARLY_RETURN_THRESHOLD, storage);
         assertEquals(cardinalities.size(), 2);
@@ -360,8 +363,8 @@ public class TestColumnCardinalityCache
 
         List<IndexQueryParameters> queryParameters =
                 ImmutableList.of(
-                        iqp(table.getFullTableName() + "__l_receiptdate", "l_receiptdate_l_receiptdate", Domain.create(ValueSet.ofRanges(rdRange1, rdRange2), false)),
-                        iqp(table.getFullTableName() + "__l_linenumber", "l_linenumber_l_linenumber", Domain.create(ValueSet.ofRanges(lnRange1, lnRange2), false)));
+                        iqp(table.getFullTableName() + "__l_receiptdate", "l_receiptdate_l_receiptdate", Domain.create(ValueSet.ofRanges(rdRange1, rdRange2), false), getDefaultStorageStrategy(DATE)),
+                        iqp(table.getFullTableName() + "__l_linenumber", "l_linenumber_l_linenumber", Domain.create(ValueSet.ofRanges(lnRange1, lnRange2), false), getDefaultStorageStrategy(BIGINT)));
 
         Multimap<Long, IndexQueryParameters> cardinalities = cache.getCardinalities(SESSION, SCHEMA, TABLE, AUTHS, queryParameters, EARLY_RETURN_THRESHOLD, storage);
         assertEquals(cardinalities.size(), 2);
@@ -391,8 +394,8 @@ public class TestColumnCardinalityCache
 
         List<IndexQueryParameters> queryParameters =
                 ImmutableList.of(
-                        iqp(table.getFullTableName() + "__l_receiptdate", "l_receiptdate_l_receiptdate", Domain.create(ValueSet.ofRanges(rdRange), false)),
-                        iqp(table.getFullTableName() + "__l_linenumber", "l_linenumber_l_linenumber", Domain.create(ValueSet.ofRanges(lnRange), false)));
+                        iqp(table.getFullTableName() + "__l_receiptdate", "l_receiptdate_l_receiptdate", Domain.create(ValueSet.ofRanges(rdRange), false), getDefaultStorageStrategy(DATE)),
+                        iqp(table.getFullTableName() + "__l_linenumber", "l_linenumber_l_linenumber", Domain.create(ValueSet.ofRanges(lnRange), false), getDefaultStorageStrategy(BIGINT)));
 
         Multimap<Long, IndexQueryParameters> cardinalities = cache.getCardinalities(SESSION, SCHEMA, TABLE, AUTHS, queryParameters, EARLY_RETURN_THRESHOLD, storage);
         assertEquals(cardinalities.size(), 2);
@@ -424,8 +427,8 @@ public class TestColumnCardinalityCache
 
         List<IndexQueryParameters> queryParameters =
                 ImmutableList.of(
-                        iqp(table.getFullTableName() + "__l_receiptdate", "l_receiptdate_l_receiptdate", Domain.create(ValueSet.ofRanges(rdRange1, rdRange2), false)),
-                        iqp(table.getFullTableName() + "__l_linenumber", "l_linenumber_l_linenumber", Domain.create(ValueSet.ofRanges(lnRange1, lnRange2), false)));
+                        iqp(table.getFullTableName() + "__l_receiptdate", "l_receiptdate_l_receiptdate", Domain.create(ValueSet.ofRanges(rdRange1, rdRange2), false), getDefaultStorageStrategy(DATE)),
+                        iqp(table.getFullTableName() + "__l_linenumber", "l_linenumber_l_linenumber", Domain.create(ValueSet.ofRanges(lnRange1, lnRange2), false), getDefaultStorageStrategy(BIGINT)));
 
         Multimap<Long, IndexQueryParameters> cardinalities = cache.getCardinalities(SESSION, SCHEMA, TABLE, AUTHS, queryParameters, EARLY_RETURN_THRESHOLD, storage);
         assertEquals(cardinalities.size(), 2);
@@ -455,8 +458,8 @@ public class TestColumnCardinalityCache
 
         List<IndexQueryParameters> queryParameters =
                 ImmutableList.of(
-                        iqp(table.getFullTableName() + "__l_receiptdate", "l_receiptdate_l_receiptdate", Domain.create(ValueSet.ofRanges(rdRange), false)),
-                        iqp(table.getFullTableName() + "__l_linenumber", "l_linenumber_l_linenumber", Domain.create(ValueSet.ofRanges(lnRange), false)));
+                        iqp(table.getFullTableName() + "__l_receiptdate", "l_receiptdate_l_receiptdate", Domain.create(ValueSet.ofRanges(rdRange), false), getDefaultStorageStrategy(DATE)),
+                        iqp(table.getFullTableName() + "__l_linenumber", "l_linenumber_l_linenumber", Domain.create(ValueSet.ofRanges(lnRange), false), getDefaultStorageStrategy(BIGINT)));
 
         Multimap<Long, IndexQueryParameters> cardinalities = cache.getCardinalities(SESSION, SCHEMA, TABLE, AUTHS, queryParameters, EARLY_RETURN_THRESHOLD, storage);
         assertEquals(cardinalities.size(), 2);
@@ -512,7 +515,7 @@ public class TestColumnCardinalityCache
         ColumnCardinalityCache cache = new ColumnCardinalityCache(CONFIG);
         Range range = Range.equal(VARCHAR, Slices.copiedBuffer("2", UTF_8));
 
-        List<IndexQueryParameters> queryParameters = ImmutableList.of(iqp(table.getFullTableName() + "__b", "b_b", Domain.create(ValueSet.ofRanges(range), false)));
+        List<IndexQueryParameters> queryParameters = ImmutableList.of(iqp(table.getFullTableName() + "__b", "b_b", Domain.create(ValueSet.ofRanges(range), false), getDefaultStorageStrategy(VARCHAR)));
 
         Multimap<Long, IndexQueryParameters> cardinalities = cache.getCardinalities(SESSION, tableName.getSchemaName(), tableName.getTableName(), new Authorizations("private"), queryParameters, EARLY_RETURN_THRESHOLD, storage);
         assertEquals(cardinalities.size(), 1);
@@ -544,9 +547,9 @@ public class TestColumnCardinalityCache
      * @param domain Presto Domain
      * @return Constraint
      */
-    private IndexQueryParameters iqp(String indexTable, String name, Domain domain)
+    private IndexQueryParameters iqp(String indexTable, String name, Domain domain, List<IndexStorage> indexStorageStrategies)
     {
-        IndexQueryParameters parameters = new IndexQueryParameters(new IndexColumn(indexTable, ImmutableList.of(name)));
+        IndexQueryParameters parameters = new IndexQueryParameters(new IndexColumn(indexTable, indexStorageStrategies, ImmutableList.of(name)));
         parameters.appendColumn(name.getBytes(UTF_8), TabletSplitGenerationMachine.getRangesFromDomain(Optional.of(domain), SERIALIZER), false);
         return parameters;
     }

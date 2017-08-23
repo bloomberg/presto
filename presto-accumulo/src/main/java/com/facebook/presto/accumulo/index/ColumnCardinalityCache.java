@@ -16,12 +16,14 @@ package com.facebook.presto.accumulo.index;
 import com.facebook.presto.accumulo.conf.AccumuloConfig;
 import com.facebook.presto.accumulo.index.metrics.MetricCacheKey;
 import com.facebook.presto.accumulo.index.metrics.MetricsStorage;
+import com.facebook.presto.accumulo.index.storage.ShardedIndexStorage;
 import com.facebook.presto.accumulo.model.AccumuloColumnConstraint;
 import com.facebook.presto.spi.ConnectorSession;
 import com.facebook.presto.spi.PrestoException;
 import com.google.common.cache.CacheBuilder;
 import com.google.common.cache.CacheLoader;
 import com.google.common.cache.LoadingCache;
+import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableMultimap;
 import com.google.common.collect.ListMultimap;
@@ -44,7 +46,9 @@ import javax.annotation.PreDestroy;
 import javax.inject.Inject;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
@@ -54,11 +58,14 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorCompletionService;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import static com.facebook.presto.accumulo.AccumuloErrorCode.UNEXPECTED_ACCUMULO_ERROR;
 import static com.facebook.presto.accumulo.conf.AccumuloSessionProperties.getIndexCardinalityCachePollingDuration;
 import static com.facebook.presto.accumulo.conf.AccumuloSessionProperties.isIndexShortCircuitEnabled;
 import static com.facebook.presto.accumulo.conf.AccumuloSessionProperties.isTracingEnabled;
+import static com.google.common.base.Preconditions.checkState;
 import static io.airlift.concurrent.Threads.daemonThreadsNamed;
 import static java.util.Objects.requireNonNull;
 import static java.util.concurrent.Executors.newCachedThreadPool;
@@ -231,7 +238,33 @@ public class ColumnCardinalityCache
                     // Collect all exact Accumulo Ranges, i.e. single value entries vs. a full scan
                     List<MetricCacheKey> exactRanges = new ArrayList<>();
                     List<MetricCacheKey> nonExactRanges = new ArrayList<>();
+                    Text tmp = new Text();
                     metricParamEntry.getValue()
+                            .stream()
+                            .flatMap(range -> {
+                                if (queryParameters.getIndexColumn().getIndexStorageMethods().isEmpty() ||
+                                        queryParameters.getIndexColumn().getIndexStorageMethods().stream().noneMatch(storage -> storage instanceof ShardedIndexStorage)) {
+                                    return Stream.of(range);
+                                }
+
+                                ImmutableList.Builder<Range> ranges = ImmutableList.builder();
+                                for (ShardedIndexStorage storage : queryParameters.getIndexColumn().getIndexStorageMethods().stream().filter(storage -> storage instanceof ShardedIndexStorage).map(storage -> (ShardedIndexStorage) storage).collect(Collectors.toList())) {
+                                    if (isExact(range)) {
+                                        byte[] start = range.isInfiniteStartKey() ? range.getStartKey().getRow(tmp).copyBytes() : Arrays.copyOfRange(range.getStartKey().getRow(tmp).getBytes(), 0, 9);
+                                        ranges.add(new Range(new Text(storage.encode(start))));
+                                    }
+                                    else {
+                                        Iterator<byte[]> startShards = storage.encodeAllShards(range.getStartKey().getRow(tmp).copyBytes()).iterator();
+                                        Iterator<byte[]> endShards = storage.encodeAllShards(range.getEndKey().getRow(tmp).copyBytes()).iterator();
+                                        while (startShards.hasNext()) {
+                                            ranges.add(new Range(new Text(startShards.next()), range.isStartKeyInclusive(), new Text(endShards.next()), range.isEndKeyInclusive()));
+                                        }
+                                        checkState(!endShards.hasNext(), "Implementation error: endShards still has shards");
+                                    }
+                                }
+
+                                return ranges.build().stream();
+                            })
                             .forEach(range -> {
                                 MetricCacheKey key = new MetricCacheKey(queryParameters.getIndexColumn().getIndexTable(), metricParamEntry.getKey(), auths, range, metricsStorage);
                                 if (isExact(range)) {

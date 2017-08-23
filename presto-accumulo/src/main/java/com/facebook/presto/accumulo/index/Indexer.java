@@ -16,6 +16,8 @@ package com.facebook.presto.accumulo.index;
 import com.facebook.presto.accumulo.Types;
 import com.facebook.presto.accumulo.index.metrics.MetricsStorage.TimestampPrecision;
 import com.facebook.presto.accumulo.index.metrics.MetricsWriter;
+import com.facebook.presto.accumulo.index.storage.IndexStorage;
+import com.facebook.presto.accumulo.index.storage.ShardedIndexStorage;
 import com.facebook.presto.accumulo.metadata.AccumuloTable;
 import com.facebook.presto.accumulo.model.AccumuloColumnHandle;
 import com.facebook.presto.accumulo.model.IndexColumn;
@@ -240,10 +242,9 @@ public class Indexer
             throws AccumuloException, TableNotFoundException, AccumuloSecurityException
     {
         Multimap<Pair<ByteBuffer, ByteBuffer>, Pair<ColumnVisibility, Object>> updates = MultimapBuilder.hashKeys().arrayListValues().build();
-        columnUpdates.entrySet().forEach(
-                update -> updates.put(
-                        Pair.of(wrap(update.getKey().getLeft().getBytes(UTF_8)), wrap(update.getKey().getMiddle().getBytes(UTF_8))),
-                        Pair.of(update.getKey().getRight(), update.getValue())));
+        columnUpdates.forEach((key, value) -> updates.put(
+                Pair.of(wrap(key.getLeft().getBytes(UTF_8)), wrap(key.getMiddle().getBytes(UTF_8))),
+                Pair.of(key.getRight(), value)));
         update(rowBytes, updates, auths);
     }
 
@@ -460,15 +461,6 @@ public class Indexer
             return columnValues.keySet().size();
         }
 
-        public boolean hasTimestamp()
-        {
-            if (columnValues.isEmpty()) {
-                throw new PrestoException(StandardErrorCode.FUNCTION_IMPLEMENTATION_ERROR, "hasTimestamp called with an empty list");
-            }
-
-            return columnValues.values().stream().anyMatch(ColumnUpdate::hasTimestamp);
-        }
-
         public long getTimestamp()
         {
             OptionalLong timestamp = columnValues.values().stream().mapToLong(ColumnUpdate::getTimestamp).max();
@@ -510,15 +502,15 @@ public class Indexer
                         : Bytes.concat(indexFamilyBuilder, HYPHEN_BYTE, getIndexColumnFamily(family.array(), qualifier.array()));
 
                 // Populate the map of visibility to the entries containing that visibility
+                // Iterate through each group
                 updates.get(familyQualifierPair)
                         .stream()
                         .map(x -> Pair.of(new ColumnVisibility(x.getColumnVisibility()), x)) // Convert byte[] to ColumnVisibility
                         .collect(Collectors.groupingBy(Pair::getLeft)) // Group by Column Visibility
-                        .entrySet() // Iterate through each group
-                        .forEach(visibilityEntry -> {
+                        .forEach((key, value) -> {
                             // Get the index values for this visibility and append the updates
-                            IndexValues indexValues = visibilityToIndexValues.computeIfAbsent(visibilityEntry.getKey(), x -> new IndexValues());
-                            visibilityEntry.getValue().forEach(valueEntry -> indexValues.addValue(familyQualifierPair, valueEntry.getRight()));
+                            IndexValues indexValues = visibilityToIndexValues.computeIfAbsent(key, x -> new IndexValues());
+                            value.forEach(valueEntry -> indexValues.addValue(familyQualifierPair, valueEntry.getRight()));
                         });
             }
 
@@ -586,11 +578,16 @@ public class Indexer
                 }
 
                 for (ColumnUpdate indexValue : indexValues.get(METRIC)) {
+                    byte[] rowBytes = indexValue.getColumnQualifier();
+                    for (IndexStorage storage : indexColumn.getIndexStorageMethods().stream().filter(x -> x instanceof ShardedIndexStorage).collect(Collectors.toList())) {
+                        rowBytes = storage.encode(rowBytes);
+                    }
+
                     if (delete) {
-                        metricsWriter.decrementCardinality(indexColumn.getIndexTable(), wrap(indexValue.getColumnQualifier()), wrap(indexValue.getColumnFamily()), visibility);
+                        metricsWriter.decrementCardinality(indexColumn.getIndexTable(), wrap(rowBytes), wrap(indexValue.getColumnFamily()), visibility);
                     }
                     else {
-                        metricsWriter.incrementCardinality(indexColumn.getIndexTable(), wrap(indexValue.getColumnQualifier()), wrap(indexValue.getColumnFamily()), visibility);
+                        metricsWriter.incrementCardinality(indexColumn.getIndexTable(), wrap(rowBytes), wrap(indexValue.getColumnFamily()), visibility);
                     }
                 }
             }
@@ -684,8 +681,13 @@ public class Indexer
     private void addIndexMutation(IndexColumn column, ByteBuffer row, ByteBuffer family, byte[] qualifier, ColumnVisibility visibility, Optional<Long> timestamp)
             throws AccumuloException, AccumuloSecurityException, TableNotFoundException
     {
+        byte[] rowBytes = row.array();
+        for (IndexStorage storage : column.getIndexStorageMethods()) {
+            rowBytes = storage.encode(rowBytes);
+        }
+
         // Create the mutation and add it to the batch writer
-        Mutation indexMutation = new Mutation(row.array());
+        Mutation indexMutation = new Mutation(rowBytes);
         if (timestamp.isPresent()) {
             indexMutation.put(family.array(), qualifier, visibility, timestamp.get(), EMPTY_BYTE);
         }

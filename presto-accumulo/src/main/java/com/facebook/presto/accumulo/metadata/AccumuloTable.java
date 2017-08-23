@@ -15,15 +15,20 @@ package com.facebook.presto.accumulo.metadata;
 
 import com.facebook.presto.accumulo.index.metrics.AccumuloMetricsStorage;
 import com.facebook.presto.accumulo.index.metrics.MetricsStorage;
+import com.facebook.presto.accumulo.index.storage.IndexStorage;
+import com.facebook.presto.accumulo.index.storage.PostfixedIndexStorage;
+import com.facebook.presto.accumulo.index.storage.ShardedIndexStorage;
 import com.facebook.presto.accumulo.model.AccumuloColumnHandle;
 import com.facebook.presto.accumulo.model.IndexColumn;
 import com.facebook.presto.accumulo.serializers.AccumuloRowSerializer;
 import com.facebook.presto.spi.ColumnMetadata;
 import com.facebook.presto.spi.PrestoException;
 import com.facebook.presto.spi.SchemaTableName;
+import com.facebook.presto.spi.type.Type;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Splitter;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
@@ -40,7 +45,12 @@ import java.util.stream.Collectors;
 
 import static com.facebook.presto.spi.StandardErrorCode.FUNCTION_IMPLEMENTATION_ERROR;
 import static com.facebook.presto.spi.StandardErrorCode.NOT_FOUND;
+import static com.facebook.presto.spi.type.BooleanType.BOOLEAN;
+import static com.facebook.presto.spi.type.DateType.DATE;
+import static com.facebook.presto.spi.type.TimeType.TIME;
+import static com.facebook.presto.spi.type.TimeWithTimeZoneType.TIME_WITH_TIME_ZONE;
 import static com.facebook.presto.spi.type.TimestampType.TIMESTAMP;
+import static com.facebook.presto.spi.type.TimestampWithTimeZoneType.TIMESTAMP_WITH_TIME_ZONE;
 import static com.facebook.presto.spi.type.VarcharType.VARCHAR;
 import static com.google.common.base.MoreObjects.toStringHelper;
 import static com.google.common.base.Preconditions.checkArgument;
@@ -52,6 +62,13 @@ import static java.util.Objects.requireNonNull;
  */
 public class AccumuloTable
 {
+    public static final int DEFAULT_NUM_SHARDS = 11;
+    public static final int DEFAULT_NUM_POSTFIX_BYTES = 8;
+
+    private static final Splitter COLON_SPLITTER = Splitter.on(':').trimResults().omitEmptyStrings();
+    private static final Splitter COMMA_SPLITTER = Splitter.on(',').trimResults().omitEmptyStrings();
+    private static final Splitter HYPHEN_SPLITTER = Splitter.on('-').trimResults().omitEmptyStrings();
+
     private final boolean external;
     private final String schema;
     private final String serializerClassName;
@@ -177,10 +194,12 @@ public class AccumuloTable
             return ImmutableList.of();
         }
 
-        return Splitter.on(',').trimResults().omitEmptyStrings().splitToList(indexColumns.get()).stream()
+        return COMMA_SPLITTER.splitToList(indexColumns.get()).stream()
                 .map(indexColumn -> {
+                    List<String> indexColumnAndMethods = HYPHEN_SPLITTER.splitToList(indexColumn);
+
                     ImmutableList.Builder<String> builder = ImmutableList.builder();
-                    List<String> parsedIndexColumns = Splitter.on(':').trimResults().omitEmptyStrings().splitToList(indexColumn);
+                    List<String> parsedIndexColumns = COLON_SPLITTER.splitToList(indexColumnAndMethods.get(0));
                     for (int i = 0; i < parsedIndexColumns.size(); ++i) {
                         String column = parsedIndexColumns.get(i);
                         List<AccumuloColumnHandle> columnHandle = this.columns.stream().filter(x -> x.getName().equals(column)).collect(Collectors.toList());
@@ -193,10 +212,60 @@ public class AccumuloTable
                     }
 
                     List<String> parsedColumns = builder.build();
-                    return new IndexColumn(getFullTableName() + "__" + StringUtils.join(parsedColumns, '_'), parsedColumns);
+
+                    List<IndexStorage> storageMethods = parseStorageMethods(parsedColumns, indexColumnAndMethods);
+
+                    return new IndexColumn(getFullTableName() + "__" + StringUtils.join(parsedColumns, '_'), storageMethods, parsedColumns);
                 })
                 .sorted(Comparator.comparing(IndexColumn::getIndexTable))
                 .collect(Collectors.toList());
+    }
+
+    private List<IndexStorage> parseStorageMethods(List<String> parsedColumns, List<String> indexColumnAndMethods)
+    {
+        if (indexColumnAndMethods.size() == 1) {
+            String lastColumn = parsedColumns.get(parsedColumns.size() - 1);
+            List<AccumuloColumnHandle> columnHandle = this.columns.stream().filter(x -> x.getName().equals(lastColumn)).collect(Collectors.toList());
+            checkArgument(columnHandle.size() == 1, "Specified index column is not defined: " + lastColumn);
+            return getDefaultStorageStrategy(columnHandle.get(0).getType());
+        }
+
+        ImmutableList.Builder<IndexStorage> storageMethods = ImmutableList.builder();
+        for (String method : indexColumnAndMethods.subList(1, indexColumnAndMethods.size())) {
+            if (method.contains("shard")) {
+                List<String> parsedMethod = COLON_SPLITTER.splitToList(method);
+                checkArgument(parsedMethod.size() == 2, "Expected parameter for number of shards not found, expected format is \"shard:<numshards>\"");
+                storageMethods.add(new ShardedIndexStorage(Integer.parseInt(parsedMethod.get(1))));
+            }
+            else if (method.contains("postfix")) {
+                List<String> parsedMethod = COLON_SPLITTER.splitToList(method);
+                checkArgument(parsedMethod.size() == 2, "Expected parameter for number of postfix bytes not found, expected format is \"postfix:<numbytes>\"");
+                storageMethods.add(new PostfixedIndexStorage(Integer.parseInt(parsedMethod.get(1))));
+            }
+            else {
+                throw new IllegalArgumentException(format("Unkown method %s, expected \"shard:<numshards>\" or \"postfix:<numbytes>\"", method));
+            }
+        }
+        return storageMethods.build();
+    }
+
+    @VisibleForTesting
+    public static List<IndexStorage> getDefaultStorageStrategy(Type type)
+    {
+        if (type.equals(BOOLEAN)) {
+            return ImmutableList.of(new PostfixedIndexStorage(DEFAULT_NUM_POSTFIX_BYTES));
+        }
+        else if (type.equals(DATE)) {
+            return ImmutableList.of(new ShardedIndexStorage(DEFAULT_NUM_SHARDS), new PostfixedIndexStorage(DEFAULT_NUM_POSTFIX_BYTES));
+        }
+        else if (type.equals(TIME) || type.equals(TIME_WITH_TIME_ZONE)) {
+            return ImmutableList.of(new ShardedIndexStorage(DEFAULT_NUM_SHARDS), new PostfixedIndexStorage(DEFAULT_NUM_POSTFIX_BYTES));
+        }
+        else if (type.equals(TIMESTAMP) || type.equals(TIMESTAMP_WITH_TIME_ZONE)) {
+            return ImmutableList.of(new ShardedIndexStorage(DEFAULT_NUM_SHARDS));
+        }
+
+        return ImmutableList.of();
     }
 
     @JsonIgnore

@@ -14,6 +14,7 @@
 package com.facebook.presto.accumulo.index;
 
 import com.facebook.presto.accumulo.index.metrics.MetricsStorage.TimestampPrecision;
+import com.facebook.presto.accumulo.index.storage.ShardedIndexStorage;
 import com.facebook.presto.accumulo.model.AccumuloRange;
 import com.facebook.presto.accumulo.model.IndexColumn;
 import com.fasterxml.jackson.annotation.JsonCreator;
@@ -294,6 +295,23 @@ public class IndexQueryParameters
                 ranges.clear();
                 ranges.addAll(newRanges);
             }
+        }
+
+        Optional<ShardedIndexStorage> shardedIndexStorage = column.getIndexStorageMethods().stream().filter(storage -> storage instanceof ShardedIndexStorage).map(storage -> (ShardedIndexStorage) storage).findAny();
+        if (shardedIndexStorage.isPresent()) {
+            List<AccumuloRange> newRanges = new ArrayList<>();
+            for (AccumuloRange range : ranges) {
+                Iterator<byte[]> shardedStartSplits = shardedIndexStorage.get().encodeAllShards(range.getStart()).iterator();
+                Iterator<byte[]> shardedEndSplits = shardedIndexStorage.get().encodeAllShards(range.getEnd()).iterator();
+                while (shardedStartSplits.hasNext()) {
+                    newRanges.add(new AccumuloRange(shardedStartSplits.next(), range.isStartKeyInclusive(), shardedEndSplits.next(), range.isEndKeyInclusive()));
+                }
+
+                checkState(!shardedEndSplits.hasNext(), "Implementation error: shardedEndSplits still has elements");
+            }
+
+            ranges.clear();
+            ranges.addAll(newRanges);
         }
     }
 
