@@ -14,6 +14,7 @@
 package com.facebook.presto.accumulo.index.metrics;
 
 import com.facebook.presto.accumulo.AccumuloTableManager;
+import com.facebook.presto.accumulo.iterators.CardinalityAssignmentIterator;
 import com.facebook.presto.accumulo.iterators.ValueSummingIterator;
 import com.facebook.presto.accumulo.metadata.AccumuloTable;
 import com.facebook.presto.accumulo.model.AccumuloColumnHandle;
@@ -38,14 +39,17 @@ import org.apache.accumulo.core.data.Key;
 import org.apache.accumulo.core.data.Mutation;
 import org.apache.accumulo.core.data.Range;
 import org.apache.accumulo.core.data.Value;
+import org.apache.accumulo.core.iterators.IteratorUtil.IteratorScope;
 import org.apache.accumulo.core.iterators.LongCombiner;
 import org.apache.accumulo.core.iterators.TypedValueCombiner;
 import org.apache.accumulo.core.iterators.user.RegExFilter;
 import org.apache.accumulo.core.iterators.user.SummingCombiner;
+import org.apache.accumulo.core.iterators.user.WholeRowIterator;
 import org.apache.hadoop.io.Text;
 
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -66,8 +70,9 @@ import static java.util.Objects.requireNonNull;
 public class AccumuloMetricsStorage
         extends MetricsStorage
 {
-    private static final byte[] CARDINALITY_CF = "_car".getBytes(UTF_8);
-    private static final byte[] CARDINALITY_CQ = "car".getBytes(UTF_8);
+    public static final byte[] CARDINALITY_CF = "_car".getBytes(UTF_8);
+    public static final byte[] CARDINALITY_CQ = "car".getBytes(UTF_8);
+
     private static final LongCombiner.Type ENCODER_TYPE = LongCombiner.Type.STRING;
     private static final TypedValueCombiner.Encoder<Long> ENCODER = new LongCombiner.StringEncoder();
     private static final byte[] EMPTY_BYTES = new byte[] {};
@@ -103,7 +108,7 @@ public class AccumuloMetricsStorage
         // Attach iterators to index tables
         table.getParsedIndexColumns().forEach(column -> {
             tableManager.setLocalityGroups(column.getIndexTable(), getLocalityGroups(table, column));
-            getMetricIterators(table, column).forEach(setting -> tableManager.setIterator(column.getIndexTable(), setting));
+            getMetricIterators(table, column).forEach((setting, scopes) -> tableManager.setIterator(column.getIndexTable(), setting, scopes));
         });
     }
 
@@ -203,16 +208,17 @@ public class AccumuloMetricsStorage
      * Gets a collection of iterator settings that should be added to the metric table for the given
      * Accumulo table. Don't forget! Please!
      *
-     * @param column Column for the table
-     * @return Collection of iterator settings
+     * @param table Accumulo table
+     * @param indexColumn Column for the table
+     * @return Map of iterator setting to the scope
      */
-    private Collection<IteratorSetting> getMetricIterators(AccumuloTable table, IndexColumn column)
+    private Map<IteratorSetting, EnumSet<IteratorScope>> getMetricIterators(AccumuloTable table, IndexColumn indexColumn)
     {
         String cardQualifier = new String(CARDINALITY_CQ, UTF_8);
         // Build a string for all columns where the summing combiner should be applied, i.e. all indexed columns
         ImmutableList.Builder<IteratorSetting.Column> columnBuilder = ImmutableList.builder();
 
-        for (String indexFamily : getLocalityGroups(table, column).keySet()) {
+        for (String indexFamily : getLocalityGroups(table, indexColumn).keySet()) {
             columnBuilder.add(new IteratorSetting.Column(indexFamily, cardQualifier));
         }
 
@@ -223,10 +229,27 @@ public class AccumuloMetricsStorage
 
         // Filter out all entries with a value of zero
         IteratorSetting setting2 = new IteratorSetting(2, RegExFilter.class);
-        RegExFilter.setRegexs(setting2, ".*", ".*" + new String(CARDINALITY_CF, UTF_8), new String(CARDINALITY_CQ, UTF_8), "0", false);
+        RegExFilter.setRegexs(setting2, null, ".*" + new String(CARDINALITY_CF, UTF_8), new String(CARDINALITY_CQ, UTF_8), "0", false);
         RegExFilter.setNegate(setting2, true);
 
-        return ImmutableList.of(setting1, setting2);
+        StringBuilder familyBuilder = new StringBuilder();
+        for (String column : indexColumn.getColumns()) {
+            AccumuloColumnHandle columnHandle = table.getColumn(column);
+            byte[] concatFamily = getIndexColumnFamily(columnHandle.getFamily().get().getBytes(UTF_8), columnHandle.getQualifier().get().getBytes(UTF_8));
+            if (familyBuilder.length() != 0) {
+                familyBuilder.append("-");
+            }
+            familyBuilder.append(new String(concatFamily));
+        }
+
+        IteratorSetting setting3 = new IteratorSetting(21, WholeRowIterator.class);
+        IteratorSetting setting4 = new IteratorSetting(22, CardinalityAssignmentIterator.class);
+        CardinalityAssignmentIterator.setIndexColumnFamily(setting4, familyBuilder.toString());
+
+        return ImmutableMap.of(setting1, EnumSet.allOf(IteratorScope.class),
+                setting2, EnumSet.allOf(IteratorScope.class),
+                setting3, EnumSet.of(IteratorScope.majc),
+                setting4, EnumSet.of(IteratorScope.majc));
     }
 
     private static class AccumuloMetricsWriter

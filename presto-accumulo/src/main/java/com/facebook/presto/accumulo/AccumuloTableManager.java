@@ -143,6 +143,25 @@ public class AccumuloTableManager
         }
     }
 
+    public void setIterator(String table, IteratorSetting setting, EnumSet<IteratorScope> scopes)
+    {
+        try {
+            // Remove any existing iterator settings of the same name, if applicable
+            Map<String, EnumSet<IteratorScope>> iterators = connector.tableOperations().listIterators(table);
+            if (iterators.containsKey(setting.getName())) {
+                connector.tableOperations().removeIterator(table, setting.getName(), iterators.get(setting.getName()));
+            }
+
+            connector.tableOperations().attachIterator(table, setting, scopes);
+        }
+        catch (AccumuloSecurityException | AccumuloException e) {
+            throw new PrestoException(UNEXPECTED_ACCUMULO_ERROR, "Failed to set iterator on table " + table, e);
+        }
+        catch (TableNotFoundException e) {
+            throw new PrestoException(ACCUMULO_TABLE_DNE, "Failed to set iterator, table does not exist", e);
+        }
+    }
+
     public void deleteAccumuloTable(String tableName)
     {
         try {
