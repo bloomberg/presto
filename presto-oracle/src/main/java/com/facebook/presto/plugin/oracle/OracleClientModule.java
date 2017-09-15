@@ -21,7 +21,8 @@ import com.google.inject.Scopes;
 
 import static io.airlift.configuration.ConfigBinder.configBinder;
 
-public class OracleClientModule implements Module
+public class OracleClientModule
+        implements Module
 {
     @Override
     public void configure(Binder binder)

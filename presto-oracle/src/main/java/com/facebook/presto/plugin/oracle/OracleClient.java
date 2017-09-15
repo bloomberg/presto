@@ -33,23 +33,27 @@ import java.sql.SQLException;
 import java.util.List;
 import java.util.Set;
 
-public class OracleClient extends BaseJdbcClient
+public class OracleClient
+        extends BaseJdbcClient
 {
     private static final Logger log = Logger.get(BaseJdbcClient.class);
     private com.google.common.cache.LoadingCache<JdbcTableHandle, List<JdbcColumnHandle>> tableColumnsCache =
-          CacheBuilder.newBuilder().maximumSize(10000)
-                  .expireAfterAccess(7, java.util.concurrent.TimeUnit.DAYS)
-                  .build(new CacheLoader<JdbcTableHandle, List<JdbcColumnHandle>>(){
-                      @Override
-                      public List<JdbcColumnHandle> load(JdbcTableHandle tableHandle) throws Exception
-                      {
-                          return OracleClient.super.getColumns(tableHandle);
-                      }
-                  });
+            CacheBuilder.newBuilder().maximumSize(10000)
+                    .expireAfterAccess(7, java.util.concurrent.TimeUnit.DAYS)
+                    .build(new CacheLoader<JdbcTableHandle, List<JdbcColumnHandle>>()
+                    {
+                        @Override
+                        public List<JdbcColumnHandle> load(JdbcTableHandle tableHandle)
+                                throws Exception
+                        {
+                            return OracleClient.super.getColumns(tableHandle);
+                        }
+                    });
 
     @Inject
     public OracleClient(JdbcConnectorId connectorId, BaseJdbcConfig config,
-                        OracleConfig oracleConfig) throws SQLException
+            OracleConfig oracleConfig)
+            throws SQLException
     {
         super(connectorId, config, "", new OracleDriver());
         if (oracleConfig.isIncludeSynonyms()) {
@@ -63,24 +67,26 @@ public class OracleClient extends BaseJdbcClient
     {
         try (Connection connection = driver.connect(connectionUrl,
                 connectionProperties);
-             ResultSet resultSet = connection.getMetaData().getSchemas()) {
+                ResultSet resultSet = connection.getMetaData().getSchemas()) {
             ImmutableSet.Builder<String> schemaNames = ImmutableSet.builder();
             while (resultSet.next()) {
                 String schemaName = resultSet.getString(1).toLowerCase();
                 schemaNames.add(schemaName);
             }
             return schemaNames.build();
-        } catch (SQLException e) {
+        }
+        catch (SQLException e) {
             throw Throwables.propagate(e);
         }
     }
 
     protected ResultSet getTables(Connection connection, String schemaName,
-                                  String tableName) throws SQLException
+            String tableName)
+            throws SQLException
     {
         // Here we put TABLE and SYNONYM when the table schema is another user schema
         return connection.getMetaData().getTables(connection.getCatalog(), schemaName, tableName,
-                new String[] { "TABLE", "SYNONYM", "VIEW" });
+                new String[] {"TABLE", "SYNONYM", "VIEW"});
     }
 
     @Override
