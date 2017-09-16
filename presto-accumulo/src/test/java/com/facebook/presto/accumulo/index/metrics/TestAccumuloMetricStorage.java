@@ -15,12 +15,10 @@ package com.facebook.presto.accumulo.index.metrics;
 
 import com.facebook.presto.accumulo.AccumuloQueryRunner;
 import com.facebook.presto.accumulo.conf.AccumuloConfig;
-import com.facebook.presto.accumulo.index.metrics.MetricsStorage.TimestampPrecision;
 import com.facebook.presto.accumulo.metadata.AccumuloTable;
 import com.facebook.presto.accumulo.model.IndexColumn;
 import com.facebook.presto.spi.PrestoException;
 import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
 import org.apache.accumulo.core.client.AccumuloException;
 import org.apache.accumulo.core.client.AccumuloSecurityException;
 import org.apache.accumulo.core.client.Connector;
@@ -32,14 +30,7 @@ import org.testng.annotations.BeforeClass;
 import org.testng.annotations.BeforeMethod;
 import org.testng.annotations.Test;
 
-import java.util.Map;
-
 import static com.facebook.presto.accumulo.index.metrics.AccumuloMetricsStorage.getMetricsTableName;
-import static com.facebook.presto.accumulo.index.metrics.MetricsStorage.TimestampPrecision.DAY;
-import static com.facebook.presto.accumulo.index.metrics.MetricsStorage.TimestampPrecision.HOUR;
-import static com.facebook.presto.accumulo.index.metrics.MetricsStorage.TimestampPrecision.MINUTE;
-import static com.facebook.presto.accumulo.index.metrics.MetricsStorage.TimestampPrecision.SECOND;
-import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.testng.Assert.assertFalse;
 import static org.testng.Assert.assertTrue;
 
@@ -47,12 +38,6 @@ import static org.testng.Assert.assertTrue;
 public class TestAccumuloMetricStorage
         extends TestAbstractMetricStorage
 {
-    private static final Map<TimestampPrecision, byte[]> TIMESTAMP_CARDINALITY_FAMILIES = ImmutableMap.of(
-            SECOND, "_tss".getBytes(UTF_8),
-            MINUTE, "_tsm".getBytes(UTF_8),
-            HOUR, "_tsh".getBytes(UTF_8),
-            DAY, "_tsd".getBytes(UTF_8));
-
     private Connector connector;
 
     @Override

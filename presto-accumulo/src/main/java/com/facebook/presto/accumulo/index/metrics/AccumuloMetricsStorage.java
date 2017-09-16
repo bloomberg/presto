@@ -66,10 +66,11 @@ import static java.util.Objects.requireNonNull;
 public class AccumuloMetricsStorage
         extends MetricsStorage
 {
+    public static final LongCombiner.Type ENCODER_TYPE = LongCombiner.Type.FIXEDLEN;
+    public static final TypedValueCombiner.Encoder<Long> ENCODER = new LongCombiner.FixedLenEncoder();
+
     private static final byte[] CARDINALITY_CF = "_car".getBytes(UTF_8);
     private static final byte[] CARDINALITY_CQ = "car".getBytes(UTF_8);
-    private static final LongCombiner.Type ENCODER_TYPE = LongCombiner.Type.STRING;
-    private static final TypedValueCombiner.Encoder<Long> ENCODER = new LongCombiner.StringEncoder();
     private static final byte[] EMPTY_BYTES = new byte[] {};
     private static final byte[] HYPHEN = new byte[] {'-'};
 
@@ -95,7 +96,7 @@ public class AccumuloMetricsStorage
 
             // Filter out all entries with a value of zero
             IteratorSetting setting2 = new IteratorSetting(2, RegExFilter.class);
-            RegExFilter.setRegexs(setting2, ".*", ".*" + new String(CARDINALITY_CF, UTF_8), new String(CARDINALITY_CQ, UTF_8), "0", false);
+            RegExFilter.setRegexs(setting2, ".*", ".*" + new String(CARDINALITY_CF, UTF_8), new String(CARDINALITY_CQ, UTF_8), new String(ENCODER.encode(0L), UTF_8), false);
             RegExFilter.setNegate(setting2, true);
             tableManager.setIterator(getMetricsTableName(table), setting2);
         }
@@ -223,7 +224,7 @@ public class AccumuloMetricsStorage
 
         // Filter out all entries with a value of zero
         IteratorSetting setting2 = new IteratorSetting(2, RegExFilter.class);
-        RegExFilter.setRegexs(setting2, ".*", ".*" + new String(CARDINALITY_CF, UTF_8), new String(CARDINALITY_CQ, UTF_8), "0", false);
+        RegExFilter.setRegexs(setting2, ".*", ".*" + new String(CARDINALITY_CF, UTF_8), new String(CARDINALITY_CQ, UTF_8), new String(ENCODER.encode(0L), UTF_8), false);
         RegExFilter.setNegate(setting2, true);
 
         return ImmutableList.of(setting1, setting2);
@@ -350,7 +351,7 @@ public class AccumuloMetricsStorage
                 // Sum the entries to get the cardinality
                 long sum = 0;
                 for (Entry<Key, Value> entry : scanner) {
-                    sum += Long.parseLong(entry.getValue().toString());
+                    sum += ENCODER.decode(entry.getValue().get());
                 }
                 return sum;
             }
@@ -405,7 +406,7 @@ public class AccumuloMetricsStorage
 
                     // Sum the values (if a value exists already)
                     Long value = rangeValues.getOrDefault(cacheKey, 0L);
-                    rangeValues.put(cacheKey, Long.parseLong(entry.getValue().toString()) + value);
+                    rangeValues.put(cacheKey, ENCODER.decode(entry.getValue().get()) + value);
                 }
 
                 // Add the remaining cache keys to our return list with a cardinality of zero
@@ -449,7 +450,7 @@ public class AccumuloMetricsStorage
                 // retrieved from the scanner
                 long sum = 0;
                 for (Map.Entry<Key, Value> entry : scanner) {
-                    sum += Long.parseLong(entry.getValue().toString());
+                    sum += ENCODER.decode(entry.getValue().get());
                 }
 
                 return sum;

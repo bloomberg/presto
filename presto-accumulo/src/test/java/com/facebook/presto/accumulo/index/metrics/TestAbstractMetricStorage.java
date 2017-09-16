@@ -25,8 +25,6 @@ import org.apache.accumulo.core.data.Range;
 import org.apache.accumulo.core.security.Authorizations;
 import org.apache.accumulo.core.security.ColumnVisibility;
 import org.apache.hadoop.io.Text;
-import org.joda.time.format.DateTimeFormatter;
-import org.joda.time.format.ISODateTimeFormat;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.Test;
 
@@ -44,8 +42,6 @@ import static org.testng.Assert.assertNotNull;
 
 public abstract class TestAbstractMetricStorage
 {
-    protected static final DateTimeFormatter PARSER = ISODateTimeFormat.dateTimeParser();
-
     protected AccumuloConfig config = new AccumuloConfig();
     protected AccumuloTable table;
     protected AccumuloTable table2;

@@ -46,6 +46,7 @@ import java.util.Map.Entry;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
+import static com.facebook.presto.accumulo.index.metrics.AccumuloMetricsStorage.ENCODER;
 import static com.facebook.presto.accumulo.serializers.AccumuloRowSerializer.getBlockFromArray;
 import static com.facebook.presto.spi.type.BigintType.BIGINT;
 import static com.facebook.presto.spi.type.VarcharType.VARCHAR;
@@ -197,7 +198,7 @@ public class TestPrestoBatchWriter
         iter = scan.iterator();
         assertTrue(iter.hasNext());
         assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age", "row1", "");
-        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age_car", "car", "1");
+        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age_car", "car", ENCODER.encode(1L));
         assertFalse(iter.hasNext());
         scan.close();
 
@@ -205,11 +206,11 @@ public class TestPrestoBatchWriter
         iter = scan.iterator();
         assertTrue(iter.hasNext());
         assertKeyValuePair(iter.next(), bytes("abc"), "cf_arr", "row1", "");
-        assertKeyValuePair(iter.next(), bytes("abc"), "cf_arr_car", "car", "1");
+        assertKeyValuePair(iter.next(), bytes("abc"), "cf_arr_car", "car", ENCODER.encode(1L));
         assertKeyValuePair(iter.next(), bytes("def"), "cf_arr", "row1", "");
-        assertKeyValuePair(iter.next(), bytes("def"), "cf_arr_car", "car", "1");
+        assertKeyValuePair(iter.next(), bytes("def"), "cf_arr_car", "car", ENCODER.encode(1L));
         assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr", "row1", "");
-        assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr_car", "car", "1");
+        assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr_car", "car", ENCODER.encode(1L));
         assertFalse(iter.hasNext());
         scan.close();
 
@@ -217,7 +218,7 @@ public class TestPrestoBatchWriter
         iter = scan.iterator();
         assertTrue(iter.hasNext());
         assertKeyValuePair(iter.next(), M1_FNAME_VALUE, "cf_firstname", "row1", "");
-        assertKeyValuePair(iter.next(), M1_FNAME_VALUE, "cf_firstname_car", "car", "1");
+        assertKeyValuePair(iter.next(), M1_FNAME_VALUE, "cf_firstname_car", "car", ENCODER.encode(1L));
         assertFalse(iter.hasNext());
         scan.close();
 
@@ -250,7 +251,7 @@ public class TestPrestoBatchWriter
         assertTrue(iter.hasNext());
         assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age", "row1", "");
         assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age", "row2", "");
-        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age_car", "car", "2");
+        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age_car", "car", ENCODER.encode(2L));
         assertFalse(iter.hasNext());
         scan.close();
 
@@ -259,14 +260,14 @@ public class TestPrestoBatchWriter
         assertTrue(iter.hasNext());
         assertKeyValuePair(iter.next(), bytes("abc"), "cf_arr", "row1", "");
         assertKeyValuePair(iter.next(), bytes("abc"), "cf_arr", "row2", "");
-        assertKeyValuePair(iter.next(), bytes("abc"), "cf_arr_car", "car", "2");
+        assertKeyValuePair(iter.next(), bytes("abc"), "cf_arr_car", "car", ENCODER.encode(2L));
         assertKeyValuePair(iter.next(), bytes("def"), "cf_arr", "row1", "");
-        assertKeyValuePair(iter.next(), bytes("def"), "cf_arr_car", "car", "1");
+        assertKeyValuePair(iter.next(), bytes("def"), "cf_arr_car", "car", ENCODER.encode(1L));
         assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr", "row1", "");
         assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr", "row2", "");
-        assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr_car", "car", "2");
+        assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr_car", "car", ENCODER.encode(2L));
         assertKeyValuePair(iter.next(), bytes("mno"), "cf_arr", "row2", "");
-        assertKeyValuePair(iter.next(), bytes("mno"), "cf_arr_car", "car", "1");
+        assertKeyValuePair(iter.next(), bytes("mno"), "cf_arr_car", "car", ENCODER.encode(1L));
         assertFalse(iter.hasNext());
         scan.close();
 
@@ -274,9 +275,9 @@ public class TestPrestoBatchWriter
         iter = scan.iterator();
         assertTrue(iter.hasNext());
         assertKeyValuePair(iter.next(), M1_FNAME_VALUE, "cf_firstname", "row1", "");
-        assertKeyValuePair(iter.next(), M1_FNAME_VALUE, "cf_firstname_car", "car", "1");
+        assertKeyValuePair(iter.next(), M1_FNAME_VALUE, "cf_firstname_car", "car", ENCODER.encode(1L));
         assertKeyValuePair(iter.next(), M2_FNAME_VALUE, "cf_firstname", "row2", "");
-        assertKeyValuePair(iter.next(), M2_FNAME_VALUE, "cf_firstname_car", "car", "1");
+        assertKeyValuePair(iter.next(), M2_FNAME_VALUE, "cf_firstname_car", "car", ENCODER.encode(1L));
         assertFalse(iter.hasNext());
         scan.close();
 
@@ -316,7 +317,7 @@ public class TestPrestoBatchWriter
         assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age", "row1", "");
         assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age", "row2", "");
         assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age", "row3", "");
-        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age_car", "car", "3");
+        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age_car", "car", ENCODER.encode(3L));
         assertFalse(iter.hasNext());
         scan.close();
 
@@ -325,18 +326,18 @@ public class TestPrestoBatchWriter
         assertTrue(iter.hasNext());
         assertKeyValuePair(iter.next(), bytes("abc"), "cf_arr", "row1", "");
         assertKeyValuePair(iter.next(), bytes("abc"), "cf_arr", "row2", "");
-        assertKeyValuePair(iter.next(), bytes("abc"), "cf_arr_car", "car", "2");
+        assertKeyValuePair(iter.next(), bytes("abc"), "cf_arr_car", "car", ENCODER.encode(2L));
         assertKeyValuePair(iter.next(), bytes("def"), "cf_arr", "row1", "");
         assertKeyValuePair(iter.next(), bytes("def"), "cf_arr", "row3", "");
-        assertKeyValuePair(iter.next(), bytes("def"), "cf_arr_car", "car", "2");
+        assertKeyValuePair(iter.next(), bytes("def"), "cf_arr_car", "car", ENCODER.encode(2L));
         assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr", "row1", "");
         assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr", "row2", "");
         assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr", "row3", "");
-        assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr_car", "car", "3");
+        assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr_car", "car", ENCODER.encode(3L));
         assertKeyValuePair(iter.next(), bytes("jkl"), "cf_arr", "row3", "");
-        assertKeyValuePair(iter.next(), bytes("jkl"), "cf_arr_car", "car", "1");
+        assertKeyValuePair(iter.next(), bytes("jkl"), "cf_arr_car", "car", ENCODER.encode(1L));
         assertKeyValuePair(iter.next(), bytes("mno"), "cf_arr", "row2", "");
-        assertKeyValuePair(iter.next(), bytes("mno"), "cf_arr_car", "car", "1");
+        assertKeyValuePair(iter.next(), bytes("mno"), "cf_arr_car", "car", ENCODER.encode(1L));
         assertFalse(iter.hasNext());
         scan.close();
 
@@ -344,11 +345,11 @@ public class TestPrestoBatchWriter
         iter = scan.iterator();
         assertTrue(iter.hasNext());
         assertKeyValuePair(iter.next(), M1_FNAME_VALUE, "cf_firstname", "row1", "");
-        assertKeyValuePair(iter.next(), M1_FNAME_VALUE, "cf_firstname_car", "car", "1");
+        assertKeyValuePair(iter.next(), M1_FNAME_VALUE, "cf_firstname_car", "car", ENCODER.encode(1L));
         assertKeyValuePair(iter.next(), M2_FNAME_VALUE, "cf_firstname", "row2", "");
-        assertKeyValuePair(iter.next(), M2_FNAME_VALUE, "cf_firstname_car", "car", "1");
+        assertKeyValuePair(iter.next(), M2_FNAME_VALUE, "cf_firstname_car", "car", ENCODER.encode(1L));
         assertKeyValuePair(iter.next(), M3_FNAME_VALUE, "cf_firstname", "row3", "");
-        assertKeyValuePair(iter.next(), M3_FNAME_VALUE, "cf_firstname_car", "car", "1");
+        assertKeyValuePair(iter.next(), M3_FNAME_VALUE, "cf_firstname_car", "car", ENCODER.encode(1L));
         assertFalse(iter.hasNext());
         scan.close();
 
@@ -405,7 +406,7 @@ public class TestPrestoBatchWriter
         assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age", "row1", "");
         assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age", "row2", "");
         assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age", "row3", "");
-        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age_car", "car", "3");
+        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age_car", "car", ENCODER.encode(3L));
         assertFalse(iter.hasNext());
         scan.close();
 
@@ -414,18 +415,18 @@ public class TestPrestoBatchWriter
         assertTrue(iter.hasNext());
         assertKeyValuePair(iter.next(), bytes("abc"), "cf_arr", "row1", "");
         assertKeyValuePair(iter.next(), bytes("abc"), "cf_arr", "row2", "");
-        assertKeyValuePair(iter.next(), bytes("abc"), "cf_arr_car", "car", "2");
+        assertKeyValuePair(iter.next(), bytes("abc"), "cf_arr_car", "car", ENCODER.encode(2L));
         assertKeyValuePair(iter.next(), bytes("def"), "cf_arr", "row1", "");
         assertKeyValuePair(iter.next(), bytes("def"), "cf_arr", "row3", "");
-        assertKeyValuePair(iter.next(), bytes("def"), "cf_arr_car", "car", "2");
+        assertKeyValuePair(iter.next(), bytes("def"), "cf_arr_car", "car", ENCODER.encode(2L));
         assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr", "row1", "");
         assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr", "row2", "");
         assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr", "row3", "");
-        assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr_car", "car", "3");
+        assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr_car", "car", ENCODER.encode(3L));
         assertKeyValuePair(iter.next(), bytes("jkl"), "cf_arr", "row3", "");
-        assertKeyValuePair(iter.next(), bytes("jkl"), "cf_arr_car", "car", "1");
+        assertKeyValuePair(iter.next(), bytes("jkl"), "cf_arr_car", "car", ENCODER.encode(1L));
         assertKeyValuePair(iter.next(), bytes("mno"), "cf_arr", "row2", "");
-        assertKeyValuePair(iter.next(), bytes("mno"), "cf_arr_car", "car", "1");
+        assertKeyValuePair(iter.next(), bytes("mno"), "cf_arr_car", "car", ENCODER.encode(1L));
         assertFalse(iter.hasNext());
         scan.close();
 
@@ -433,11 +434,11 @@ public class TestPrestoBatchWriter
         iter = scan.iterator();
         assertTrue(iter.hasNext());
         assertKeyValuePair(iter.next(), M1_FNAME_VALUE, "cf_firstname", "row1", "");
-        assertKeyValuePair(iter.next(), M1_FNAME_VALUE, "cf_firstname_car", "car", "1");
+        assertKeyValuePair(iter.next(), M1_FNAME_VALUE, "cf_firstname_car", "car", ENCODER.encode(1L));
         assertKeyValuePair(iter.next(), M2_FNAME_VALUE, "cf_firstname", "row2", "");
-        assertKeyValuePair(iter.next(), M2_FNAME_VALUE, "cf_firstname_car", "car", "1");
+        assertKeyValuePair(iter.next(), M2_FNAME_VALUE, "cf_firstname_car", "car", ENCODER.encode(1L));
         assertKeyValuePair(iter.next(), M3_FNAME_VALUE, "cf_firstname", "row3", "");
-        assertKeyValuePair(iter.next(), M3_FNAME_VALUE, "cf_firstname_car", "car", "1");
+        assertKeyValuePair(iter.next(), M3_FNAME_VALUE, "cf_firstname_car", "car", ENCODER.encode(1L));
         assertFalse(iter.hasNext());
         scan.close();
 
@@ -484,7 +485,7 @@ public class TestPrestoBatchWriter
         iter = scan.iterator();
         assertTrue(iter.hasNext());
         assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age", "row1", "");
-        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age_car", "car", "1");
+        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age_car", "car", ENCODER.encode(1L));
         assertFalse(iter.hasNext());
         scan.close();
 
@@ -492,11 +493,11 @@ public class TestPrestoBatchWriter
         iter = scan.iterator();
         assertTrue(iter.hasNext());
         assertKeyValuePair(iter.next(), bytes("abc"), "cf_arr", "row1", "");
-        assertKeyValuePair(iter.next(), bytes("abc"), "cf_arr_car", "car", "1");
+        assertKeyValuePair(iter.next(), bytes("abc"), "cf_arr_car", "car", ENCODER.encode(1L));
         assertKeyValuePair(iter.next(), bytes("def"), "cf_arr", "row1", "");
-        assertKeyValuePair(iter.next(), bytes("def"), "cf_arr_car", "car", "1");
+        assertKeyValuePair(iter.next(), bytes("def"), "cf_arr_car", "car", ENCODER.encode(1L));
         assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr", "row1", "");
-        assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr_car", "car", "1");
+        assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr_car", "car", ENCODER.encode(1L));
         assertFalse(iter.hasNext());
         scan.close();
 
@@ -504,7 +505,7 @@ public class TestPrestoBatchWriter
         iter = scan.iterator();
         assertTrue(iter.hasNext());
         assertKeyValuePair(iter.next(), M1_FNAME_VALUE, "cf_firstname", "row1", "");
-        assertKeyValuePair(iter.next(), M1_FNAME_VALUE, "cf_firstname_car", "car", "1");
+        assertKeyValuePair(iter.next(), M1_FNAME_VALUE, "cf_firstname_car", "car", ENCODER.encode(1L));
         assertFalse(iter.hasNext());
         scan.close();
 
@@ -537,8 +538,8 @@ public class TestPrestoBatchWriter
         assertTrue(iter.hasNext());
         assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age", "row1", "");
         assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age", "row2", "private", "");
-        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age_car", "car", "1");
-        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age_car", "car", "private", "1");
+        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age_car", "car", ENCODER.encode(1L));
+        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age_car", "car", "private", ENCODER.encode(1L));
         assertFalse(iter.hasNext());
         scan.close();
 
@@ -547,16 +548,16 @@ public class TestPrestoBatchWriter
         assertTrue(iter.hasNext());
         assertKeyValuePair(iter.next(), bytes("abc"), "cf_arr", "row1", "");
         assertKeyValuePair(iter.next(), bytes("abc"), "cf_arr", "row2", "private", "");
-        assertKeyValuePair(iter.next(), bytes("abc"), "cf_arr_car", "car", "1");
-        assertKeyValuePair(iter.next(), bytes("abc"), "cf_arr_car", "car", "private", "1");
+        assertKeyValuePair(iter.next(), bytes("abc"), "cf_arr_car", "car", ENCODER.encode(1L));
+        assertKeyValuePair(iter.next(), bytes("abc"), "cf_arr_car", "car", "private", ENCODER.encode(1L));
         assertKeyValuePair(iter.next(), bytes("def"), "cf_arr", "row1", "");
-        assertKeyValuePair(iter.next(), bytes("def"), "cf_arr_car", "car", "1");
+        assertKeyValuePair(iter.next(), bytes("def"), "cf_arr_car", "car", ENCODER.encode(1L));
         assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr", "row1", "");
         assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr", "row2", "private", "");
-        assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr_car", "car", "1");
-        assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr_car", "car", "private", "1");
+        assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr_car", "car", ENCODER.encode(1L));
+        assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr_car", "car", "private", ENCODER.encode(1L));
         assertKeyValuePair(iter.next(), bytes("mno"), "cf_arr", "row2", "private", "");
-        assertKeyValuePair(iter.next(), bytes("mno"), "cf_arr_car", "car", "private", "1");
+        assertKeyValuePair(iter.next(), bytes("mno"), "cf_arr_car", "car", "private", ENCODER.encode(1L));
         assertFalse(iter.hasNext());
         scan.close();
 
@@ -564,9 +565,9 @@ public class TestPrestoBatchWriter
         iter = scan.iterator();
         assertTrue(iter.hasNext());
         assertKeyValuePair(iter.next(), M1_FNAME_VALUE, "cf_firstname", "row1", "");
-        assertKeyValuePair(iter.next(), M1_FNAME_VALUE, "cf_firstname_car", "car", "1");
+        assertKeyValuePair(iter.next(), M1_FNAME_VALUE, "cf_firstname_car", "car", ENCODER.encode(1L));
         assertKeyValuePair(iter.next(), M2_FNAME_VALUE, "cf_firstname", "row2", "private", "");
-        assertKeyValuePair(iter.next(), M2_FNAME_VALUE, "cf_firstname_car", "car", "private", "1");
+        assertKeyValuePair(iter.next(), M2_FNAME_VALUE, "cf_firstname_car", "car", "private", ENCODER.encode(1L));
         assertFalse(iter.hasNext());
         scan.close();
 
@@ -606,9 +607,9 @@ public class TestPrestoBatchWriter
         assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age", "row1", "");
         assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age", "row2", "private", "");
         assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age", "row3", "moreprivate", "");
-        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age_car", "car", "1");
-        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age_car", "car", "moreprivate", "1");
-        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age_car", "car", "private", "1");
+        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age_car", "car", ENCODER.encode(1L));
+        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age_car", "car", "moreprivate", ENCODER.encode(1L));
+        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age_car", "car", "private", ENCODER.encode(1L));
         assertFalse(iter.hasNext());
         scan.close();
 
@@ -617,22 +618,22 @@ public class TestPrestoBatchWriter
         assertTrue(iter.hasNext());
         assertKeyValuePair(iter.next(), bytes("abc"), "cf_arr", "row1", "");
         assertKeyValuePair(iter.next(), bytes("abc"), "cf_arr", "row2", "private", "");
-        assertKeyValuePair(iter.next(), bytes("abc"), "cf_arr_car", "car", "1");
-        assertKeyValuePair(iter.next(), bytes("abc"), "cf_arr_car", "car", "private", "1");
+        assertKeyValuePair(iter.next(), bytes("abc"), "cf_arr_car", "car", ENCODER.encode(1L));
+        assertKeyValuePair(iter.next(), bytes("abc"), "cf_arr_car", "car", "private", ENCODER.encode(1L));
         assertKeyValuePair(iter.next(), bytes("def"), "cf_arr", "row1", "");
         assertKeyValuePair(iter.next(), bytes("def"), "cf_arr", "row3", "moreprivate", "");
-        assertKeyValuePair(iter.next(), bytes("def"), "cf_arr_car", "car", "1");
-        assertKeyValuePair(iter.next(), bytes("def"), "cf_arr_car", "car", "moreprivate", "1");
+        assertKeyValuePair(iter.next(), bytes("def"), "cf_arr_car", "car", ENCODER.encode(1L));
+        assertKeyValuePair(iter.next(), bytes("def"), "cf_arr_car", "car", "moreprivate", ENCODER.encode(1L));
         assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr", "row1", "");
         assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr", "row2", "private", "");
         assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr", "row3", "moreprivate", "");
-        assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr_car", "car", "1");
-        assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr_car", "car", "moreprivate", "1");
-        assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr_car", "car", "private", "1");
+        assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr_car", "car", ENCODER.encode(1L));
+        assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr_car", "car", "moreprivate", ENCODER.encode(1L));
+        assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr_car", "car", "private", ENCODER.encode(1L));
         assertKeyValuePair(iter.next(), bytes("jkl"), "cf_arr", "row3", "moreprivate", "");
-        assertKeyValuePair(iter.next(), bytes("jkl"), "cf_arr_car", "car", "moreprivate", "1");
+        assertKeyValuePair(iter.next(), bytes("jkl"), "cf_arr_car", "car", "moreprivate", ENCODER.encode(1L));
         assertKeyValuePair(iter.next(), bytes("mno"), "cf_arr", "row2", "private", "");
-        assertKeyValuePair(iter.next(), bytes("mno"), "cf_arr_car", "car", "private", "1");
+        assertKeyValuePair(iter.next(), bytes("mno"), "cf_arr_car", "car", "private", ENCODER.encode(1L));
         assertFalse(iter.hasNext());
         scan.close();
 
@@ -640,11 +641,11 @@ public class TestPrestoBatchWriter
         iter = scan.iterator();
         assertTrue(iter.hasNext());
         assertKeyValuePair(iter.next(), M1_FNAME_VALUE, "cf_firstname", "row1", "");
-        assertKeyValuePair(iter.next(), M1_FNAME_VALUE, "cf_firstname_car", "car", "1");
+        assertKeyValuePair(iter.next(), M1_FNAME_VALUE, "cf_firstname_car", "car", ENCODER.encode(1L));
         assertKeyValuePair(iter.next(), M2_FNAME_VALUE, "cf_firstname", "row2", "private", "");
-        assertKeyValuePair(iter.next(), M2_FNAME_VALUE, "cf_firstname_car", "car", "private", "1");
+        assertKeyValuePair(iter.next(), M2_FNAME_VALUE, "cf_firstname_car", "car", "private", ENCODER.encode(1L));
         assertKeyValuePair(iter.next(), M3_FNAME_VALUE, "cf_firstname", "row3", "moreprivate", "");
-        assertKeyValuePair(iter.next(), M3_FNAME_VALUE, "cf_firstname_car", "car", "moreprivate", "1");
+        assertKeyValuePair(iter.next(), M3_FNAME_VALUE, "cf_firstname_car", "car", "moreprivate", ENCODER.encode(1L));
         assertFalse(iter.hasNext());
         scan.close();
 
@@ -703,9 +704,9 @@ public class TestPrestoBatchWriter
         assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age", "row1", "");
         assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age", "row2", "private", "");
         assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age", "row3", "moreprivate", "");
-        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age_car", "car", "1");
-        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age_car", "car", "moreprivate", "1");
-        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age_car", "car", "private", "1");
+        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age_car", "car", ENCODER.encode(1L));
+        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age_car", "car", "moreprivate", ENCODER.encode(1L));
+        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age_car", "car", "private", ENCODER.encode(1L));
         assertFalse(iter.hasNext());
         scan.close();
 
@@ -714,22 +715,22 @@ public class TestPrestoBatchWriter
         assertTrue(iter.hasNext());
         assertKeyValuePair(iter.next(), bytes("abc"), "cf_arr", "row1", "");
         assertKeyValuePair(iter.next(), bytes("abc"), "cf_arr", "row2", "private", "");
-        assertKeyValuePair(iter.next(), bytes("abc"), "cf_arr_car", "car", "1");
-        assertKeyValuePair(iter.next(), bytes("abc"), "cf_arr_car", "car", "private", "1");
+        assertKeyValuePair(iter.next(), bytes("abc"), "cf_arr_car", "car", ENCODER.encode(1L));
+        assertKeyValuePair(iter.next(), bytes("abc"), "cf_arr_car", "car", "private", ENCODER.encode(1L));
         assertKeyValuePair(iter.next(), bytes("def"), "cf_arr", "row1", "");
         assertKeyValuePair(iter.next(), bytes("def"), "cf_arr", "row3", "moreprivate", "");
-        assertKeyValuePair(iter.next(), bytes("def"), "cf_arr_car", "car", "1");
-        assertKeyValuePair(iter.next(), bytes("def"), "cf_arr_car", "car", "moreprivate", "1");
+        assertKeyValuePair(iter.next(), bytes("def"), "cf_arr_car", "car", ENCODER.encode(1L));
+        assertKeyValuePair(iter.next(), bytes("def"), "cf_arr_car", "car", "moreprivate", ENCODER.encode(1L));
         assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr", "row1", "");
         assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr", "row2", "private", "");
         assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr", "row3", "moreprivate", "");
-        assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr_car", "car", "1");
-        assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr_car", "car", "moreprivate", "1");
-        assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr_car", "car", "private", "1");
+        assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr_car", "car", ENCODER.encode(1L));
+        assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr_car", "car", "moreprivate", ENCODER.encode(1L));
+        assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr_car", "car", "private", ENCODER.encode(1L));
         assertKeyValuePair(iter.next(), bytes("jkl"), "cf_arr", "row3", "moreprivate", "");
-        assertKeyValuePair(iter.next(), bytes("jkl"), "cf_arr_car", "car", "moreprivate", "1");
+        assertKeyValuePair(iter.next(), bytes("jkl"), "cf_arr_car", "car", "moreprivate", ENCODER.encode(1L));
         assertKeyValuePair(iter.next(), bytes("mno"), "cf_arr", "row2", "private", "");
-        assertKeyValuePair(iter.next(), bytes("mno"), "cf_arr_car", "car", "private", "1");
+        assertKeyValuePair(iter.next(), bytes("mno"), "cf_arr_car", "car", "private", ENCODER.encode(1L));
         assertFalse(iter.hasNext());
         scan.close();
 
@@ -737,11 +738,11 @@ public class TestPrestoBatchWriter
         iter = scan.iterator();
         assertTrue(iter.hasNext());
         assertKeyValuePair(iter.next(), M1_FNAME_VALUE, "cf_firstname", "row1", "");
-        assertKeyValuePair(iter.next(), M1_FNAME_VALUE, "cf_firstname_car", "car", "1");
+        assertKeyValuePair(iter.next(), M1_FNAME_VALUE, "cf_firstname_car", "car", ENCODER.encode(1L));
         assertKeyValuePair(iter.next(), M2_FNAME_VALUE, "cf_firstname", "row2", "private", "");
-        assertKeyValuePair(iter.next(), M2_FNAME_VALUE, "cf_firstname_car", "car", "private", "1");
+        assertKeyValuePair(iter.next(), M2_FNAME_VALUE, "cf_firstname_car", "car", "private", ENCODER.encode(1L));
         assertKeyValuePair(iter.next(), M3_FNAME_VALUE, "cf_firstname", "row3", "moreprivate", "");
-        assertKeyValuePair(iter.next(), M3_FNAME_VALUE, "cf_firstname_car", "car", "moreprivate", "1");
+        assertKeyValuePair(iter.next(), M3_FNAME_VALUE, "cf_firstname_car", "car", "moreprivate", ENCODER.encode(1L));
         assertFalse(iter.hasNext());
         scan.close();
 
@@ -798,9 +799,9 @@ public class TestPrestoBatchWriter
         assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age", "row1", "");
         assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age", "row2", "private", "");
         assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age", "row3", "moreprivate", "");
-        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age_car", "car", "1");
-        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age_car", "car", "moreprivate", "1");
-        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age_car", "car", "private", "1");
+        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age_car", "car", ENCODER.encode(1L));
+        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age_car", "car", "moreprivate", ENCODER.encode(1L));
+        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age_car", "car", "private", ENCODER.encode(1L));
         assertFalse(iter.hasNext());
         scan.close();
 
@@ -809,22 +810,22 @@ public class TestPrestoBatchWriter
         assertTrue(iter.hasNext());
         assertKeyValuePair(iter.next(), bytes("abc"), "cf_arr", "row1", "");
         assertKeyValuePair(iter.next(), bytes("abc"), "cf_arr", "row2", "private", "");
-        assertKeyValuePair(iter.next(), bytes("abc"), "cf_arr_car", "car", "1");
-        assertKeyValuePair(iter.next(), bytes("abc"), "cf_arr_car", "car", "private", "1");
+        assertKeyValuePair(iter.next(), bytes("abc"), "cf_arr_car", "car", ENCODER.encode(1L));
+        assertKeyValuePair(iter.next(), bytes("abc"), "cf_arr_car", "car", "private", ENCODER.encode(1L));
         assertKeyValuePair(iter.next(), bytes("def"), "cf_arr", "row1", "");
         assertKeyValuePair(iter.next(), bytes("def"), "cf_arr", "row3", "moreprivate", "");
-        assertKeyValuePair(iter.next(), bytes("def"), "cf_arr_car", "car", "1");
-        assertKeyValuePair(iter.next(), bytes("def"), "cf_arr_car", "car", "moreprivate", "1");
+        assertKeyValuePair(iter.next(), bytes("def"), "cf_arr_car", "car", ENCODER.encode(1L));
+        assertKeyValuePair(iter.next(), bytes("def"), "cf_arr_car", "car", "moreprivate", ENCODER.encode(1L));
         assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr", "row1", "");
         assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr", "row2", "private", "");
         assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr", "row3", "moreprivate", "");
-        assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr_car", "car", "1");
-        assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr_car", "car", "moreprivate", "1");
-        assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr_car", "car", "private", "1");
+        assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr_car", "car", ENCODER.encode(1L));
+        assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr_car", "car", "moreprivate", ENCODER.encode(1L));
+        assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr_car", "car", "private", ENCODER.encode(1L));
         assertKeyValuePair(iter.next(), bytes("jkl"), "cf_arr", "row3", "moreprivate", "");
-        assertKeyValuePair(iter.next(), bytes("jkl"), "cf_arr_car", "car", "moreprivate", "1");
+        assertKeyValuePair(iter.next(), bytes("jkl"), "cf_arr_car", "car", "moreprivate", ENCODER.encode(1L));
         assertKeyValuePair(iter.next(), bytes("mno"), "cf_arr", "row2", "private", "");
-        assertKeyValuePair(iter.next(), bytes("mno"), "cf_arr_car", "car", "private", "1");
+        assertKeyValuePair(iter.next(), bytes("mno"), "cf_arr_car", "car", "private", ENCODER.encode(1L));
         assertFalse(iter.hasNext());
         scan.close();
 
@@ -832,11 +833,11 @@ public class TestPrestoBatchWriter
         iter = scan.iterator();
         assertTrue(iter.hasNext());
         assertKeyValuePair(iter.next(), M1_FNAME_VALUE, "cf_firstname", "row1", "");
-        assertKeyValuePair(iter.next(), M1_FNAME_VALUE, "cf_firstname_car", "car", "1");
+        assertKeyValuePair(iter.next(), M1_FNAME_VALUE, "cf_firstname_car", "car", ENCODER.encode(1L));
         assertKeyValuePair(iter.next(), M2_FNAME_VALUE, "cf_firstname", "row2", "private", "");
-        assertKeyValuePair(iter.next(), M2_FNAME_VALUE, "cf_firstname_car", "car", "private", "1");
+        assertKeyValuePair(iter.next(), M2_FNAME_VALUE, "cf_firstname_car", "car", "private", ENCODER.encode(1L));
         assertKeyValuePair(iter.next(), M3_FNAME_VALUE, "cf_firstname", "row3", "moreprivate", "");
-        assertKeyValuePair(iter.next(), M3_FNAME_VALUE, "cf_firstname_car", "car", "moreprivate", "1");
+        assertKeyValuePair(iter.next(), M3_FNAME_VALUE, "cf_firstname_car", "car", "moreprivate", ENCODER.encode(1L));
         assertFalse(iter.hasNext());
         scan.close();
 
@@ -903,9 +904,9 @@ public class TestPrestoBatchWriter
         assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age", "row1", "");
         assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age", "row2", "private", "");
         assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age", "row3", "moreprivate", "");
-        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age_car", "car", "1");
-        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age_car", "car", "moreprivate", "1");
-        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age_car", "car", "private", "1");
+        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age_car", "car", ENCODER.encode(1L));
+        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age_car", "car", "moreprivate", ENCODER.encode(1L));
+        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age_car", "car", "private", ENCODER.encode(1L));
         assertFalse(iter.hasNext());
         scan.close();
 
@@ -914,22 +915,22 @@ public class TestPrestoBatchWriter
         assertTrue(iter.hasNext());
         assertKeyValuePair(iter.next(), bytes("abc"), "cf_arr", "row1", "");
         assertKeyValuePair(iter.next(), bytes("abc"), "cf_arr", "row2", "private", "");
-        assertKeyValuePair(iter.next(), bytes("abc"), "cf_arr_car", "car", "1");
-        assertKeyValuePair(iter.next(), bytes("abc"), "cf_arr_car", "car", "private", "1");
+        assertKeyValuePair(iter.next(), bytes("abc"), "cf_arr_car", "car", ENCODER.encode(1L));
+        assertKeyValuePair(iter.next(), bytes("abc"), "cf_arr_car", "car", "private", ENCODER.encode(1L));
         assertKeyValuePair(iter.next(), bytes("def"), "cf_arr", "row1", "");
         assertKeyValuePair(iter.next(), bytes("def"), "cf_arr", "row3", "moreprivate", "");
-        assertKeyValuePair(iter.next(), bytes("def"), "cf_arr_car", "car", "1");
-        assertKeyValuePair(iter.next(), bytes("def"), "cf_arr_car", "car", "moreprivate", "1");
+        assertKeyValuePair(iter.next(), bytes("def"), "cf_arr_car", "car", ENCODER.encode(1L));
+        assertKeyValuePair(iter.next(), bytes("def"), "cf_arr_car", "car", "moreprivate", ENCODER.encode(1L));
         assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr", "row1", "");
         assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr", "row2", "private", "");
         assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr", "row3", "moreprivate", "");
-        assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr_car", "car", "1");
-        assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr_car", "car", "moreprivate", "1");
-        assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr_car", "car", "private", "1");
+        assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr_car", "car", ENCODER.encode(1L));
+        assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr_car", "car", "moreprivate", ENCODER.encode(1L));
+        assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr_car", "car", "private", ENCODER.encode(1L));
         assertKeyValuePair(iter.next(), bytes("jkl"), "cf_arr", "row3", "moreprivate", "");
-        assertKeyValuePair(iter.next(), bytes("jkl"), "cf_arr_car", "car", "moreprivate", "1");
+        assertKeyValuePair(iter.next(), bytes("jkl"), "cf_arr_car", "car", "moreprivate", ENCODER.encode(1L));
         assertKeyValuePair(iter.next(), bytes("mno"), "cf_arr", "row2", "private", "");
-        assertKeyValuePair(iter.next(), bytes("mno"), "cf_arr_car", "car", "private", "1");
+        assertKeyValuePair(iter.next(), bytes("mno"), "cf_arr_car", "car", "private", ENCODER.encode(1L));
         assertFalse(iter.hasNext());
         scan.close();
 
@@ -937,11 +938,11 @@ public class TestPrestoBatchWriter
         iter = scan.iterator();
         assertTrue(iter.hasNext());
         assertKeyValuePair(iter.next(), M1_FNAME_VALUE, "cf_firstname", "row3", "private", "");
-        assertKeyValuePair(iter.next(), M1_FNAME_VALUE, "cf_firstname_car", "car", "private", "1");
+        assertKeyValuePair(iter.next(), M1_FNAME_VALUE, "cf_firstname_car", "car", "private", ENCODER.encode(1L));
         assertKeyValuePair(iter.next(), M2_FNAME_VALUE, "cf_firstname", "row1", "");
-        assertKeyValuePair(iter.next(), M2_FNAME_VALUE, "cf_firstname_car", "car", "1");
+        assertKeyValuePair(iter.next(), M2_FNAME_VALUE, "cf_firstname_car", "car", ENCODER.encode(1L));
         assertKeyValuePair(iter.next(), M3_FNAME_VALUE, "cf_firstname", "row2", "moreprivate", "");
-        assertKeyValuePair(iter.next(), M3_FNAME_VALUE, "cf_firstname_car", "car", "moreprivate", "1");
+        assertKeyValuePair(iter.next(), M3_FNAME_VALUE, "cf_firstname_car", "car", "moreprivate", ENCODER.encode(1L));
         assertFalse(iter.hasNext());
         scan.close();
 
@@ -998,8 +999,8 @@ public class TestPrestoBatchWriter
         assertTrue(iter.hasNext());
         assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age", "row2", "private", "");
         assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age", "row3", "moreprivate", "");
-        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age_car", "car", "moreprivate", "1");
-        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age_car", "car", "private", "1");
+        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age_car", "car", "moreprivate", ENCODER.encode(1L));
+        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age_car", "car", "private", ENCODER.encode(1L));
         assertFalse(iter.hasNext());
         scan.close();
 
@@ -1008,16 +1009,16 @@ public class TestPrestoBatchWriter
         assertTrue(iter.hasNext());
         assertKeyValuePair(iter.next(), bytes("abc"), "cf_arr", "row1", "");
         assertKeyValuePair(iter.next(), bytes("abc"), "cf_arr", "row2", "private", "");
-        assertKeyValuePair(iter.next(), bytes("abc"), "cf_arr_car", "car", "1");
-        assertKeyValuePair(iter.next(), bytes("abc"), "cf_arr_car", "car", "private", "1");
+        assertKeyValuePair(iter.next(), bytes("abc"), "cf_arr_car", "car", ENCODER.encode(1L));
+        assertKeyValuePair(iter.next(), bytes("abc"), "cf_arr_car", "car", "private", ENCODER.encode(1L));
         assertKeyValuePair(iter.next(), bytes("def"), "cf_arr", "row1", "");
-        assertKeyValuePair(iter.next(), bytes("def"), "cf_arr_car", "car", "1");
+        assertKeyValuePair(iter.next(), bytes("def"), "cf_arr_car", "car", ENCODER.encode(1L));
         assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr", "row1", "");
         assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr", "row2", "private", "");
-        assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr_car", "car", "1");
-        assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr_car", "car", "private", "1");
+        assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr_car", "car", ENCODER.encode(1L));
+        assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr_car", "car", "private", ENCODER.encode(1L));
         assertKeyValuePair(iter.next(), bytes("mno"), "cf_arr", "row2", "private", "");
-        assertKeyValuePair(iter.next(), bytes("mno"), "cf_arr_car", "car", "private", "1");
+        assertKeyValuePair(iter.next(), bytes("mno"), "cf_arr_car", "car", "private", ENCODER.encode(1L));
         assertFalse(iter.hasNext());
         scan.close();
 
@@ -1025,9 +1026,9 @@ public class TestPrestoBatchWriter
         iter = scan.iterator();
         assertTrue(iter.hasNext());
         assertKeyValuePair(iter.next(), M1_FNAME_VALUE, "cf_firstname", "row1", "");
-        assertKeyValuePair(iter.next(), M1_FNAME_VALUE, "cf_firstname_car", "car", "1");
+        assertKeyValuePair(iter.next(), M1_FNAME_VALUE, "cf_firstname_car", "car", ENCODER.encode(1L));
         assertKeyValuePair(iter.next(), M3_FNAME_VALUE, "cf_firstname", "row3", "moreprivate", "");
-        assertKeyValuePair(iter.next(), M3_FNAME_VALUE, "cf_firstname_car", "car", "moreprivate", "1");
+        assertKeyValuePair(iter.next(), M3_FNAME_VALUE, "cf_firstname_car", "car", "moreprivate", ENCODER.encode(1L));
         assertFalse(iter.hasNext());
         scan.close();
 
@@ -1128,10 +1129,10 @@ public class TestPrestoBatchWriter
         assertTrue(iter.hasNext());
         assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age", "row1", "");
         assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age", "row3", "moreprivate", "");
-        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age_car", "car", "1");
-        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age_car", "car", "moreprivate", "1");
-        assertKeyValuePair(iter.next(), UPDATED_AGE_VALUE, "cf_age", "row2", "", "");
-        assertKeyValuePair(iter.next(), UPDATED_AGE_VALUE, "cf_age_car", "car", "", "1");
+        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age_car", "car", ENCODER.encode(1L));
+        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age_car", "car", "moreprivate", ENCODER.encode(1L));
+        assertKeyValuePair(iter.next(), UPDATED_AGE_VALUE, "cf_age", "row2", "");
+        assertKeyValuePair(iter.next(), UPDATED_AGE_VALUE, "cf_age_car", "car", ENCODER.encode(1L));
         assertFalse(iter.hasNext());
         scan.close();
 
@@ -1140,22 +1141,22 @@ public class TestPrestoBatchWriter
         assertTrue(iter.hasNext());
         assertKeyValuePair(iter.next(), bytes("abc"), "cf_arr", "row1", "");
         assertKeyValuePair(iter.next(), bytes("abc"), "cf_arr", "row2", "private", "");
-        assertKeyValuePair(iter.next(), bytes("abc"), "cf_arr_car", "car", "1");
-        assertKeyValuePair(iter.next(), bytes("abc"), "cf_arr_car", "car", "private", "1");
+        assertKeyValuePair(iter.next(), bytes("abc"), "cf_arr_car", "car", ENCODER.encode(1L));
+        assertKeyValuePair(iter.next(), bytes("abc"), "cf_arr_car", "car", "private", ENCODER.encode(1L));
         assertKeyValuePair(iter.next(), bytes("def"), "cf_arr", "row1", "");
         assertKeyValuePair(iter.next(), bytes("def"), "cf_arr", "row3", "moreprivate", "");
-        assertKeyValuePair(iter.next(), bytes("def"), "cf_arr_car", "car", "1");
-        assertKeyValuePair(iter.next(), bytes("def"), "cf_arr_car", "car", "moreprivate", "1");
+        assertKeyValuePair(iter.next(), bytes("def"), "cf_arr_car", "car", ENCODER.encode(1L));
+        assertKeyValuePair(iter.next(), bytes("def"), "cf_arr_car", "car", "moreprivate", ENCODER.encode(1L));
         assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr", "row1", "");
         assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr", "row2", "private", "");
         assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr", "row3", "moreprivate", "");
-        assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr_car", "car", "1");
-        assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr_car", "car", "moreprivate", "1");
-        assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr_car", "car", "private", "1");
+        assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr_car", "car", ENCODER.encode(1L));
+        assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr_car", "car", "moreprivate", ENCODER.encode(1L));
+        assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr_car", "car", "private", ENCODER.encode(1L));
         assertKeyValuePair(iter.next(), bytes("jkl"), "cf_arr", "row3", "moreprivate", "");
-        assertKeyValuePair(iter.next(), bytes("jkl"), "cf_arr_car", "car", "moreprivate", "1");
+        assertKeyValuePair(iter.next(), bytes("jkl"), "cf_arr_car", "car", "moreprivate", ENCODER.encode(1L));
         assertKeyValuePair(iter.next(), bytes("mno"), "cf_arr", "row2", "private", "");
-        assertKeyValuePair(iter.next(), bytes("mno"), "cf_arr_car", "car", "private", "1");
+        assertKeyValuePair(iter.next(), bytes("mno"), "cf_arr_car", "car", "private", ENCODER.encode(1L));
         assertFalse(iter.hasNext());
         scan.close();
 
@@ -1163,11 +1164,11 @@ public class TestPrestoBatchWriter
         iter = scan.iterator();
         assertTrue(iter.hasNext());
         assertKeyValuePair(iter.next(), M1_FNAME_VALUE, "cf_firstname", "row1", "");
-        assertKeyValuePair(iter.next(), M1_FNAME_VALUE, "cf_firstname_car", "car", "1");
+        assertKeyValuePair(iter.next(), M1_FNAME_VALUE, "cf_firstname_car", "car", ENCODER.encode(1L));
         assertKeyValuePair(iter.next(), M2_FNAME_VALUE, "cf_firstname", "row2", "private", "");
-        assertKeyValuePair(iter.next(), M2_FNAME_VALUE, "cf_firstname_car", "car", "private", "1");
+        assertKeyValuePair(iter.next(), M2_FNAME_VALUE, "cf_firstname_car", "car", "private", ENCODER.encode(1L));
         assertKeyValuePair(iter.next(), M3_FNAME_VALUE, "cf_firstname", "row3", "moreprivate", "");
-        assertKeyValuePair(iter.next(), M3_FNAME_VALUE, "cf_firstname_car", "car", "moreprivate", "1");
+        assertKeyValuePair(iter.next(), M3_FNAME_VALUE, "cf_firstname_car", "car", "moreprivate", ENCODER.encode(1L));
         assertFalse(iter.hasNext());
         scan.close();
 
@@ -1209,10 +1210,10 @@ public class TestPrestoBatchWriter
         assertTrue(iter.hasNext());
         assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age", "row1", "");
         assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age", "row3", "moreprivate", "");
-        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age_car", "car", "1");
-        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age_car", "car", "moreprivate", "1");
-        assertKeyValuePair(iter.next(), UPDATED_AGE_VALUE, "cf_age", "row2", "", "");
-        assertKeyValuePair(iter.next(), UPDATED_AGE_VALUE, "cf_age_car", "car", "", "1");
+        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age_car", "car", ENCODER.encode(1L));
+        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age_car", "car", "moreprivate", ENCODER.encode(1L));
+        assertKeyValuePair(iter.next(), UPDATED_AGE_VALUE, "cf_age", "row2", "");
+        assertKeyValuePair(iter.next(), UPDATED_AGE_VALUE, "cf_age_car", "car", ENCODER.encode(1L));
         assertFalse(iter.hasNext());
         scan.close();
 
@@ -1221,22 +1222,22 @@ public class TestPrestoBatchWriter
         assertTrue(iter.hasNext());
         assertKeyValuePair(iter.next(), bytes("abc"), "cf_arr", "row1", "");
         assertKeyValuePair(iter.next(), bytes("abc"), "cf_arr", "row2", "private", "");
-        assertKeyValuePair(iter.next(), bytes("abc"), "cf_arr_car", "car", "1");
-        assertKeyValuePair(iter.next(), bytes("abc"), "cf_arr_car", "car", "private", "1");
+        assertKeyValuePair(iter.next(), bytes("abc"), "cf_arr_car", "car", ENCODER.encode(1L));
+        assertKeyValuePair(iter.next(), bytes("abc"), "cf_arr_car", "car", "private", ENCODER.encode(1L));
         assertKeyValuePair(iter.next(), bytes("def"), "cf_arr", "row1", "");
         assertKeyValuePair(iter.next(), bytes("def"), "cf_arr", "row3", "moreprivate", "");
-        assertKeyValuePair(iter.next(), bytes("def"), "cf_arr_car", "car", "1");
-        assertKeyValuePair(iter.next(), bytes("def"), "cf_arr_car", "car", "moreprivate", "1");
+        assertKeyValuePair(iter.next(), bytes("def"), "cf_arr_car", "car", ENCODER.encode(1L));
+        assertKeyValuePair(iter.next(), bytes("def"), "cf_arr_car", "car", "moreprivate", ENCODER.encode(1L));
         assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr", "row1", "");
         assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr", "row2", "private", "");
         assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr", "row3", "moreprivate", "");
-        assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr_car", "car", "1");
-        assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr_car", "car", "moreprivate", "1");
-        assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr_car", "car", "private", "1");
+        assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr_car", "car", ENCODER.encode(1L));
+        assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr_car", "car", "moreprivate", ENCODER.encode(1L));
+        assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr_car", "car", "private", ENCODER.encode(1L));
         assertKeyValuePair(iter.next(), bytes("jkl"), "cf_arr", "row3", "moreprivate", "");
-        assertKeyValuePair(iter.next(), bytes("jkl"), "cf_arr_car", "car", "moreprivate", "1");
+        assertKeyValuePair(iter.next(), bytes("jkl"), "cf_arr_car", "car", "moreprivate", ENCODER.encode(1L));
         assertKeyValuePair(iter.next(), bytes("mno"), "cf_arr", "row2", "private", "");
-        assertKeyValuePair(iter.next(), bytes("mno"), "cf_arr_car", "car", "private", "1");
+        assertKeyValuePair(iter.next(), bytes("mno"), "cf_arr_car", "car", "private", ENCODER.encode(1L));
         assertFalse(iter.hasNext());
         scan.close();
 
@@ -1244,11 +1245,11 @@ public class TestPrestoBatchWriter
         iter = scan.iterator();
         assertTrue(iter.hasNext());
         assertKeyValuePair(iter.next(), M1_FNAME_VALUE, "cf_firstname", "row1", "");
-        assertKeyValuePair(iter.next(), M1_FNAME_VALUE, "cf_firstname_car", "car", "1");
+        assertKeyValuePair(iter.next(), M1_FNAME_VALUE, "cf_firstname_car", "car", ENCODER.encode(1L));
         assertKeyValuePair(iter.next(), M3_FNAME_VALUE, "cf_firstname", "row3", "moreprivate", "");
-        assertKeyValuePair(iter.next(), M3_FNAME_VALUE, "cf_firstname_car", "car", "moreprivate", "1");
+        assertKeyValuePair(iter.next(), M3_FNAME_VALUE, "cf_firstname_car", "car", "moreprivate", ENCODER.encode(1L));
         assertKeyValuePair(iter.next(), UPDATED_M2_FNAME_VALUE, "cf_firstname", "row2", "moreprivate", "");
-        assertKeyValuePair(iter.next(), UPDATED_M2_FNAME_VALUE, "cf_firstname_car", "car", "moreprivate", "1");
+        assertKeyValuePair(iter.next(), UPDATED_M2_FNAME_VALUE, "cf_firstname_car", "car", "moreprivate", ENCODER.encode(1L));
         assertFalse(iter.hasNext());
         scan.close();
 
@@ -1292,10 +1293,10 @@ public class TestPrestoBatchWriter
         assertTrue(iter.hasNext());
         assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age", "row1", "");
         assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age", "row3", "moreprivate", "");
-        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age_car", "car", "1");
-        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age_car", "car", "moreprivate", "1");
-        assertKeyValuePair(iter.next(), UPDATED_AGE_VALUE, "cf_age", "row2", "", "");
-        assertKeyValuePair(iter.next(), UPDATED_AGE_VALUE, "cf_age_car", "car", "", "1");
+        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age_car", "car", ENCODER.encode(1L));
+        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age_car", "car", "moreprivate", ENCODER.encode(1L));
+        assertKeyValuePair(iter.next(), UPDATED_AGE_VALUE, "cf_age", "row2", "");
+        assertKeyValuePair(iter.next(), UPDATED_AGE_VALUE, "cf_age_car", "car", ENCODER.encode(1L));
         assertFalse(iter.hasNext());
         scan.close();
 
@@ -1303,22 +1304,22 @@ public class TestPrestoBatchWriter
         iter = scan.iterator();
         assertTrue(iter.hasNext());
         assertKeyValuePair(iter.next(), bytes("abc"), "cf_arr", "row1", "");
-        assertKeyValuePair(iter.next(), bytes("abc"), "cf_arr_car", "car", "1");
+        assertKeyValuePair(iter.next(), bytes("abc"), "cf_arr_car", "car", ENCODER.encode(1L));
         assertKeyValuePair(iter.next(), bytes("def"), "cf_arr", "row1", "");
         assertKeyValuePair(iter.next(), bytes("def"), "cf_arr", "row3", "moreprivate", "");
-        assertKeyValuePair(iter.next(), bytes("def"), "cf_arr_car", "car", "1");
-        assertKeyValuePair(iter.next(), bytes("def"), "cf_arr_car", "car", "moreprivate", "1");
+        assertKeyValuePair(iter.next(), bytes("def"), "cf_arr_car", "car", ENCODER.encode(1L));
+        assertKeyValuePair(iter.next(), bytes("def"), "cf_arr_car", "car", "moreprivate", ENCODER.encode(1L));
         assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr", "row1", "");
         assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr", "row3", "moreprivate", "");
-        assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr_car", "car", "1");
-        assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr_car", "car", "moreprivate", "1");
+        assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr_car", "car", ENCODER.encode(1L));
+        assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr_car", "car", "moreprivate", ENCODER.encode(1L));
         assertKeyValuePair(iter.next(), bytes("jkl"), "cf_arr", "row2", "moreprivate", "");
         assertKeyValuePair(iter.next(), bytes("jkl"), "cf_arr", "row3", "moreprivate", "");
-        assertKeyValuePair(iter.next(), bytes("jkl"), "cf_arr_car", "car", "moreprivate", "2");
+        assertKeyValuePair(iter.next(), bytes("jkl"), "cf_arr_car", "car", "moreprivate", ENCODER.encode(2L));
         assertKeyValuePair(iter.next(), bytes("mno"), "cf_arr", "row2", "moreprivate", "");
-        assertKeyValuePair(iter.next(), bytes("mno"), "cf_arr_car", "car", "moreprivate", "1");
+        assertKeyValuePair(iter.next(), bytes("mno"), "cf_arr_car", "car", "moreprivate", ENCODER.encode(1L));
         assertKeyValuePair(iter.next(), bytes("pqr"), "cf_arr", "row2", "moreprivate", "");
-        assertKeyValuePair(iter.next(), bytes("pqr"), "cf_arr_car", "car", "moreprivate", "1");
+        assertKeyValuePair(iter.next(), bytes("pqr"), "cf_arr_car", "car", "moreprivate", ENCODER.encode(1L));
         assertFalse(iter.hasNext());
         scan.close();
 
@@ -1326,11 +1327,11 @@ public class TestPrestoBatchWriter
         iter = scan.iterator();
         assertTrue(iter.hasNext());
         assertKeyValuePair(iter.next(), M1_FNAME_VALUE, "cf_firstname", "row1", "");
-        assertKeyValuePair(iter.next(), M1_FNAME_VALUE, "cf_firstname_car", "car", "1");
+        assertKeyValuePair(iter.next(), M1_FNAME_VALUE, "cf_firstname_car", "car", ENCODER.encode(1L));
         assertKeyValuePair(iter.next(), M3_FNAME_VALUE, "cf_firstname", "row3", "moreprivate", "");
-        assertKeyValuePair(iter.next(), M3_FNAME_VALUE, "cf_firstname_car", "car", "moreprivate", "1");
+        assertKeyValuePair(iter.next(), M3_FNAME_VALUE, "cf_firstname_car", "car", "moreprivate", ENCODER.encode(1L));
         assertKeyValuePair(iter.next(), UPDATED_M2_FNAME_VALUE, "cf_firstname", "row2", "moreprivate", "");
-        assertKeyValuePair(iter.next(), UPDATED_M2_FNAME_VALUE, "cf_firstname_car", "car", "moreprivate", "1");
+        assertKeyValuePair(iter.next(), UPDATED_M2_FNAME_VALUE, "cf_firstname_car", "car", "moreprivate", ENCODER.encode(1L));
         assertFalse(iter.hasNext());
         scan.close();
 
@@ -1384,10 +1385,10 @@ public class TestPrestoBatchWriter
         assertTrue(iter.hasNext());
         assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age", "row1", "");
         assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age", "row3", "moreprivate", "");
-        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age_car", "car", "1");
-        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age_car", "car", "moreprivate", "1");
+        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age_car", "car", ENCODER.encode(1L));
+        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age_car", "car", "moreprivate", ENCODER.encode(1L));
         assertKeyValuePair(iter.next(), UPDATED_AGE_VALUE, "cf_age", "row2", "moreprivate", "");
-        assertKeyValuePair(iter.next(), UPDATED_AGE_VALUE, "cf_age_car", "car", "moreprivate", "1");
+        assertKeyValuePair(iter.next(), UPDATED_AGE_VALUE, "cf_age_car", "car", "moreprivate", ENCODER.encode(1L));
         assertFalse(iter.hasNext());
         scan.close();
 
@@ -1395,22 +1396,22 @@ public class TestPrestoBatchWriter
         iter = scan.iterator();
         assertTrue(iter.hasNext());
         assertKeyValuePair(iter.next(), bytes("abc"), "cf_arr", "row1", "");
-        assertKeyValuePair(iter.next(), bytes("abc"), "cf_arr_car", "car", "1");
+        assertKeyValuePair(iter.next(), bytes("abc"), "cf_arr_car", "car", ENCODER.encode(1L));
         assertKeyValuePair(iter.next(), bytes("def"), "cf_arr", "row1", "");
         assertKeyValuePair(iter.next(), bytes("def"), "cf_arr", "row3", "moreprivate", "");
-        assertKeyValuePair(iter.next(), bytes("def"), "cf_arr_car", "car", "1");
-        assertKeyValuePair(iter.next(), bytes("def"), "cf_arr_car", "car", "moreprivate", "1");
+        assertKeyValuePair(iter.next(), bytes("def"), "cf_arr_car", "car", ENCODER.encode(1L));
+        assertKeyValuePair(iter.next(), bytes("def"), "cf_arr_car", "car", "moreprivate", ENCODER.encode(1L));
         assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr", "row1", "");
         assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr", "row3", "moreprivate", "");
-        assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr_car", "car", "1");
-        assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr_car", "car", "moreprivate", "1");
+        assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr_car", "car", ENCODER.encode(1L));
+        assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr_car", "car", "moreprivate", ENCODER.encode(1L));
         assertKeyValuePair(iter.next(), bytes("jkl"), "cf_arr", "row2", "moreprivate", "");
         assertKeyValuePair(iter.next(), bytes("jkl"), "cf_arr", "row3", "moreprivate", "");
-        assertKeyValuePair(iter.next(), bytes("jkl"), "cf_arr_car", "car", "moreprivate", "2");
+        assertKeyValuePair(iter.next(), bytes("jkl"), "cf_arr_car", "car", "moreprivate", ENCODER.encode(2L));
         assertKeyValuePair(iter.next(), bytes("mno"), "cf_arr", "row2", "moreprivate", "");
-        assertKeyValuePair(iter.next(), bytes("mno"), "cf_arr_car", "car", "moreprivate", "1");
+        assertKeyValuePair(iter.next(), bytes("mno"), "cf_arr_car", "car", "moreprivate", ENCODER.encode(1L));
         assertKeyValuePair(iter.next(), bytes("pqr"), "cf_arr", "row2", "moreprivate", "");
-        assertKeyValuePair(iter.next(), bytes("pqr"), "cf_arr_car", "car", "moreprivate", "1");
+        assertKeyValuePair(iter.next(), bytes("pqr"), "cf_arr_car", "car", "moreprivate", ENCODER.encode(1L));
         assertFalse(iter.hasNext());
         scan.close();
 
@@ -1418,11 +1419,11 @@ public class TestPrestoBatchWriter
         iter = scan.iterator();
         assertTrue(iter.hasNext());
         assertKeyValuePair(iter.next(), M1_FNAME_VALUE, "cf_firstname", "row1", "");
-        assertKeyValuePair(iter.next(), M1_FNAME_VALUE, "cf_firstname_car", "car", "1");
+        assertKeyValuePair(iter.next(), M1_FNAME_VALUE, "cf_firstname_car", "car", ENCODER.encode(1L));
         assertKeyValuePair(iter.next(), M3_FNAME_VALUE, "cf_firstname", "row3", "moreprivate", "");
-        assertKeyValuePair(iter.next(), M3_FNAME_VALUE, "cf_firstname_car", "car", "moreprivate", "1");
+        assertKeyValuePair(iter.next(), M3_FNAME_VALUE, "cf_firstname_car", "car", "moreprivate", ENCODER.encode(1L));
         assertKeyValuePair(iter.next(), UPDATED_M2_FNAME_VALUE, "cf_firstname", "row2", "moreprivate", "");
-        assertKeyValuePair(iter.next(), UPDATED_M2_FNAME_VALUE, "cf_firstname_car", "car", "moreprivate", "1");
+        assertKeyValuePair(iter.next(), UPDATED_M2_FNAME_VALUE, "cf_firstname_car", "car", "moreprivate", ENCODER.encode(1L));
         assertFalse(iter.hasNext());
         scan.close();
         assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(0).getIndexTable(), "cf_age", AGE_VALUE, "private", "moreprivate")), 2);
@@ -1469,8 +1470,8 @@ public class TestPrestoBatchWriter
         assertTrue(iter.hasNext());
         assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age", "row2", "private", "");
         assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age", "row3", "moreprivate", "");
-        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age_car", "car", "moreprivate", "1");
-        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age_car", "car", "private", "1");
+        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age_car", "car", "moreprivate", ENCODER.encode(1L));
+        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age_car", "car", "private", ENCODER.encode(1L));
         assertFalse(iter.hasNext());
         scan.close();
 
@@ -1478,17 +1479,17 @@ public class TestPrestoBatchWriter
         iter = scan.iterator();
         assertTrue(iter.hasNext());
         assertKeyValuePair(iter.next(), bytes("abc"), "cf_arr", "row2", "private", "");
-        assertKeyValuePair(iter.next(), bytes("abc"), "cf_arr_car", "car", "private", "1");
+        assertKeyValuePair(iter.next(), bytes("abc"), "cf_arr_car", "car", "private", ENCODER.encode(1L));
         assertKeyValuePair(iter.next(), bytes("def"), "cf_arr", "row3", "moreprivate", "");
-        assertKeyValuePair(iter.next(), bytes("def"), "cf_arr_car", "car", "moreprivate", "1");
+        assertKeyValuePair(iter.next(), bytes("def"), "cf_arr_car", "car", "moreprivate", ENCODER.encode(1L));
         assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr", "row2", "private", "");
         assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr", "row3", "moreprivate", "");
-        assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr_car", "car", "moreprivate", "1");
-        assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr_car", "car", "private", "1");
+        assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr_car", "car", "moreprivate", ENCODER.encode(1L));
+        assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr_car", "car", "private", ENCODER.encode(1L));
         assertKeyValuePair(iter.next(), bytes("jkl"), "cf_arr", "row3", "moreprivate", "");
-        assertKeyValuePair(iter.next(), bytes("jkl"), "cf_arr_car", "car", "moreprivate", "1");
+        assertKeyValuePair(iter.next(), bytes("jkl"), "cf_arr_car", "car", "moreprivate", ENCODER.encode(1L));
         assertKeyValuePair(iter.next(), bytes("mno"), "cf_arr", "row2", "private", "");
-        assertKeyValuePair(iter.next(), bytes("mno"), "cf_arr_car", "car", "private", "1");
+        assertKeyValuePair(iter.next(), bytes("mno"), "cf_arr_car", "car", "private", ENCODER.encode(1L));
         assertFalse(iter.hasNext());
         scan.close();
 
@@ -1496,9 +1497,9 @@ public class TestPrestoBatchWriter
         iter = scan.iterator();
         assertTrue(iter.hasNext());
         assertKeyValuePair(iter.next(), M2_FNAME_VALUE, "cf_firstname", "row2", "private", "");
-        assertKeyValuePair(iter.next(), M2_FNAME_VALUE, "cf_firstname_car", "car", "private", "1");
+        assertKeyValuePair(iter.next(), M2_FNAME_VALUE, "cf_firstname_car", "car", "private", ENCODER.encode(1L));
         assertKeyValuePair(iter.next(), M3_FNAME_VALUE, "cf_firstname", "row3", "moreprivate", "");
-        assertKeyValuePair(iter.next(), M3_FNAME_VALUE, "cf_firstname_car", "car", "moreprivate", "1");
+        assertKeyValuePair(iter.next(), M3_FNAME_VALUE, "cf_firstname_car", "car", "moreprivate", ENCODER.encode(1L));
         assertFalse(iter.hasNext());
         scan.close();
 
@@ -1530,7 +1531,7 @@ public class TestPrestoBatchWriter
         iter = scan.iterator();
         assertTrue(iter.hasNext());
         assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age", "row3", "moreprivate", "");
-        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age_car", "car", "moreprivate", "1");
+        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age_car", "car", "moreprivate", ENCODER.encode(1L));
         assertFalse(iter.hasNext());
         scan.close();
 
@@ -1538,11 +1539,11 @@ public class TestPrestoBatchWriter
         iter = scan.iterator();
         assertTrue(iter.hasNext());
         assertKeyValuePair(iter.next(), bytes("def"), "cf_arr", "row3", "moreprivate", "");
-        assertKeyValuePair(iter.next(), bytes("def"), "cf_arr_car", "car", "moreprivate", "1");
+        assertKeyValuePair(iter.next(), bytes("def"), "cf_arr_car", "car", "moreprivate", ENCODER.encode(1L));
         assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr", "row3", "moreprivate", "");
-        assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr_car", "car", "moreprivate", "1");
+        assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr_car", "car", "moreprivate", ENCODER.encode(1L));
         assertKeyValuePair(iter.next(), bytes("jkl"), "cf_arr", "row3", "moreprivate", "");
-        assertKeyValuePair(iter.next(), bytes("jkl"), "cf_arr_car", "car", "moreprivate", "1");
+        assertKeyValuePair(iter.next(), bytes("jkl"), "cf_arr_car", "car", "moreprivate", ENCODER.encode(1L));
         assertFalse(iter.hasNext());
         scan.close();
 
@@ -1550,7 +1551,7 @@ public class TestPrestoBatchWriter
         iter = scan.iterator();
         assertTrue(iter.hasNext());
         assertKeyValuePair(iter.next(), M3_FNAME_VALUE, "cf_firstname", "row3", "moreprivate", "");
-        assertKeyValuePair(iter.next(), M3_FNAME_VALUE, "cf_firstname_car", "car", "moreprivate", "1");
+        assertKeyValuePair(iter.next(), M3_FNAME_VALUE, "cf_firstname_car", "car", "moreprivate", ENCODER.encode(1L));
         assertFalse(iter.hasNext());
         scan.close();
 
@@ -1666,6 +1667,16 @@ public class TestPrestoBatchWriter
         assertEquals(e.getKey().getColumnVisibility().toString(), cv);
         assertTrue(e.getKey().getTimestamp() > 0, "Timestamp is zero");
         assertEquals(e.getValue().toString(), value);
+    }
+
+    private void assertKeyValuePair(Entry<Key, Value> e, byte[] row, String cf, String cq, String cv, byte[] value)
+    {
+        assertEquals(e.getKey().getRow().copyBytes(), row);
+        assertEquals(e.getKey().getColumnFamily().toString(), cf);
+        assertEquals(e.getKey().getColumnQualifier().toString(), cq);
+        assertEquals(e.getKey().getColumnVisibility().toString(), cv);
+        assertTrue(e.getKey().getTimestamp() > 0, "Timestamp is zero");
+        assertEquals(e.getValue().get(), value);
     }
 
     private static byte[] bytes(String s)

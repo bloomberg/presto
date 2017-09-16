@@ -70,6 +70,7 @@ import java.util.stream.Collectors;
 
 import static com.facebook.presto.accumulo.index.Indexer.getTruncatedTimestamps;
 import static com.facebook.presto.accumulo.index.Indexer.splitTimestampRange;
+import static com.facebook.presto.accumulo.index.metrics.AccumuloMetricsStorage.ENCODER;
 import static com.facebook.presto.accumulo.index.metrics.MetricsStorage.TimestampPrecision.DAY;
 import static com.facebook.presto.accumulo.index.metrics.MetricsStorage.TimestampPrecision.HOUR;
 import static com.facebook.presto.accumulo.index.metrics.MetricsStorage.TimestampPrecision.MILLISECOND;
@@ -289,11 +290,11 @@ public class TestIndexer
         writeMutation(table, mutation);
 
         List<Entry<Key, Value>> expectedResults = ImmutableList.of(
-                kvp(shard(DAY_TIMESTAMP_VALUE), "cf_a_tsd_car", "car", "1"),
-                kvp(shard(HOUR_TIMESTAMP_VALUE), "cf_a_tsh_car", "car", "1"),
-                kvp(shard(MINUTE_TIMESTAMP_VALUE), "cf_a_tsm_car", "car", "1"),
-                kvp(shard(SECOND_TIMESTAMP_VALUE), "cf_a_tss_car", "car", "1"),
-                kvp(shard(TIMESTAMP_VALUE), "cf_a_car", "car", "1"),
+                kvp(shard(DAY_TIMESTAMP_VALUE), "cf_a_tsd_car", "car", ENCODER.encode(1L)),
+                kvp(shard(HOUR_TIMESTAMP_VALUE), "cf_a_tsh_car", "car", ENCODER.encode(1L)),
+                kvp(shard(MINUTE_TIMESTAMP_VALUE), "cf_a_tsm_car", "car", ENCODER.encode(1L)),
+                kvp(shard(SECOND_TIMESTAMP_VALUE), "cf_a_tss_car", "car", ENCODER.encode(1L)),
+                kvp(shard(TIMESTAMP_VALUE), "cf_a_car", "car", ENCODER.encode(1L)),
                 kvp(shard(TIMESTAMP_VALUE), "cf_a", ROW, ""))
                 .stream()
                 .sorted(Comparator.comparing(Entry::getKey))
@@ -332,11 +333,11 @@ public class TestIndexer
         Iterator<Entry<Key, Value>> iterator = scanner.iterator();
         assertTrue(iterator.hasNext());
         assertKeyValuePair(iterator.next(), kvp("abc", "cf_a", ROW, ""));
-        assertKeyValuePair(iterator.next(), kvp("abc", "cf_a_car", "car", "1"));
+        assertKeyValuePair(iterator.next(), kvp("abc", "cf_a_car", "car", ENCODER.encode(1L)));
         assertKeyValuePair(iterator.next(), kvp("def", "cf_a", ROW, ""));
-        assertKeyValuePair(iterator.next(), kvp("def", "cf_a_car", "car", "1"));
+        assertKeyValuePair(iterator.next(), kvp("def", "cf_a_car", "car", ENCODER.encode(1L)));
         assertKeyValuePair(iterator.next(), kvp("ghi", "cf_a", ROW, ""));
-        assertKeyValuePair(iterator.next(), kvp("ghi", "cf_a_car", "car", "1"));
+        assertKeyValuePair(iterator.next(), kvp("ghi", "cf_a_car", "car", ENCODER.encode(1L)));
         assertFalse(iterator.hasNext());
         scanner.close();
     }
@@ -605,9 +606,19 @@ public class TestIndexer
         return kvp(rowId.getBytes(UTF_8), cf, cq, value);
     }
 
+    private static Entry<Key, Value> kvp(String rowId, String cf, String cq, byte[] value)
+    {
+        return kvp(rowId.getBytes(UTF_8), cf, cq, value);
+    }
+
     private static Entry<Key, Value> kvp(byte[] rowId, String cf, String cq, String value)
     {
         return Pair.of(new Key(rowId, cf.getBytes(UTF_8), cq.getBytes(UTF_8), EMPTY_BYTES, 0), new Value(value.getBytes(UTF_8)));
+    }
+
+    private static Entry<Key, Value> kvp(byte[] rowId, String cf, String cq, byte[] value)
+    {
+        return Pair.of(new Key(rowId, cf.getBytes(UTF_8), cq.getBytes(UTF_8), EMPTY_BYTES, 0), new Value(value));
     }
 
     private static Text text(String v)
@@ -696,22 +707,22 @@ public class TestIndexer
         assertTrue(iterator.hasNext());
         if (sharded) {
             if (postfixed) {
-                assertKeyValuePair(iterator.next(), kvp(shard(encode(type, value)), "cf_a_car", "car", "1"));
+                assertKeyValuePair(iterator.next(), kvp(shard(encode(type, value)), "cf_a_car", "car", ENCODER.encode(1L)));
                 assertKeyValuePair(iterator.next(), kvp(shard(encode(type, value)), "cf_a", ROW, ""), true);
             }
             else {
-                assertKeyValuePair(iterator.next(), kvp(shard(encode(type, value)), "cf_a_car", "car", "1"));
+                assertKeyValuePair(iterator.next(), kvp(shard(encode(type, value)), "cf_a_car", "car", ENCODER.encode(1L)));
                 assertKeyValuePair(iterator.next(), kvp(shard(encode(type, value)), "cf_a", ROW, ""));
             }
         }
         else {
             if (postfixed) {
-                assertKeyValuePair(iterator.next(), kvp(encode(type, value), "cf_a_car", "car", "1"));
+                assertKeyValuePair(iterator.next(), kvp(encode(type, value), "cf_a_car", "car", ENCODER.encode(1L)));
                 assertKeyValuePair(iterator.next(), kvp(encode(type, value), "cf_a", ROW, ""), true);
             }
             else {
                 assertKeyValuePair(iterator.next(), kvp(encode(type, value), "cf_a", ROW, ""));
-                assertKeyValuePair(iterator.next(), kvp(encode(type, value), "cf_a_car", "car", "1"));
+                assertKeyValuePair(iterator.next(), kvp(encode(type, value), "cf_a_car", "car", ENCODER.encode(1L)));
             }
         }
         assertFalse(iterator.hasNext());
