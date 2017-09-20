@@ -90,6 +90,9 @@ public class IndexColumn
     @Override
     public String toString()
     {
-        return toStringHelper(this).add("indexTable", indexTable).add("columns", columns).toString();
+        return toStringHelper(this).add("indexTable", indexTable)
+                .add("columns", columns)
+                .add("indexStorageMethods", indexStorageMethods)
+                .toString();
     }
 }

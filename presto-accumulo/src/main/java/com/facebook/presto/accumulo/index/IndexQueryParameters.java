@@ -22,6 +22,7 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMultimap;
+import com.google.common.collect.ListMultimap;
 import com.google.common.collect.Multimap;
 import com.google.common.collect.MultimapBuilder;
 import com.google.common.primitives.Bytes;
@@ -206,7 +207,9 @@ public class IndexQueryParameters
             distributeRanges.add(new ArrayList<>());
         }
 
-        Iterator<AccumuloRange> rangeIterator = ranges.iterator();
+        Optional<ShardedIndexStorage> shardedIndexStorage = column.getIndexStorageMethods().stream().filter(storage -> storage instanceof ShardedIndexStorage).map(storage -> (ShardedIndexStorage) storage).findAny();
+        Iterator<AccumuloRange> rangeIterator = shardedIndexStorage.map(indexStorage -> decodeRanges(indexStorage, ranges).iterator()).orElseGet(() -> ranges.iterator());
+
         for (AccumuloRange paddedRange : paddedRanges) {
             List<AccumuloRange> splitRanges = splitRanges(rangeIterator.next(), paddedRange.getStart(), paddedRange.getEnd(), n);
             for (int i = 0; i < splitRanges.size(); ++i) {
@@ -214,7 +217,7 @@ public class IndexQueryParameters
             }
         }
 
-        return ImmutableList.copyOf(distributeRanges.stream().map(ranges -> new IndexQueryParameters(column, getIndexFamilyAsString(), ranges)).collect(Collectors.toList()));
+        return ImmutableList.copyOf(distributeRanges.stream().map(ranges -> new IndexQueryParameters(column, getIndexFamilyAsString(), shardedIndexStorage.isPresent() ? encodeRanges(shardedIndexStorage.get(), ranges) : ranges)).collect(Collectors.toList()));
     }
 
     @Override
@@ -275,10 +278,11 @@ public class IndexQueryParameters
 
     private void generateRanges()
     {
+        Optional<ShardedIndexStorage> shardedIndexStorage = column.getIndexStorageMethods().stream().filter(storage -> storage instanceof ShardedIndexStorage).map(storage -> (ShardedIndexStorage) storage).findAny();
         ranges = new ArrayList<>();
         for (AppendParameters params : appendParameters) {
             // Add metric parameters *before* appending the index ranges
-            addMetricParameters(params.appendRanges, params.truncateTimestamp);
+            addMetricParameters(params.appendRanges, params.truncateTimestamp, shardedIndexStorage);
 
             if (ranges.size() == 0) {
                 ranges.addAll(params.appendRanges);
@@ -297,22 +301,40 @@ public class IndexQueryParameters
             }
         }
 
-        Optional<ShardedIndexStorage> shardedIndexStorage = column.getIndexStorageMethods().stream().filter(storage -> storage instanceof ShardedIndexStorage).map(storage -> (ShardedIndexStorage) storage).findAny();
-        if (shardedIndexStorage.isPresent()) {
-            List<AccumuloRange> newRanges = new ArrayList<>();
-            for (AccumuloRange range : ranges) {
-                Iterator<byte[]> shardedStartSplits = shardedIndexStorage.get().encodeAllShards(range.getStart()).iterator();
-                Iterator<byte[]> shardedEndSplits = shardedIndexStorage.get().encodeAllShards(range.getEnd()).iterator();
-                while (shardedStartSplits.hasNext()) {
-                    newRanges.add(new AccumuloRange(shardedStartSplits.next(), range.isStartKeyInclusive(), shardedEndSplits.next(), range.isEndKeyInclusive()));
-                }
+        shardedIndexStorage.ifPresent(shardedIndexStorage1 -> ranges = encodeRanges(shardedIndexStorage1, ranges));
+    }
 
-                checkState(!shardedEndSplits.hasNext(), "Implementation error: shardedEndSplits still has elements");
+    private List<AccumuloRange> decodeRanges(ShardedIndexStorage shardedIndexStorage, List<AccumuloRange> ranges)
+    {
+        return ranges.stream().map(range -> {
+            byte[] start = range.getStart();
+            if (!range.isInfiniteStartKey()) {
+                start = shardedIndexStorage.decode(start);
             }
 
-            ranges.clear();
-            ranges.addAll(newRanges);
+            byte[] end = range.getEnd();
+            if (!range.isInfiniteStopKey()) {
+                end = shardedIndexStorage.decode(end);
+            }
+
+            return new AccumuloRange(start, range.isStartKeyInclusive(), end, range.isEndKeyInclusive());
+        }).collect(Collectors.toList());
+    }
+
+    private List<AccumuloRange> encodeRanges(ShardedIndexStorage shardedIndexStorage, Collection<AccumuloRange> ranges)
+    {
+        List<AccumuloRange> newRanges = new ArrayList<>();
+        for (AccumuloRange range : ranges) {
+            Iterator<byte[]> shardedStartSplits = shardedIndexStorage.encodeAllShards(range.getStart()).iterator();
+            Iterator<byte[]> shardedEndSplits = shardedIndexStorage.encodeAllShards(range.getEnd()).iterator();
+            while (shardedStartSplits.hasNext()) {
+                newRanges.add(new AccumuloRange(shardedStartSplits.next(), range.isStartKeyInclusive(), shardedEndSplits.next(), range.isEndKeyInclusive()));
+            }
+
+            checkState(!shardedEndSplits.hasNext(), "Implementation error: shardedEndSplits still has elements");
         }
+
+        return newRanges;
     }
 
     private List<AccumuloRange> generatePaddedRanges()
@@ -409,20 +431,19 @@ public class IndexQueryParameters
         return new AccumuloRange(newStart, newStartInclusive, newEnd, newEndInclusive);
     }
 
-    private void addMetricParameters(Collection<AccumuloRange> appendRanges, boolean truncateTimestamp)
+    private void addMetricParameters(Collection<AccumuloRange> appendRanges, boolean truncateTimestamp, Optional<ShardedIndexStorage> shardedIndexStorage)
     {
         if (indexFamily == null) {
             generateIndexFamily();
         }
 
-        // Clear the parameters to append
-        metricParameters.clear();
+        ListMultimap<Text, AccumuloRange> listMultimap = MultimapBuilder.hashKeys().arrayListValues().build();
 
         // If no ranges are set, then we won't be appending anything to the old ranges
         if (ranges.size() == 0) {
             // Not a timestamp? The metric parameters are the same
             if (!truncateTimestamp) {
-                metricParameters.putAll(indexFamily, appendRanges.stream().map(AccumuloRange::getRange).collect(Collectors.toList()));
+                listMultimap.putAll(indexFamily, appendRanges);
             }
             else {
                 // Otherwise, set the metric parameters
@@ -430,18 +451,18 @@ public class IndexQueryParameters
                     // We can't rollup open-ended timestamps
                     if (appendRange.isInfiniteStartKey() || appendRange.isInfiniteStopKey()) {
                         // Append the range as-is for millisecond precision and continue to the next one
-                        metricParameters.put(indexFamily, appendRange.getRange());
+                        listMultimap.put(indexFamily, appendRange);
                         continue;
                     }
 
-                    for (Map.Entry<TimestampPrecision, Collection<Range>> entry : splitTimestampRange(appendRange.getRange()).asMap().entrySet()) {
+                    for (Map.Entry<TimestampPrecision, Collection<AccumuloRange>> entry : splitTimestampRange(appendRange).asMap().entrySet()) {
                         // Append the precision family to the index family
                         Text precisionIndexFamily = new Text(indexFamily);
                         byte[] precisionFamily = TIMESTAMP_CARDINALITY_FAMILIES.get(entry.getKey());
                         precisionIndexFamily.append(precisionFamily, 0, precisionFamily.length);
 
-                        for (Range precisionRange : entry.getValue()) {
-                            metricParameters.put(precisionIndexFamily, precisionRange);
+                        for (AccumuloRange precisionRange : entry.getValue()) {
+                            listMultimap.put(precisionIndexFamily, precisionRange);
                         }
                     }
                 }
@@ -451,37 +472,53 @@ public class IndexQueryParameters
             if (!truncateTimestamp) {
                 for (AccumuloRange previousRange : ranges) {
                     for (AccumuloRange newRange : appendRanges) {
-                        metricParameters.put(indexFamily, appendRange(previousRange, newRange).getRange());
+                        listMultimap.put(indexFamily, appendRange(previousRange, newRange));
                     }
                 }
             }
             else {
-                appendTimestampMetricParameters(appendRanges);
+                listMultimap.putAll(appendTimestampMetricParameters(appendRanges));
+            }
+        }
+
+        metricParameters.clear();
+        for (Map.Entry<Text, Collection<AccumuloRange>> entry : listMultimap.asMap().entrySet()) {
+            if (shardedIndexStorage.isPresent()) {
+                metricParameters.putAll(entry.getKey(), encodeRanges(shardedIndexStorage.get(), entry.getValue()).stream().map(AccumuloRange::getRange).collect(Collectors.toList()));
+            }
+            else {
+                metricParameters.putAll(entry.getKey(), entry.getValue().stream().map(AccumuloRange::getRange).collect(Collectors.toList()));
             }
         }
     }
 
-    private void appendTimestampMetricParameters(Collection<AccumuloRange> appendRanges)
+    private ListMultimap<Text, AccumuloRange> appendTimestampMetricParameters(Collection<AccumuloRange> appendRanges)
     {
-        Text tmp = new Text();
+        ListMultimap<Text, AccumuloRange> listMultimap = MultimapBuilder.hashKeys().arrayListValues().build();
+
         for (AccumuloRange appendRange : appendRanges) {
             // We can't rollup open-ended timestamps
             if (appendRange.isInfiniteStartKey() || appendRange.isInfiniteStopKey()) {
                 // Append the range as-is for millisecond precision and continue to the next one
-                metricParameters.put(indexFamily, appendRange.getRange());
+                for (AccumuloRange previousRange : ranges) {
+                    for (AccumuloRange newRange : appendRanges) {
+                        listMultimap.put(indexFamily, appendRange(previousRange, newRange));
+                    }
+                }
+
                 continue;
             }
 
-            for (Map.Entry<TimestampPrecision, Collection<Range>> entry : splitTimestampRange(appendRange.getRange()).asMap().entrySet()) {
+            for (Map.Entry<TimestampPrecision, Collection<AccumuloRange>> entry : splitTimestampRange(appendRange).asMap().entrySet()) {
                 // Append the precision family to the index family
                 byte[] precisionFamily = TIMESTAMP_CARDINALITY_FAMILIES.get(entry.getKey());
                 Text precisionIndexFamily = new Text(indexFamily);
                 precisionIndexFamily.append(precisionFamily, 0, precisionFamily.length);
 
                 for (AccumuloRange baseRange : ranges) {
-                    for (Range precisionRange : entry.getValue()) {
-                        byte[] precisionStart = precisionRange.isInfiniteStartKey() ? null : Arrays.copyOfRange(precisionRange.getStartKey().getRow(tmp).getBytes(), 0, 9);
-                        byte[] precisionEnd = precisionRange.isInfiniteStopKey() ? null : Arrays.copyOfRange(precisionRange.getEndKey().getRow(tmp).getBytes(), 0, 9);
+                    for (AccumuloRange precisionRange : entry.getValue()) {
+                        byte[] precisionStart = precisionRange.isInfiniteStartKey() ? null : precisionRange.getStart();
+                        byte[] precisionEnd = precisionRange.isInfiniteStopKey() ? null : precisionRange.getEnd();
 
                         byte[] newStart;
                         if (baseRange.isInfiniteStartKey()) {
@@ -528,10 +565,12 @@ public class IndexQueryParameters
                         boolean newStartInclusive = baseRange.isStartKeyInclusive() && appendRange.isStartKeyInclusive();
                         boolean newEndInclusive = baseRange.isEndKeyInclusive() && appendRange.isEndKeyInclusive();
 
-                        metricParameters.put(precisionIndexFamily, new Range(new Text(newStart), newStartInclusive, new Text(newEnd), newEndInclusive));
+                        listMultimap.put(precisionIndexFamily, new AccumuloRange(newStart, newStartInclusive, newEnd, newEndInclusive));
                     }
                 }
             }
         }
+
+        return listMultimap;
     }
 }

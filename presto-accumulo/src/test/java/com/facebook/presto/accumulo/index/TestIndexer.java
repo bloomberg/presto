@@ -21,6 +21,7 @@ import com.facebook.presto.accumulo.index.metrics.MetricsWriter;
 import com.facebook.presto.accumulo.index.storage.ShardedIndexStorage;
 import com.facebook.presto.accumulo.metadata.AccumuloTable;
 import com.facebook.presto.accumulo.model.AccumuloColumnHandle;
+import com.facebook.presto.accumulo.model.AccumuloRange;
 import com.facebook.presto.accumulo.model.IndexColumn;
 import com.facebook.presto.accumulo.serializers.LexicoderRowSerializer;
 import com.facebook.presto.spi.type.ArrayType;
@@ -46,11 +47,9 @@ import org.apache.accumulo.core.client.TableExistsException;
 import org.apache.accumulo.core.client.TableNotFoundException;
 import org.apache.accumulo.core.data.Key;
 import org.apache.accumulo.core.data.Mutation;
-import org.apache.accumulo.core.data.Range;
 import org.apache.accumulo.core.data.Value;
 import org.apache.accumulo.core.security.Authorizations;
 import org.apache.commons.lang3.tuple.Pair;
-import org.apache.hadoop.io.Text;
 import org.joda.time.format.DateTimeFormatter;
 import org.joda.time.format.ISODateTimeFormat;
 import org.testng.annotations.AfterMethod;
@@ -375,10 +374,10 @@ public class TestIndexer
     {
         String startTime = "2001-08-02T00:30:05.321+0000";
         String endTime = "2001-08-02T00:30:05.456+0000";
-        Range splitRange = new Range(text(startTime), text(endTime));
+        AccumuloRange splitRange = new AccumuloRange(encodeTimestampString(startTime), encodeTimestampString(endTime));
 
-        ImmutableMultimap<TimestampPrecision, Range> expected = ImmutableMultimap.of(MILLISECOND, splitRange);
-        Multimap<TimestampPrecision, Range> splitRanges = splitTimestampRange(splitRange);
+        ImmutableMultimap<TimestampPrecision, AccumuloRange> expected = ImmutableMultimap.of(MILLISECOND, splitRange);
+        Multimap<TimestampPrecision, AccumuloRange> splitRanges = splitTimestampRange(splitRange);
         assertEquals(splitRanges, expected);
     }
 
@@ -387,10 +386,10 @@ public class TestIndexer
     {
         String startTime = "2001-08-02T00:30:05.321+0000";
         String endTime = "2001-08-02T00:30:05.456+0000";
-        Range splitRange = new Range(text(startTime), false, text(endTime), false);
+        AccumuloRange splitRange = new AccumuloRange(encodeTimestampString(startTime), false, encodeTimestampString(endTime), false);
 
-        ImmutableMultimap<TimestampPrecision, Range> expected = ImmutableMultimap.of(MILLISECOND, splitRange);
-        Multimap<TimestampPrecision, Range> splitRanges = splitTimestampRange(splitRange);
+        ImmutableMultimap<TimestampPrecision, AccumuloRange> expected = ImmutableMultimap.of(MILLISECOND, splitRange);
+        Multimap<TimestampPrecision, AccumuloRange> splitRanges = splitTimestampRange(splitRange);
         assertEquals(splitRanges, expected);
     }
 
@@ -399,15 +398,15 @@ public class TestIndexer
     {
         String startTime = "2001-08-02T00:30:05.321+0000";
         String endTime = "2001-08-02T00:30:12.456+0000";
-        Range splitRange = new Range(text(startTime), text(endTime));
+        AccumuloRange splitRange = new AccumuloRange(encodeTimestampString(startTime), encodeTimestampString(endTime));
 
-        ImmutableMultimap.Builder<TimestampPrecision, Range> builder = ImmutableMultimap.builder();
-        builder.put(MILLISECOND, new Range(text(startTime), text("2001-08-02T00:30:05.999+0000")))
-                .put(SECOND, new Range(text("2001-08-02T00:30:06.000+0000"), text("2001-08-02T00:30:11.000+0000")))
-                .put(MILLISECOND, new Range(text("2001-08-02T00:30:12.000+0000"), text(endTime)));
-        Multimap<TimestampPrecision, Range> expected = builder.build();
+        ImmutableMultimap.Builder<TimestampPrecision, AccumuloRange> builder = ImmutableMultimap.builder();
+        builder.put(MILLISECOND, new AccumuloRange(encodeTimestampString(startTime), encodeTimestampString("2001-08-02T00:30:05.999+0000")))
+                .put(SECOND, new AccumuloRange(encodeTimestampString("2001-08-02T00:30:06.000+0000"), encodeTimestampString("2001-08-02T00:30:11.000+0000")))
+                .put(MILLISECOND, new AccumuloRange(encodeTimestampString("2001-08-02T00:30:12.000+0000"), encodeTimestampString(endTime)));
+        Multimap<TimestampPrecision, AccumuloRange> expected = builder.build();
 
-        Multimap<TimestampPrecision, Range> splitRanges = splitTimestampRange(splitRange);
+        Multimap<TimestampPrecision, AccumuloRange> splitRanges = splitTimestampRange(splitRange);
         assertEquals(splitRanges, expected);
     }
 
@@ -416,15 +415,15 @@ public class TestIndexer
     {
         String startTime = "2001-08-02T00:30:05.321+0000";
         String endTime = "2001-08-02T00:30:12.456+0000";
-        Range splitRange = new Range(text(startTime), false, text(endTime), false);
+        AccumuloRange splitRange = new AccumuloRange(encodeTimestampString(startTime), false, encodeTimestampString(endTime), false);
 
-        ImmutableMultimap.Builder<TimestampPrecision, Range> builder = ImmutableMultimap.builder();
-        builder.put(MILLISECOND, new Range(text(startTime), false, text("2001-08-02T00:30:05.999+0000"), true))
-                .put(SECOND, new Range(text("2001-08-02T00:30:06.000+0000"), text("2001-08-02T00:30:11.000+0000")))
-                .put(MILLISECOND, new Range(text("2001-08-02T00:30:12.000+0000"), true, text(endTime), false));
-        Multimap<TimestampPrecision, Range> expected = builder.build();
+        ImmutableMultimap.Builder<TimestampPrecision, AccumuloRange> builder = ImmutableMultimap.builder();
+        builder.put(MILLISECOND, new AccumuloRange(encodeTimestampString(startTime), false, encodeTimestampString("2001-08-02T00:30:05.999+0000"), true))
+                .put(SECOND, new AccumuloRange(encodeTimestampString("2001-08-02T00:30:06.000+0000"), encodeTimestampString("2001-08-02T00:30:11.000+0000")))
+                .put(MILLISECOND, new AccumuloRange(encodeTimestampString("2001-08-02T00:30:12.000+0000"), true, encodeTimestampString(endTime), false));
+        Multimap<TimestampPrecision, AccumuloRange> expected = builder.build();
 
-        Multimap<TimestampPrecision, Range> splitRanges = splitTimestampRange(splitRange);
+        Multimap<TimestampPrecision, AccumuloRange> splitRanges = splitTimestampRange(splitRange);
         assertEquals(splitRanges, expected);
     }
 
@@ -433,17 +432,17 @@ public class TestIndexer
     {
         String startTime = "2001-08-02T00:30:58.321+0000";
         String endTime = "2001-08-02T00:33:03.456+0000";
-        Range splitRange = new Range(text(startTime), text(endTime));
+        AccumuloRange splitRange = new AccumuloRange(encodeTimestampString(startTime), encodeTimestampString(endTime));
 
-        ImmutableMultimap.Builder<TimestampPrecision, Range> builder = ImmutableMultimap.builder();
-        builder.put(MILLISECOND, new Range(text(startTime), text("2001-08-02T00:30:58.999+0000")))
-                .put(SECOND, new Range(text("2001-08-02T00:30:59.000+0000")))
-                .put(MINUTE, new Range(text("2001-08-02T00:31:00.000+0000"), text("2001-08-02T00:32:00.000+0000")))
-                .put(SECOND, new Range(text("2001-08-02T00:33:00.000+0000"), text("2001-08-02T00:33:02.000+0000")))
-                .put(MILLISECOND, new Range(text("2001-08-02T00:33:03.000+0000"), text(endTime)));
-        Multimap<TimestampPrecision, Range> expected = builder.build();
+        ImmutableMultimap.Builder<TimestampPrecision, AccumuloRange> builder = ImmutableMultimap.builder();
+        builder.put(MILLISECOND, new AccumuloRange(encodeTimestampString(startTime), encodeTimestampString("2001-08-02T00:30:58.999+0000")))
+                .put(SECOND, new AccumuloRange(encodeTimestampString("2001-08-02T00:30:59.000+0000")))
+                .put(MINUTE, new AccumuloRange(encodeTimestampString("2001-08-02T00:31:00.000+0000"), encodeTimestampString("2001-08-02T00:32:00.000+0000")))
+                .put(SECOND, new AccumuloRange(encodeTimestampString("2001-08-02T00:33:00.000+0000"), encodeTimestampString("2001-08-02T00:33:02.000+0000")))
+                .put(MILLISECOND, new AccumuloRange(encodeTimestampString("2001-08-02T00:33:03.000+0000"), encodeTimestampString(endTime)));
+        Multimap<TimestampPrecision, AccumuloRange> expected = builder.build();
 
-        Multimap<TimestampPrecision, Range> splitRanges = splitTimestampRange(splitRange);
+        Multimap<TimestampPrecision, AccumuloRange> splitRanges = splitTimestampRange(splitRange);
         assertEquals(splitRanges, expected);
     }
 
@@ -452,17 +451,17 @@ public class TestIndexer
     {
         String startTime = "2001-08-02T00:30:58.321+0000";
         String endTime = "2001-08-02T00:33:03.456+0000";
-        Range splitRange = new Range(text(startTime), false, text(endTime), false);
+        AccumuloRange splitRange = new AccumuloRange(encodeTimestampString(startTime), false, encodeTimestampString(endTime), false);
 
-        ImmutableMultimap.Builder<TimestampPrecision, Range> builder = ImmutableMultimap.builder();
-        builder.put(MILLISECOND, new Range(text(startTime), false, text("2001-08-02T00:30:58.999+0000"), true))
-                .put(SECOND, new Range(text("2001-08-02T00:30:59.000+0000")))
-                .put(MINUTE, new Range(text("2001-08-02T00:31:00.000+0000"), text("2001-08-02T00:32:00.000+0000")))
-                .put(SECOND, new Range(text("2001-08-02T00:33:00.000+0000"), text("2001-08-02T00:33:02.000+0000")))
-                .put(MILLISECOND, new Range(text("2001-08-02T00:33:03.000+0000"), true, text(endTime), false));
-        Multimap<TimestampPrecision, Range> expected = builder.build();
+        ImmutableMultimap.Builder<TimestampPrecision, AccumuloRange> builder = ImmutableMultimap.builder();
+        builder.put(MILLISECOND, new AccumuloRange(encodeTimestampString(startTime), false, encodeTimestampString("2001-08-02T00:30:58.999+0000"), true))
+                .put(SECOND, new AccumuloRange(encodeTimestampString("2001-08-02T00:30:59.000+0000")))
+                .put(MINUTE, new AccumuloRange(encodeTimestampString("2001-08-02T00:31:00.000+0000"), encodeTimestampString("2001-08-02T00:32:00.000+0000")))
+                .put(SECOND, new AccumuloRange(encodeTimestampString("2001-08-02T00:33:00.000+0000"), encodeTimestampString("2001-08-02T00:33:02.000+0000")))
+                .put(MILLISECOND, new AccumuloRange(encodeTimestampString("2001-08-02T00:33:03.000+0000"), true, encodeTimestampString(endTime), false));
+        Multimap<TimestampPrecision, AccumuloRange> expected = builder.build();
 
-        Multimap<TimestampPrecision, Range> splitRanges = splitTimestampRange(splitRange);
+        Multimap<TimestampPrecision, AccumuloRange> splitRanges = splitTimestampRange(splitRange);
         assertEquals(splitRanges, expected);
     }
 
@@ -471,19 +470,19 @@ public class TestIndexer
     {
         String startTime = "2001-08-02T00:58:58.321+0000";
         String endTime = "2001-08-02T03:03:03.456+0000";
-        Range splitRange = new Range(text(startTime), text(endTime));
+        AccumuloRange splitRange = new AccumuloRange(encodeTimestampString(startTime), encodeTimestampString(endTime));
 
-        ImmutableMultimap.Builder<TimestampPrecision, Range> builder = ImmutableMultimap.builder();
-        builder.put(MILLISECOND, new Range(text(startTime), text("2001-08-02T00:58:58.999+0000")))
-                .put(SECOND, new Range(text("2001-08-02T00:58:59.000+0000")))
-                .put(MINUTE, new Range(text("2001-08-02T00:59:00.000+0000")))
-                .put(HOUR, new Range(text("2001-08-02T01:00:00.000+0000"), text("2001-08-02T02:00:00.000+0000")))
-                .put(MINUTE, new Range(text("2001-08-02T03:00:00.000+0000"), text("2001-08-02T03:02:00.000+0000")))
-                .put(SECOND, new Range(text("2001-08-02T03:03:00.000+0000"), text("2001-08-02T03:03:02.000+0000")))
-                .put(MILLISECOND, new Range(text("2001-08-02T03:03:03.000+0000"), text(endTime)));
-        Multimap<TimestampPrecision, Range> expected = builder.build();
+        ImmutableMultimap.Builder<TimestampPrecision, AccumuloRange> builder = ImmutableMultimap.builder();
+        builder.put(MILLISECOND, new AccumuloRange(encodeTimestampString(startTime), encodeTimestampString("2001-08-02T00:58:58.999+0000")))
+                .put(SECOND, new AccumuloRange(encodeTimestampString("2001-08-02T00:58:59.000+0000")))
+                .put(MINUTE, new AccumuloRange(encodeTimestampString("2001-08-02T00:59:00.000+0000")))
+                .put(HOUR, new AccumuloRange(encodeTimestampString("2001-08-02T01:00:00.000+0000"), encodeTimestampString("2001-08-02T02:00:00.000+0000")))
+                .put(MINUTE, new AccumuloRange(encodeTimestampString("2001-08-02T03:00:00.000+0000"), encodeTimestampString("2001-08-02T03:02:00.000+0000")))
+                .put(SECOND, new AccumuloRange(encodeTimestampString("2001-08-02T03:03:00.000+0000"), encodeTimestampString("2001-08-02T03:03:02.000+0000")))
+                .put(MILLISECOND, new AccumuloRange(encodeTimestampString("2001-08-02T03:03:03.000+0000"), encodeTimestampString(endTime)));
+        Multimap<TimestampPrecision, AccumuloRange> expected = builder.build();
 
-        Multimap<TimestampPrecision, Range> splitRanges = splitTimestampRange(splitRange);
+        Multimap<TimestampPrecision, AccumuloRange> splitRanges = splitTimestampRange(splitRange);
         assertEquals(splitRanges, expected);
     }
 
@@ -492,19 +491,19 @@ public class TestIndexer
     {
         String startTime = "2001-08-02T00:58:58.321+0000";
         String endTime = "2001-08-02T03:03:03.456+0000";
-        Range splitRange = new Range(text(startTime), false, text(endTime), false);
+        AccumuloRange splitRange = new AccumuloRange(encodeTimestampString(startTime), false, encodeTimestampString(endTime), false);
 
-        ImmutableMultimap.Builder<TimestampPrecision, Range> builder = ImmutableMultimap.builder();
-        builder.put(MILLISECOND, new Range(text(startTime), false, text("2001-08-02T00:58:58.999+0000"), true))
-                .put(SECOND, new Range(text("2001-08-02T00:58:59.000+0000")))
-                .put(MINUTE, new Range(text("2001-08-02T00:59:00.000+0000")))
-                .put(HOUR, new Range(text("2001-08-02T01:00:00.000+0000"), text("2001-08-02T02:00:00.000+0000")))
-                .put(MINUTE, new Range(text("2001-08-02T03:00:00.000+0000"), text("2001-08-02T03:02:00.000+0000")))
-                .put(SECOND, new Range(text("2001-08-02T03:03:00.000+0000"), text("2001-08-02T03:03:02.000+0000")))
-                .put(MILLISECOND, new Range(text("2001-08-02T03:03:03.000+0000"), true, text(endTime), false));
-        Multimap<TimestampPrecision, Range> expected = builder.build();
+        ImmutableMultimap.Builder<TimestampPrecision, AccumuloRange> builder = ImmutableMultimap.builder();
+        builder.put(MILLISECOND, new AccumuloRange(encodeTimestampString(startTime), false, encodeTimestampString("2001-08-02T00:58:58.999+0000"), true))
+                .put(SECOND, new AccumuloRange(encodeTimestampString("2001-08-02T00:58:59.000+0000")))
+                .put(MINUTE, new AccumuloRange(encodeTimestampString("2001-08-02T00:59:00.000+0000")))
+                .put(HOUR, new AccumuloRange(encodeTimestampString("2001-08-02T01:00:00.000+0000"), encodeTimestampString("2001-08-02T02:00:00.000+0000")))
+                .put(MINUTE, new AccumuloRange(encodeTimestampString("2001-08-02T03:00:00.000+0000"), encodeTimestampString("2001-08-02T03:02:00.000+0000")))
+                .put(SECOND, new AccumuloRange(encodeTimestampString("2001-08-02T03:03:00.000+0000"), encodeTimestampString("2001-08-02T03:03:02.000+0000")))
+                .put(MILLISECOND, new AccumuloRange(encodeTimestampString("2001-08-02T03:03:03.000+0000"), true, encodeTimestampString(endTime), false));
+        Multimap<TimestampPrecision, AccumuloRange> expected = builder.build();
 
-        Multimap<TimestampPrecision, Range> splitRanges = splitTimestampRange(splitRange);
+        Multimap<TimestampPrecision, AccumuloRange> splitRanges = splitTimestampRange(splitRange);
         assertEquals(splitRanges, expected);
     }
 
@@ -513,21 +512,21 @@ public class TestIndexer
     {
         String startTime = "2001-08-02T22:58:58.321+0000";
         String endTime = "2001-08-05T01:03:03.456+0000";
-        Range splitRange = new Range(text(startTime), text(endTime));
+        AccumuloRange splitRange = new AccumuloRange(encodeTimestampString(startTime), encodeTimestampString(endTime));
 
-        ImmutableMultimap.Builder<TimestampPrecision, Range> builder = ImmutableMultimap.builder();
-        builder.put(MILLISECOND, new Range(text(startTime), text("2001-08-02T22:58:58.999+0000")))
-                .put(SECOND, new Range(text("2001-08-02T22:58:59.000+0000")))
-                .put(MINUTE, new Range(text("2001-08-02T22:59:00.000+0000")))
-                .put(HOUR, new Range(text("2001-08-02T23:00:00.000+0000")))
-                .put(DAY, new Range(text("2001-08-03T00:00:00.000+0000"), text("2001-08-04T00:00:00.000+0000")))
-                .put(HOUR, new Range(text("2001-08-05T00:00:00.000+0000")))
-                .put(MINUTE, new Range(text("2001-08-05T01:00:00.000+0000"), text("2001-08-05T01:02:00.000+0000")))
-                .put(SECOND, new Range(text("2001-08-05T01:03:00.000+0000"), text("2001-08-05T01:03:02.000+0000")))
-                .put(MILLISECOND, new Range(text("2001-08-05T01:03:03.000+0000"), text(endTime)));
-        Multimap<TimestampPrecision, Range> expected = builder.build();
+        ImmutableMultimap.Builder<TimestampPrecision, AccumuloRange> builder = ImmutableMultimap.builder();
+        builder.put(MILLISECOND, new AccumuloRange(encodeTimestampString(startTime), encodeTimestampString("2001-08-02T22:58:58.999+0000")))
+                .put(SECOND, new AccumuloRange(encodeTimestampString("2001-08-02T22:58:59.000+0000")))
+                .put(MINUTE, new AccumuloRange(encodeTimestampString("2001-08-02T22:59:00.000+0000")))
+                .put(HOUR, new AccumuloRange(encodeTimestampString("2001-08-02T23:00:00.000+0000")))
+                .put(DAY, new AccumuloRange(encodeTimestampString("2001-08-03T00:00:00.000+0000"), encodeTimestampString("2001-08-04T00:00:00.000+0000")))
+                .put(HOUR, new AccumuloRange(encodeTimestampString("2001-08-05T00:00:00.000+0000")))
+                .put(MINUTE, new AccumuloRange(encodeTimestampString("2001-08-05T01:00:00.000+0000"), encodeTimestampString("2001-08-05T01:02:00.000+0000")))
+                .put(SECOND, new AccumuloRange(encodeTimestampString("2001-08-05T01:03:00.000+0000"), encodeTimestampString("2001-08-05T01:03:02.000+0000")))
+                .put(MILLISECOND, new AccumuloRange(encodeTimestampString("2001-08-05T01:03:03.000+0000"), encodeTimestampString(endTime)));
+        Multimap<TimestampPrecision, AccumuloRange> expected = builder.build();
 
-        Multimap<TimestampPrecision, Range> splitRanges = splitTimestampRange(splitRange);
+        Multimap<TimestampPrecision, AccumuloRange> splitRanges = splitTimestampRange(splitRange);
         assertEquals(splitRanges, expected);
     }
 
@@ -536,21 +535,21 @@ public class TestIndexer
     {
         String startTime = "2001-08-02T22:58:58.321+0000";
         String endTime = "2001-08-05T01:03:03.456+0000";
-        Range splitRange = new Range(text(startTime), false, text(endTime), false);
+        AccumuloRange splitRange = new AccumuloRange(encodeTimestampString(startTime), false, encodeTimestampString(endTime), false);
 
-        ImmutableMultimap.Builder<TimestampPrecision, Range> builder = ImmutableMultimap.builder();
-        builder.put(MILLISECOND, new Range(text(startTime), false, text("2001-08-02T22:58:58.999+0000"), true))
-                .put(SECOND, new Range(text("2001-08-02T22:58:59.000+0000")))
-                .put(MINUTE, new Range(text("2001-08-02T22:59:00.000+0000")))
-                .put(HOUR, new Range(text("2001-08-02T23:00:00.000+0000")))
-                .put(DAY, new Range(text("2001-08-03T00:00:00.000+0000"), text("2001-08-04T00:00:00.000+0000")))
-                .put(HOUR, new Range(text("2001-08-05T00:00:00.000+0000")))
-                .put(MINUTE, new Range(text("2001-08-05T01:00:00.000+0000"), text("2001-08-05T01:02:00.000+0000")))
-                .put(SECOND, new Range(text("2001-08-05T01:03:00.000+0000"), text("2001-08-05T01:03:02.000+0000")))
-                .put(MILLISECOND, new Range(text("2001-08-05T01:03:03.000+0000"), true, text(endTime), false));
-        Multimap<TimestampPrecision, Range> expected = builder.build();
+        ImmutableMultimap.Builder<TimestampPrecision, AccumuloRange> builder = ImmutableMultimap.builder();
+        builder.put(MILLISECOND, new AccumuloRange(encodeTimestampString(startTime), false, encodeTimestampString("2001-08-02T22:58:58.999+0000"), true))
+                .put(SECOND, new AccumuloRange(encodeTimestampString("2001-08-02T22:58:59.000+0000")))
+                .put(MINUTE, new AccumuloRange(encodeTimestampString("2001-08-02T22:59:00.000+0000")))
+                .put(HOUR, new AccumuloRange(encodeTimestampString("2001-08-02T23:00:00.000+0000")))
+                .put(DAY, new AccumuloRange(encodeTimestampString("2001-08-03T00:00:00.000+0000"), encodeTimestampString("2001-08-04T00:00:00.000+0000")))
+                .put(HOUR, new AccumuloRange(encodeTimestampString("2001-08-05T00:00:00.000+0000")))
+                .put(MINUTE, new AccumuloRange(encodeTimestampString("2001-08-05T01:00:00.000+0000"), encodeTimestampString("2001-08-05T01:02:00.000+0000")))
+                .put(SECOND, new AccumuloRange(encodeTimestampString("2001-08-05T01:03:00.000+0000"), encodeTimestampString("2001-08-05T01:03:02.000+0000")))
+                .put(MILLISECOND, new AccumuloRange(encodeTimestampString("2001-08-05T01:03:03.000+0000"), true, encodeTimestampString(endTime), false));
+        Multimap<TimestampPrecision, AccumuloRange> expected = builder.build();
 
-        Multimap<TimestampPrecision, Range> splitRanges = splitTimestampRange(splitRange);
+        Multimap<TimestampPrecision, AccumuloRange> splitRanges = splitTimestampRange(splitRange);
         assertEquals(splitRanges, expected);
     }
 
@@ -559,19 +558,19 @@ public class TestIndexer
     {
         String startTime = "2001-08-02T22:58:00.000+0000";
         String endTime = "2001-08-05T02:02:00.000+0000";
-        Range splitRange = new Range(text(startTime), text(endTime));
+        AccumuloRange splitRange = new AccumuloRange(encodeTimestampString(startTime), encodeTimestampString(endTime));
 
-        ImmutableMultimap.Builder<TimestampPrecision, Range> builder = ImmutableMultimap.builder();
-        builder.put(MINUTE, new Range(text(startTime), text("2001-08-02T22:59:00.000+0000")))
-                .put(HOUR, new Range(text("2001-08-02T23:00:00.000+0000")))
-                .put(DAY, new Range(text("2001-08-03T00:00:00.000+0000"), text("2001-08-04T00:00:00.000+0000")))
-                .put(HOUR, new Range(text("2001-08-05T00:00:00.000+0000"), text("2001-08-05T01:00:00.000+0000")))
-                .put(MINUTE, new Range(text("2001-08-05T02:00:00.000+0000")))
-                .put(SECOND, new Range(text("2001-08-05T02:01:00.000+0000"), text("2001-08-05T02:01:58.000+0000")))
-                .put(MILLISECOND, new Range(text("2001-08-05T02:01:59.000+0000"), text("2001-08-05T02:01:59.999+0000")));
-        Multimap<TimestampPrecision, Range> expected = builder.build();
+        ImmutableMultimap.Builder<TimestampPrecision, AccumuloRange> builder = ImmutableMultimap.builder();
+        builder.put(MINUTE, new AccumuloRange(encodeTimestampString(startTime), encodeTimestampString("2001-08-02T22:59:00.000+0000")))
+                .put(HOUR, new AccumuloRange(encodeTimestampString("2001-08-02T23:00:00.000+0000")))
+                .put(DAY, new AccumuloRange(encodeTimestampString("2001-08-03T00:00:00.000+0000"), encodeTimestampString("2001-08-04T00:00:00.000+0000")))
+                .put(HOUR, new AccumuloRange(encodeTimestampString("2001-08-05T00:00:00.000+0000"), encodeTimestampString("2001-08-05T01:00:00.000+0000")))
+                .put(MINUTE, new AccumuloRange(encodeTimestampString("2001-08-05T02:00:00.000+0000")))
+                .put(SECOND, new AccumuloRange(encodeTimestampString("2001-08-05T02:01:00.000+0000"), encodeTimestampString("2001-08-05T02:01:58.000+0000")))
+                .put(MILLISECOND, new AccumuloRange(encodeTimestampString("2001-08-05T02:01:59.000+0000"), encodeTimestampString("2001-08-05T02:01:59.999+0000")));
+        Multimap<TimestampPrecision, AccumuloRange> expected = builder.build();
 
-        Multimap<TimestampPrecision, Range> splitRanges = splitTimestampRange(splitRange);
+        Multimap<TimestampPrecision, AccumuloRange> splitRanges = splitTimestampRange(splitRange);
         assertEquals(splitRanges, expected);
     }
 
@@ -579,9 +578,9 @@ public class TestIndexer
     public void testSplitTimestampRangeInfiniteEnd()
     {
         String startTime = "2001-08-02T00:30:05.321+0000";
-        Range splitRange = new Range(text(startTime), null);
-        Multimap<TimestampPrecision, Range> expected = ImmutableMultimap.of(MILLISECOND, splitRange);
-        Multimap<TimestampPrecision, Range> splitRanges = splitTimestampRange(splitRange);
+        AccumuloRange splitRange = new AccumuloRange(encodeTimestampString(startTime), null);
+        Multimap<TimestampPrecision, AccumuloRange> expected = ImmutableMultimap.of(MILLISECOND, splitRange);
+        Multimap<TimestampPrecision, AccumuloRange> splitRanges = splitTimestampRange(splitRange);
         assertEquals(splitRanges, expected);
     }
 
@@ -589,9 +588,9 @@ public class TestIndexer
     public void testSplitTimestampRangeInfiniteStart()
     {
         String endTime = "2001-08-07T00:32:07.456+0000";
-        Range splitRange = new Range(null, text(endTime));
-        Multimap<TimestampPrecision, Range> expected = ImmutableMultimap.of(MILLISECOND, splitRange);
-        Multimap<TimestampPrecision, Range> splitRanges = splitTimestampRange(splitRange);
+        AccumuloRange splitRange = new AccumuloRange(null, encodeTimestampString(endTime));
+        Multimap<TimestampPrecision, AccumuloRange> expected = ImmutableMultimap.of(MILLISECOND, splitRange);
+        Multimap<TimestampPrecision, AccumuloRange> splitRanges = splitTimestampRange(splitRange);
         assertEquals(splitRanges, expected);
     }
 
@@ -619,11 +618,6 @@ public class TestIndexer
     private static Entry<Key, Value> kvp(byte[] rowId, String cf, String cq, byte[] value)
     {
         return Pair.of(new Key(rowId, cf.getBytes(UTF_8), cq.getBytes(UTF_8), EMPTY_BYTES, 0), new Value(value));
-    }
-
-    private static Text text(String v)
-    {
-        return new Text(encode(TimestampType.TIMESTAMP, ts(v).getTime()));
     }
 
     private static Timestamp ts(String date)
@@ -655,6 +649,11 @@ public class TestIndexer
         assertEquals(actual.getKey().getColumnQualifier().copyBytes(), expected.getKey().getColumnQualifier().copyBytes(), format("Expected %s, but got %s", expected.getKey().getColumnQualifier().toString(), actual.getKey().getColumnQualifier().toString()));
         assertTrue(actual.getKey().getTimestamp() > 0, "Timestamp is zero");
         assertEquals(actual.getValue().toString(), expected.getValue().toString());
+    }
+
+    private static byte[] encodeTimestampString(String v)
+    {
+        return encode(TimestampType.TIMESTAMP, ts(v).getTime());
     }
 
     private static byte[] bytes(String s)

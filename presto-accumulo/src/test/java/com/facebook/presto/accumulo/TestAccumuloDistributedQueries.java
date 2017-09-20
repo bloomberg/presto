@@ -430,6 +430,7 @@ public class TestAccumuloDistributedQueries
         try {
             // This test ensure proper conversion of predicate to composite index/metrics Range scans against Accumulo
             assertUpdate("CREATE TABLE test_open_ended_timestamp_rollup WITH (index_columns='b,c,b:c', truncate_timestamps = true) AS SELECT 1 AS a, 'b' as b, TIMESTAMP '2017-01-31 00:00:00' AS c", 1);
+            computeActual("SET SESSION accumulo.index_threshold = 2.0");
 
             assertQuery("SELECT * FROM test_open_ended_timestamp_rollup WHERE b < 'c' AND c < TIMESTAMP '2017-02-01'", "SELECT 1, 'b', TIMESTAMP '2017-01-31 05:45:00'");
             assertQuery("SELECT * FROM test_open_ended_timestamp_rollup WHERE b < 'c' AND c <= TIMESTAMP '2017-01-31'", "SELECT 1, 'b', TIMESTAMP '2017-01-31 05:45:00'");

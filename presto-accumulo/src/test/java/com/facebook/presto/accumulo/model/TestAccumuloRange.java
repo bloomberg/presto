@@ -84,6 +84,29 @@ public class TestAccumuloRange
     }
 
     @Test
+    public void testStartNotNullEndNullAgainstRealRange()
+    {
+        AccumuloRowSerializer serializer = new LexicoderRowSerializer();
+        byte[] a = serializer.encode(VARCHAR, "abc");
+        byte[] b = null;
+        AccumuloRange range = new AccumuloRange(a, b).getPaddedRange();
+        assertEquals(range.getStart(), a);
+        assertEquals(range.getEnd(), new byte[] {(byte) 255, (byte) 255, (byte) 255});
+        assertEquals(range.isStartKeyInclusive(), true);
+        assertEquals(range.isEndKeyInclusive(), true);
+        assertEquals(range.isInfiniteStartKey(), false);
+        assertEquals(range.isInfiniteStopKey(), false);
+
+        range = new AccumuloRange(a, false, b, false).getPaddedRange();
+        assertEquals(range.getStart(), a);
+        assertEquals(range.getEnd(), new byte[] {(byte) 255, (byte) 255, (byte) 255});
+        assertEquals(range.isStartKeyInclusive(), false);
+        assertEquals(range.isEndKeyInclusive(), false);
+        assertEquals(range.isInfiniteStartKey(), false);
+        assertEquals(range.isInfiniteStopKey(), false);
+    }
+
+    @Test
     public void testStartNullEndNotNull()
     {
         AccumuloRowSerializer serializer = new LexicoderRowSerializer();

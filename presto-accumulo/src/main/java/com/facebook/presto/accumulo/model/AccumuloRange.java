@@ -35,8 +35,10 @@ public class AccumuloRange
 {
     private final byte[] start;
     private final boolean isStartKeyInclusive;
+    private final boolean isStartKeyInfinite;
     private final byte[] end;
     private final boolean isEndKeyInclusive;
+    private final boolean isEndKeyInfinite;
     private final Range range;
 
     public AccumuloRange()
@@ -61,6 +63,9 @@ public class AccumuloRange
             @JsonProperty("end") byte[] end,
             @JsonProperty("isEndKeyInclusive") boolean isEndKeyInclusive)
     {
+        this.isStartKeyInfinite = start == null;
+        this.isEndKeyInfinite = end == null;
+
         if (start != null) {
             if (end != null) {
                 if (start.length == end.length) {
@@ -109,6 +114,9 @@ public class AccumuloRange
     {
         requireNonNull(range, "range is null");
 
+        this.isStartKeyInfinite = range.getStartKey() != null;
+        this.isEndKeyInfinite = range.getEndKey() != null;
+
         this.start = range.getStartKey() != null ? range.getStartKey().getRow().copyBytes() : null;
         this.isStartKeyInclusive = range.isStartKeyInclusive();
         this.end = range.getEndKey() != null ? range.getEndKey().getRow().copyBytes() : null;
@@ -150,13 +158,13 @@ public class AccumuloRange
     @JsonIgnore
     public boolean isInfiniteStartKey()
     {
-        return start == null;
+        return isStartKeyInfinite;
     }
 
     @JsonIgnore
     public boolean isInfiniteStopKey()
     {
-        return end == null;
+        return isEndKeyInfinite;
     }
 
     public AccumuloRange getPaddedRange()

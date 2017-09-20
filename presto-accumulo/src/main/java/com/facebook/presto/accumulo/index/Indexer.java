@@ -20,6 +20,7 @@ import com.facebook.presto.accumulo.index.storage.IndexStorage;
 import com.facebook.presto.accumulo.index.storage.ShardedIndexStorage;
 import com.facebook.presto.accumulo.metadata.AccumuloTable;
 import com.facebook.presto.accumulo.model.AccumuloColumnHandle;
+import com.facebook.presto.accumulo.model.AccumuloRange;
 import com.facebook.presto.accumulo.model.IndexColumn;
 import com.facebook.presto.accumulo.serializers.AccumuloRowSerializer;
 import com.facebook.presto.accumulo.serializers.LexicoderRowSerializer;
@@ -59,7 +60,6 @@ import javax.annotation.concurrent.NotThreadSafe;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.sql.Timestamp;
-import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -747,33 +747,27 @@ public class Indexer
                 SECOND, value / 1000L * 1000L);
     }
 
-    public static Multimap<TimestampPrecision, Range> splitTimestampRange(Range value)
+    public static Multimap<TimestampPrecision, AccumuloRange> splitTimestampRange(AccumuloRange value)
     {
         requireNonNull(value);
 
         AccumuloRowSerializer serializer = new LexicoderRowSerializer();
 
         // Selfishly refusing to split any infinite-ended ranges
-        if (value.isInfiniteStopKey() || value.isInfiniteStartKey() || isExact(value)) {
+        if (value.isInfiniteStartKey() || value.isInfiniteStopKey() || isExact(value.getRange())) {
             return ImmutableMultimap.of(MILLISECOND, value);
         }
 
-        Multimap<TimestampPrecision, Range> splitTimestampRange = MultimapBuilder.enumKeys(TimestampPrecision.class).arrayListValues().build();
+        Multimap<TimestampPrecision, AccumuloRange> splitTimestampRange = MultimapBuilder.enumKeys(TimestampPrecision.class).arrayListValues().build();
+        Timestamp startTime = new Timestamp(serializer.decode(TIMESTAMP, value.getStart()));
 
-        Text text = new Text();
-        value.getStartKey().getRow(text);
-        boolean startKeyInclusive = text.getLength() == 9;
-        Timestamp startTime = new Timestamp(serializer.decode(TIMESTAMP, Arrays.copyOfRange(text.getBytes(), 0, 9)));
-
-        value.getEndKey().getRow(text);
-        Timestamp endTime = new Timestamp(serializer.decode(TIMESTAMP, Arrays.copyOfRange(text.getBytes(), 0, 9)));
-        boolean endKeyInclusive = text.getLength() == 10;
+        Timestamp endTime = new Timestamp(serializer.decode(TIMESTAMP, value.getEnd()));
         if (startTime.getTime() + 1000L > endTime.getTime()) {
             return ImmutableMultimap.of(MILLISECOND, value);
         }
 
         Pair<TimestampPrecision, Timestamp> nextTime = Pair.of(getPrecision(startTime), startTime);
-        Pair<TimestampPrecision, Range> previousRange = null;
+        Pair<TimestampPrecision, AccumuloRange> previousRange = null;
 
         switch (nextTime.getLeft()) {
             case MILLISECOND:
@@ -781,34 +775,34 @@ public class Indexer
             case SECOND:
                 int compare = Long.compare(startTime.getTime() + 1000L, endTime.getTime());
                 if (compare < 0) {
-                    previousRange = Pair.of(SECOND, new Range(new Text(serializer.encode(TIMESTAMP, startTime.getTime()))));
+                    previousRange = Pair.of(SECOND, new AccumuloRange(serializer.encode(TIMESTAMP, startTime.getTime())));
                 }
                 break;
             case MINUTE:
                 compare = Long.compare(startTime.getTime() + 60000L, endTime.getTime());
                 if (compare < 0) {
-                    previousRange = Pair.of(MINUTE, new Range(new Text(serializer.encode(TIMESTAMP, startTime.getTime()))));
+                    previousRange = Pair.of(MINUTE, new AccumuloRange(serializer.encode(TIMESTAMP, startTime.getTime())));
                 }
                 else {
-                    previousRange = Pair.of(SECOND, new Range(new Text(serializer.encode(TIMESTAMP, startTime.getTime()))));
+                    previousRange = Pair.of(SECOND, new AccumuloRange(serializer.encode(TIMESTAMP, startTime.getTime())));
                 }
                 break;
             case HOUR:
                 compare = Long.compare(startTime.getTime() + 3600000L, endTime.getTime());
                 if (compare < 0) {
-                    previousRange = Pair.of(HOUR, new Range(new Text(serializer.encode(TIMESTAMP, startTime.getTime()))));
+                    previousRange = Pair.of(HOUR, new AccumuloRange(serializer.encode(TIMESTAMP, startTime.getTime())));
                 }
                 else {
-                    previousRange = Pair.of(MINUTE, new Range(new Text(serializer.encode(TIMESTAMP, startTime.getTime()))));
+                    previousRange = Pair.of(MINUTE, new AccumuloRange(serializer.encode(TIMESTAMP, startTime.getTime())));
                 }
                 break;
             case DAY:
                 compare = Long.compare(startTime.getTime() + 86400000L, endTime.getTime());
                 if (compare < 0) {
-                    previousRange = Pair.of(DAY, new Range(new Text(serializer.encode(TIMESTAMP, startTime.getTime()))));
+                    previousRange = Pair.of(DAY, new AccumuloRange(serializer.encode(TIMESTAMP, startTime.getTime())));
                 }
                 else {
-                    previousRange = Pair.of(HOUR, new Range(new Text(serializer.encode(TIMESTAMP, startTime.getTime()))));
+                    previousRange = Pair.of(HOUR, new AccumuloRange(serializer.encode(TIMESTAMP, startTime.getTime())));
                 }
                 break;
         }
@@ -818,26 +812,26 @@ public class Indexer
             Pair<TimestampPrecision, Timestamp> prevTime = nextTime;
             nextTime = getNextTimestamp(prevTime.getRight(), endTime);
 
-            Pair<TimestampPrecision, Range> nextRange;
+            Pair<TimestampPrecision, AccumuloRange> nextRange;
             if (prevTime.getLeft() == MILLISECOND && nextTime.getLeft() == MILLISECOND) {
-                nextRange = Pair.of(MILLISECOND, new Range(new Text(serializer.encode(TIMESTAMP, prevTime.getRight().getTime())), startKeyInclusive, new Text(serializer.encode(TIMESTAMP, nextTime.getRight().getTime())), true));
+                nextRange = Pair.of(MILLISECOND, new AccumuloRange(serializer.encode(TIMESTAMP, prevTime.getRight().getTime()), value.isStartKeyInclusive(), serializer.encode(TIMESTAMP, nextTime.getRight().getTime()), true));
             }
             else if (nextTime.getLeft() == MILLISECOND) {
                 Pair<TimestampPrecision, Timestamp> followingTime = getNextTimestamp(nextTime.getRight(), endTime);
-                nextRange = Pair.of(MILLISECOND, new Range(new Text(serializer.encode(TIMESTAMP, nextTime.getRight().getTime())), true, new Text(serializer.encode(TIMESTAMP, followingTime.getRight().getTime())), endKeyInclusive));
+                nextRange = Pair.of(MILLISECOND, new AccumuloRange(serializer.encode(TIMESTAMP, nextTime.getRight().getTime()), true, serializer.encode(TIMESTAMP, followingTime.getRight().getTime()), value.isEndKeyInclusive()));
                 cont = false;
             }
             else {
-                nextRange = Pair.of(nextTime.getLeft(), new Range(new Text(serializer.encode(TIMESTAMP, nextTime.getRight().getTime()))));
+                nextRange = Pair.of(nextTime.getLeft(), new AccumuloRange(serializer.encode(TIMESTAMP, nextTime.getRight().getTime())));
             }
 
             // Combine this range into previous range
             if (previousRange != null) {
                 if (previousRange.getLeft().equals(nextRange.getLeft())) {
-                    previousRange = Pair.of(previousRange.getLeft(), new Range(
-                            previousRange.getRight().getStartKey(),
+                    previousRange = Pair.of(previousRange.getLeft(), new AccumuloRange(
+                            previousRange.getRight().getStart(),
                             previousRange.getRight().isStartKeyInclusive(),
-                            nextRange.getRight().getEndKey(),
+                            nextRange.getRight().getEnd(),
                             nextRange.getRight().isEndKeyInclusive()));
                 }
                 else {

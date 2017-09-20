@@ -13,6 +13,7 @@
  */
 package com.facebook.presto.accumulo.index;
 
+import com.facebook.presto.accumulo.index.storage.ShardedIndexStorage;
 import com.facebook.presto.accumulo.model.AccumuloRange;
 import com.facebook.presto.accumulo.model.IndexColumn;
 import com.facebook.presto.accumulo.serializers.AccumuloRowSerializer;
@@ -20,10 +21,15 @@ import com.facebook.presto.accumulo.serializers.LexicoderRowSerializer;
 import com.google.common.collect.ImmutableList;
 import com.google.common.primitives.Bytes;
 import org.apache.accumulo.core.data.Range;
+import org.apache.commons.lang3.tuple.Pair;
 import org.apache.hadoop.io.Text;
 import org.joda.time.format.DateTimeFormatter;
 import org.joda.time.format.ISODateTimeFormat;
 import org.testng.annotations.Test;
+
+import java.util.Arrays;
+import java.util.List;
+import java.util.stream.Collectors;
 
 import static com.facebook.presto.accumulo.index.Indexer.NULL_BYTE;
 import static com.facebook.presto.spi.type.IntegerType.INTEGER;
@@ -116,6 +122,70 @@ public class TestIndexQueryParameters
                 new Range(new Text(Bytes.concat(BAR, NULL_BYTE, AGE_50, NULL_BYTE, MIN_TIMESTAMP_VALUE)), new Text(Bytes.concat(BAR, NULL_BYTE, AGE_100, NULL_BYTE, MAX_TIMESTAMP_VALUE)))));
 
         assertEquals(parameters.getMetricParameters().asMap().size(), 5);
+    }
+
+    @Test
+    public void testSplit()
+    {
+        IndexColumn shardedIndexColumn = new IndexColumn("foo", ImmutableList.of(), ImmutableList.of("born"));
+
+        IndexQueryParameters parameters = new IndexQueryParameters(shardedIndexColumn);
+        assertEquals(parameters.getIndexColumn(), shardedIndexColumn);
+
+        parameters.appendColumn("cf_born".getBytes(UTF_8), ImmutableList.of(new AccumuloRange(MIN_TIMESTAMP_VALUE, MAX_TIMESTAMP_VALUE)), true);
+
+        for (Range r : parameters.getRanges()) {
+            System.out.println(String.format("%s %s", SERIALIZER.decode(TIMESTAMP, r.getStartKey().getRow().copyBytes()), SERIALIZER.decode(TIMESTAMP, Arrays.copyOfRange(r.getEndKey().getRow().copyBytes(), 0, 9))));
+        }
+
+        List<List<Range>> splitParams = parameters.split(4).stream().map(IndexQueryParameters::getRanges).collect(Collectors.toList());
+        System.out.println(splitParams);
+
+        for (List<Range> ranges : splitParams) {
+            System.out.println("foo");
+            for (Range r : ranges) {
+                System.out.println(String.format("%s %s", SERIALIZER.decode(TIMESTAMP, r.getStartKey().getRow().copyBytes()), SERIALIZER.decode(TIMESTAMP, Arrays.copyOfRange(r.getEndKey().getRow().copyBytes(), 0, 9))));
+            }
+        }
+
+        assertEquals(splitParams, ImmutableList.of(
+                ImmutableList.of(new Range(new Text(SERIALIZER.encode(TIMESTAMP, 998449445321L)), true, new Text(SERIALIZER.encode(TIMESTAMP, 999119045321L)), true)),
+                ImmutableList.of(new Range(new Text(SERIALIZER.encode(TIMESTAMP, 999119045321L)), true, new Text(SERIALIZER.encode(TIMESTAMP, 999788645321L)), true)),
+                ImmutableList.of(new Range(new Text(SERIALIZER.encode(TIMESTAMP, 999788645321L)), true, new Text(SERIALIZER.encode(TIMESTAMP, 1000458245321L)), true)),
+                ImmutableList.of(new Range(new Text(SERIALIZER.encode(TIMESTAMP, 1000458245321L)), true, new Text(SERIALIZER.encode(TIMESTAMP, 1001127845321L)), true))));
+    }
+
+    @Test
+    public void testSplitWithShardedIndexStorage()
+    {
+        ShardedIndexStorage shardedIndexStorage = new ShardedIndexStorage(3);
+        IndexColumn shardedIndexColumn = new IndexColumn("foo", ImmutableList.of(shardedIndexStorage), ImmutableList.of("born"));
+
+        IndexQueryParameters parameters = new IndexQueryParameters(shardedIndexColumn);
+        assertEquals(parameters.getIndexColumn(), shardedIndexColumn);
+
+        parameters.appendColumn("cf_born".getBytes(UTF_8), ImmutableList.of(new AccumuloRange(MIN_TIMESTAMP_VALUE, MAX_TIMESTAMP_VALUE)), true);
+
+        List<List<Range>> splitParams = parameters.split(4).stream().map(IndexQueryParameters::getRanges).collect(Collectors.toList());
+        ImmutableList.Builder<List<Range>> expectedBuilder = ImmutableList.builder();
+
+        List<Pair<Long, Long>> values = ImmutableList.of(
+                Pair.of(998449445321L, 999119045321L),
+                Pair.of(999119045321L, 999788645321L),
+                Pair.of(999788645321L, 1000458245321L),
+                Pair.of(1000458245321L, 1001127845321L));
+
+        for (Pair<Long, Long> startEnd : values) {
+            ImmutableList.Builder<Range> rangeBuilder = ImmutableList.builder();
+            List<byte[]> startShards = shardedIndexStorage.encodeAllShards(SERIALIZER.encode(TIMESTAMP, startEnd.getLeft()));
+            List<byte[]> endShards = shardedIndexStorage.encodeAllShards(SERIALIZER.encode(TIMESTAMP, startEnd.getRight()));
+            for (int i = 0; i < startShards.size(); ++i) {
+                rangeBuilder.add(new Range(new Text(startShards.get(i)), true, new Text(endShards.get(i)), true));
+            }
+            expectedBuilder.add(rangeBuilder.build());
+        }
+
+        assertEquals(splitParams, expectedBuilder.build());
     }
 
     @Test(expectedExceptions = IllegalStateException.class)
