@@ -13,9 +13,16 @@
  */
 package com.facebook.presto.accumulo.index.storage;
 
+import com.fasterxml.jackson.annotation.JsonSubTypes;
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
 
-@JsonTypeInfo(use = JsonTypeInfo.Id.CLASS, include = JsonTypeInfo.As.PROPERTY, property = "@class")
+@JsonTypeInfo(
+        use = JsonTypeInfo.Id.NAME,
+        include = JsonTypeInfo.As.PROPERTY,
+        property = "@type")
+@JsonSubTypes({
+        @JsonSubTypes.Type(value = PostfixedIndexStorage.class, name = "postfixed"),
+        @JsonSubTypes.Type(value = ShardedIndexStorage.class, name = "sharded")})
 public interface IndexStorage
 {
     /**
