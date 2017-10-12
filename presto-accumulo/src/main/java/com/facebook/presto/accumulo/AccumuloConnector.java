@@ -18,6 +18,7 @@ import com.facebook.presto.accumulo.conf.AccumuloTableProperties;
 import com.facebook.presto.accumulo.io.AccumuloPageSinkProvider;
 import com.facebook.presto.accumulo.io.AccumuloRecordSetProvider;
 import com.facebook.presto.spi.connector.Connector;
+import com.facebook.presto.spi.connector.ConnectorAccessControl;
 import com.facebook.presto.spi.connector.ConnectorMetadata;
 import com.facebook.presto.spi.connector.ConnectorPageSinkProvider;
 import com.facebook.presto.spi.connector.ConnectorRecordSetProvider;
@@ -56,6 +57,7 @@ public class AccumuloConnector
     private final AccumuloSessionProperties sessionProperties;
     private final AccumuloTableProperties tableProperties;
     private final ConcurrentMap<ConnectorTransactionHandle, AccumuloMetadata> transactions = new ConcurrentHashMap<>();
+    private final ConnectorAccessControl accessControl;
 
     @Inject
     public AccumuloConnector(
@@ -65,7 +67,8 @@ public class AccumuloConnector
             AccumuloRecordSetProvider recordSetProvider,
             AccumuloPageSinkProvider pageSinkProvider,
             AccumuloSessionProperties sessionProperties,
-            AccumuloTableProperties tableProperties)
+            AccumuloTableProperties tableProperties,
+            ConnectorAccessControl accessControl)
     {
         this.lifeCycleManager = requireNonNull(lifeCycleManager, "lifeCycleManager is null");
         this.metadataFactory = requireNonNull(metadataFactory, "metadata is null");
@@ -74,6 +77,7 @@ public class AccumuloConnector
         this.pageSinkProvider = requireNonNull(pageSinkProvider, "pageSinkProvider is null");
         this.sessionProperties = requireNonNull(sessionProperties, "sessionProperties is null");
         this.tableProperties = requireNonNull(tableProperties, "tableProperties is null");
+        this.accessControl = requireNonNull(accessControl, "accessControl is null");
     }
 
     @Override
@@ -123,6 +127,12 @@ public class AccumuloConnector
     public ConnectorPageSinkProvider getPageSinkProvider()
     {
         return pageSinkProvider;
+    }
+
+    @Override
+    public ConnectorAccessControl getAccessControl()
+    {
+        return accessControl;
     }
 
     @Override

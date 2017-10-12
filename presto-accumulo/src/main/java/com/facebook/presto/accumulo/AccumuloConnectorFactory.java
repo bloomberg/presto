@@ -13,6 +13,9 @@
  */
 package com.facebook.presto.accumulo;
 
+import com.facebook.presto.accumulo.conf.AccumuloConfig;
+import com.facebook.presto.plugin.base.security.AllowAllAccessControlModule;
+import com.facebook.presto.plugin.base.security.FileBasedAccessControlModule;
 import com.facebook.presto.spi.ConnectorHandleResolver;
 import com.facebook.presto.spi.connector.Connector;
 import com.facebook.presto.spi.connector.ConnectorContext;
@@ -24,6 +27,9 @@ import io.airlift.json.JsonModule;
 
 import java.util.Map;
 
+import static com.facebook.presto.accumulo.conf.AccumuloConfig.SECURITY_FILE;
+import static com.facebook.presto.accumulo.conf.AccumuloConfig.SECURITY_NONE;
+import static io.airlift.configuration.ConditionalModule.installModuleIf;
 import static java.util.Objects.requireNonNull;
 
 public class AccumuloConnectorFactory
@@ -47,12 +53,24 @@ public class AccumuloConnectorFactory
         try {
             // A plugin is not required to use Guice; it is just very convenient
             // Unless you don't really know how to Guice, then it is less convenient
-            Bootstrap app = new Bootstrap(new JsonModule(), new AccumuloModule(connectorId, context.getNodeManager(), context.getTypeManager()));
+            Bootstrap app = new Bootstrap(
+                    new JsonModule(),
+                    new AccumuloModule(connectorId, context.getNodeManager(), context.getTypeManager()),
+                    installModuleIf(
+                            AccumuloConfig.class,
+                            accumuloConfig -> accumuloConfig.getSecurity().equalsIgnoreCase(SECURITY_NONE),
+                            new AllowAllAccessControlModule()),
+                    installModuleIf(
+                            AccumuloConfig.class,
+                            accumuloConfig -> accumuloConfig.getSecurity().equalsIgnoreCase(SECURITY_FILE),
+                            binder -> binder.install(new FileBasedAccessControlModule())));
+
             Injector injector = app
                     .strictConfig()
                     .doNotInitializeLogging()
                     .setRequiredConfigurationProperties(config)
                     .initialize();
+
             return injector.getInstance(AccumuloConnector.class);
         }
         catch (Exception e) {

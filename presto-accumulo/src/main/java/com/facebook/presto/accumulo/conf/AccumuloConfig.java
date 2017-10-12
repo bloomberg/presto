@@ -36,6 +36,9 @@ public class AccumuloConfig
     public static final String CARDINALITY_CACHE_SIZE = "accumulo.cardinality.cache.size";
     public static final String CARDINALITY_CACHE_EXPIRE_DURATION = "accumulo.cardinality.cache.expire.duration";
     public static final String MAX_INDEX_LOOKUP_CARDINALITY = "accumulo.max.index.lookup.cardinality";
+    public static final String SECURITY = "accumulo.security";
+    public static final String SECURITY_NONE = "none";
+    public static final String SECURITY_FILE = "file";
 
     private String instance;
     private String zooKeepers;
@@ -45,6 +48,7 @@ public class AccumuloConfig
     private int cardinalityCacheSize = 100_000;
     private Duration cardinalityCacheExpiration = new Duration(5, TimeUnit.MINUTES);
     private int maxIndexLookupCardinality = 20_000_000;
+    private String security = SECURITY_NONE;
 
     @NotNull
     public String getInstance()
@@ -154,5 +158,18 @@ public class AccumuloConfig
     public void setMaxIndexLookupCardinality(int maxIndexLookupCardinality)
     {
         this.maxIndexLookupCardinality = maxIndexLookupCardinality;
+    }
+
+    @NotNull
+    public String getSecurity()
+    {
+        return security;
+    }
+
+    @Config(SECURITY)
+    @ConfigDescription("Enables file-based security if value is 'file'. Default value is 'none'")
+    public void setSecurity(String security)
+    {
+        this.security = security;
     }
 }
