@@ -179,6 +179,18 @@ public class AccumuloMetadata
         return listViews(schemaNameOrNull);
     }
 
+    @Override
+    public void createSchema(ConnectorSession session, String schemaName, Map<String, Object> properties)
+    {
+        client.createSchema(schemaName);
+    }
+
+    @Override
+    public void dropSchema(ConnectorSession session, String schemaName)
+    {
+        client.dropSchema(schemaName);
+    }
+
     /**
      * Gets all views in the given schema, or all schemas if null.
      *

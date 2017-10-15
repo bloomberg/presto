@@ -212,6 +212,40 @@ public class ZooKeeperMetadataManager
         }
     }
 
+    public void createSchemaMetadata(String schemaName)
+    {
+        String schemaPath = getSchemaPath(schemaName);
+
+        try {
+            curator.create().creatingParentsIfNeeded().forPath(schemaPath);
+        }
+        catch (Exception e) {
+            throw new PrestoException(ZOOKEEPER_ERROR, "Error creating table znode in ZooKeeper", e);
+        }
+    }
+
+    public void dropSchemaMetadata(String schemaName)
+    {
+        dropSchemaMetadata(schemaName, false);
+    }
+
+    public void dropSchemaMetadata(String schemaName, boolean force)
+    {
+        String schemaPath = getSchemaPath(schemaName);
+
+        try {
+            if (force) {
+                curator.delete().deletingChildrenIfNeeded().forPath(schemaPath);
+            }
+            else {
+                curator.delete().forPath(schemaPath);
+            }
+        }
+        catch (Exception e) {
+            throw new PrestoException(ZOOKEEPER_ERROR, "Error creating table znode in ZooKeeper", e);
+        }
+    }
+
     public void createTableMetadata(AccumuloTable table)
     {
         SchemaTableName tableName = table.getSchemaTableName();

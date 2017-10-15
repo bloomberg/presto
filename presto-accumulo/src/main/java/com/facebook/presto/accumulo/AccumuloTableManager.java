@@ -20,6 +20,8 @@ import org.apache.accumulo.core.client.AccumuloSecurityException;
 import org.apache.accumulo.core.client.Connector;
 import org.apache.accumulo.core.client.IteratorSetting;
 import org.apache.accumulo.core.client.NamespaceExistsException;
+import org.apache.accumulo.core.client.NamespaceNotEmptyException;
+import org.apache.accumulo.core.client.NamespaceNotFoundException;
 import org.apache.accumulo.core.client.TableExistsException;
 import org.apache.accumulo.core.client.TableNotFoundException;
 import org.apache.accumulo.core.iterators.IteratorUtil.IteratorScope;
@@ -71,6 +73,37 @@ public class AccumuloTableManager
         catch (NamespaceExistsException e) {
             // Suppress race condition between test for existence and creation
             LOG.warn("NamespaceExistsException suppressed when creating " + schema);
+        }
+    }
+
+    public void dropNamespaceIfEmpty(String schemaName)
+    {
+        try {
+            if (!connector.namespaceOperations().exists(schemaName)) {
+                return;
+            }
+        }
+        catch (AccumuloException | AccumuloSecurityException e) {
+            throw new PrestoException(UNEXPECTED_ACCUMULO_ERROR, "Failed to check if namespace exists", e);
+        }
+
+        for (String table : connector.tableOperations().list()) {
+            if (table.startsWith(schemaName + ".")) {
+                return;
+            }
+        }
+
+        try {
+            connector.namespaceOperations().delete(schemaName);
+        }
+        catch (AccumuloException | AccumuloSecurityException e) {
+            throw new PrestoException(UNEXPECTED_ACCUMULO_ERROR, "Failed to delete namespace", e);
+        }
+        catch (NamespaceNotFoundException e) {
+            throw new PrestoException(UNEXPECTED_ACCUMULO_ERROR, "Namespace does not exist", e);
+        }
+        catch (NamespaceNotEmptyException e) {
+            throw new PrestoException(UNEXPECTED_ACCUMULO_ERROR, "Namespace is not empty", e);
         }
     }
 

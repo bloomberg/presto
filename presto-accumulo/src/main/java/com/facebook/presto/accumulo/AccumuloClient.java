@@ -545,6 +545,24 @@ public class AccumuloClient
         metaManager.deleteViewMetadata(viewName);
     }
 
+    public void createSchema(String schemaName)
+    {
+        tableManager.ensureNamespace(schemaName);
+        metaManager.createSchemaMetadata(schemaName);
+    }
+
+    public void dropSchema(String schemaName)
+    {
+        // Drop all tables from this schema
+        for (String table : metaManager.getTableNames(schemaName)) {
+            dropTable(metaManager.getTable(new SchemaTableName(schemaName, table)));
+        }
+
+        // Drop metadata schema and delete Accumulo namespace (if empty)
+        metaManager.dropSchemaMetadata(schemaName);
+        tableManager.dropNamespaceIfEmpty(schemaName);
+    }
+
     public void renameColumn(AccumuloTable table, String source, String target)
     {
         if (table.getColumns().stream().noneMatch(columnHandle -> columnHandle.getName().equalsIgnoreCase(source))) {
