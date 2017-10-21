@@ -51,7 +51,6 @@ public abstract class TestAbstractMetricStorage
     protected AccumuloColumnHandle c3 = new AccumuloColumnHandle("firstname", Optional.of("cf"), Optional.of("firstname"), VARCHAR, 2, "");
     protected AccumuloColumnHandle c4 = new AccumuloColumnHandle("arr", Optional.of("cf"), Optional.of("arr"), new ArrayType(VARCHAR), 3, "");
 
-    protected LexicoderRowSerializer serializer = new LexicoderRowSerializer();
     protected org.apache.accumulo.core.client.Connector connector;
     protected MetricsStorage storage;
 
@@ -99,8 +98,8 @@ public abstract class TestAbstractMetricStorage
     {
         connector = AccumuloQueryRunner.getAccumuloConnector();
         storage = getMetricsStorage(config);
-        table = new AccumuloTable("default", "abstract_metrics_storage", ImmutableList.of(c1, c2, c3, c4), "id", false, LexicoderRowSerializer.class.getCanonicalName(), null, Optional.of(storage.getClass().getCanonicalName()), false, Optional.of("age,firstname,arr"));
-        table2 = new AccumuloTable("default", "abstract_metrics_storage_two", ImmutableList.of(c1, c2, c3, c4), "id", false, LexicoderRowSerializer.class.getCanonicalName(), null, Optional.of(storage.getClass().getCanonicalName()), false, Optional.of("age,firstname,arr"));
+        table = new AccumuloTable("default", "abstract_metrics_storage", ImmutableList.of(c1, c2, c3, c4), "id", false, LexicoderRowSerializer.class.getCanonicalName(), null, Optional.of(storage.getClass().getCanonicalName()), false, Optional.of("age-shard:11,firstname,arr"));
+        table2 = new AccumuloTable("default", "abstract_metrics_storage_two", ImmutableList.of(c1, c2, c3, c4), "id", false, LexicoderRowSerializer.class.getCanonicalName(), null, Optional.of(storage.getClass().getCanonicalName()), false, Optional.of("age-shard:11,firstname,arr"));
     }
 
     @Test

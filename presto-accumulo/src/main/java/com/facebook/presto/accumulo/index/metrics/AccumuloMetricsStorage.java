@@ -69,8 +69,8 @@ public class AccumuloMetricsStorage
     public static final LongCombiner.Type ENCODER_TYPE = LongCombiner.Type.FIXEDLEN;
     public static final TypedValueCombiner.Encoder<Long> ENCODER = new LongCombiner.FixedLenEncoder();
 
-    private static final byte[] CARDINALITY_CF = "_car".getBytes(UTF_8);
-    private static final byte[] CARDINALITY_CQ = "car".getBytes(UTF_8);
+    public static final byte[] CARDINALITY_CF = "_car".getBytes(UTF_8);
+    public static final byte[] CARDINALITY_CQ = "car".getBytes(UTF_8);
     private static final byte[] EMPTY_BYTES = new byte[] {};
     private static final byte[] HYPHEN = new byte[] {'-'};
 

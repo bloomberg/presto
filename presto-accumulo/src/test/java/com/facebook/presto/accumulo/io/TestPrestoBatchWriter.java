@@ -17,6 +17,7 @@ import com.facebook.presto.accumulo.AccumuloQueryRunner;
 import com.facebook.presto.accumulo.conf.AccumuloConfig;
 import com.facebook.presto.accumulo.index.metrics.MetricCacheKey;
 import com.facebook.presto.accumulo.index.metrics.MetricsStorage;
+import com.facebook.presto.accumulo.index.storage.ShardedIndexStorage;
 import com.facebook.presto.accumulo.metadata.AccumuloTable;
 import com.facebook.presto.accumulo.model.AccumuloColumnHandle;
 import com.facebook.presto.accumulo.model.IndexColumn;
@@ -47,9 +48,11 @@ import java.util.Optional;
 import java.util.stream.Collectors;
 
 import static com.facebook.presto.accumulo.index.metrics.AccumuloMetricsStorage.ENCODER;
+import static com.facebook.presto.accumulo.metadata.AccumuloTable.DEFAULT_NUM_SHARDS;
 import static com.facebook.presto.accumulo.serializers.AccumuloRowSerializer.getBlockFromArray;
 import static com.facebook.presto.spi.type.BigintType.BIGINT;
 import static com.facebook.presto.spi.type.VarcharType.VARCHAR;
+import static java.lang.String.format;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertFalse;
@@ -109,7 +112,7 @@ public class TestPrestoBatchWriter
         AccumuloColumnHandle c3 = new AccumuloColumnHandle("firstname", Optional.of("cf"), Optional.of("firstname"), VARCHAR, 2, "");
         AccumuloColumnHandle c4 = new AccumuloColumnHandle("arr", Optional.of("cf"), Optional.of("arr"), new ArrayType(VARCHAR), 3, "");
 
-        table = new AccumuloTable("default", "presto_batch_writer_test_table", ImmutableList.of(c1, c2, c3, c4), "id", false, LexicoderRowSerializer.class.getCanonicalName(), null, Optional.empty(), false, Optional.of("age,firstname,arr"));
+        table = new AccumuloTable("default", "presto_batch_writer_test_table", ImmutableList.of(c1, c2, c3, c4), "id", false, LexicoderRowSerializer.class.getCanonicalName(), null, Optional.empty(), false, Optional.of(format("age-shard:%s,firstname,arr", DEFAULT_NUM_SHARDS)));
 
         m1 = new Mutation(M1_ROWID);
         m1.put(ROW_ID_COLUMN, ROW_ID_COLUMN, M1_ROWID);
@@ -197,8 +200,8 @@ public class TestPrestoBatchWriter
         scan = createIndexScanner(0, "cf_age");
         iter = scan.iterator();
         assertTrue(iter.hasNext());
-        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age", "row1", "");
-        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age_car", "car", ENCODER.encode(1L));
+        assertKeyValuePair(iter.next(), shard(AGE_VALUE), "cf_age", "row1", "");
+        assertKeyValuePair(iter.next(), shard(AGE_VALUE), "cf_age_car", "car", ENCODER.encode(1L));
         assertFalse(iter.hasNext());
         scan.close();
 
@@ -222,7 +225,7 @@ public class TestPrestoBatchWriter
         assertFalse(iter.hasNext());
         scan.close();
 
-        assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(0).getIndexTable(), "cf_age", AGE_VALUE)), 1);
+        assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(0).getIndexTable(), "cf_age", shard(AGE_VALUE))), 1);
         assertEquals(metricsStorage.newReader().getNumRowsInTable(table), 1);
         assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(1).getIndexTable(), "cf_arr", "abc")), 1);
         assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(2).getIndexTable(), "cf_firstname", M1_FNAME_VALUE)), 1);
@@ -249,9 +252,9 @@ public class TestPrestoBatchWriter
         scan = createIndexScanner(0, "cf_age");
         iter = scan.iterator();
         assertTrue(iter.hasNext());
-        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age", "row1", "");
-        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age", "row2", "");
-        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age_car", "car", ENCODER.encode(2L));
+        assertKeyValuePair(iter.next(), shard(AGE_VALUE), "cf_age", "row1", "");
+        assertKeyValuePair(iter.next(), shard(AGE_VALUE), "cf_age", "row2", "");
+        assertKeyValuePair(iter.next(), shard(AGE_VALUE), "cf_age_car", "car", ENCODER.encode(2L));
         assertFalse(iter.hasNext());
         scan.close();
 
@@ -281,7 +284,7 @@ public class TestPrestoBatchWriter
         assertFalse(iter.hasNext());
         scan.close();
 
-        assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(0).getIndexTable(), "cf_age", AGE_VALUE)), 2);
+        assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(0).getIndexTable(), "cf_age", shard(AGE_VALUE))), 2);
         assertEquals(metricsStorage.newReader().getNumRowsInTable(table), 2);
         assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(1).getIndexTable(), "cf_arr", "abc")), 2);
         assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(2).getIndexTable(), "cf_firstname", M1_FNAME_VALUE)), 1);
@@ -314,10 +317,10 @@ public class TestPrestoBatchWriter
         scan = createIndexScanner(0, "cf_age");
         iter = scan.iterator();
         assertTrue(iter.hasNext());
-        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age", "row1", "");
-        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age", "row2", "");
-        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age", "row3", "");
-        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age_car", "car", ENCODER.encode(3L));
+        assertKeyValuePair(iter.next(), shard(AGE_VALUE), "cf_age", "row1", "");
+        assertKeyValuePair(iter.next(), shard(AGE_VALUE), "cf_age", "row2", "");
+        assertKeyValuePair(iter.next(), shard(AGE_VALUE), "cf_age", "row3", "");
+        assertKeyValuePair(iter.next(), shard(AGE_VALUE), "cf_age_car", "car", ENCODER.encode(3L));
         assertFalse(iter.hasNext());
         scan.close();
 
@@ -353,7 +356,7 @@ public class TestPrestoBatchWriter
         assertFalse(iter.hasNext());
         scan.close();
 
-        assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(0).getIndexTable(), "cf_age", AGE_VALUE)), 3);
+        assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(0).getIndexTable(), "cf_age", shard(AGE_VALUE))), 3);
         assertEquals(metricsStorage.newReader().getNumRowsInTable(table), 3);
         assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(1).getIndexTable(), "cf_arr", "abc")), 2);
         assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(2).getIndexTable(), "cf_firstname", M1_FNAME_VALUE)), 1);
@@ -403,10 +406,10 @@ public class TestPrestoBatchWriter
         scan = createIndexScanner(0, "cf_age");
         iter = scan.iterator();
         assertTrue(iter.hasNext());
-        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age", "row1", "");
-        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age", "row2", "");
-        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age", "row3", "");
-        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age_car", "car", ENCODER.encode(3L));
+        assertKeyValuePair(iter.next(), shard(AGE_VALUE), "cf_age", "row1", "");
+        assertKeyValuePair(iter.next(), shard(AGE_VALUE), "cf_age", "row2", "");
+        assertKeyValuePair(iter.next(), shard(AGE_VALUE), "cf_age", "row3", "");
+        assertKeyValuePair(iter.next(), shard(AGE_VALUE), "cf_age_car", "car", ENCODER.encode(3L));
         assertFalse(iter.hasNext());
         scan.close();
 
@@ -442,7 +445,7 @@ public class TestPrestoBatchWriter
         assertFalse(iter.hasNext());
         scan.close();
 
-        assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(0).getIndexTable(), "cf_age", AGE_VALUE)), 3);
+        assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(0).getIndexTable(), "cf_age", shard(AGE_VALUE))), 3);
         assertEquals(metricsStorage.newReader().getNumRowsInTable(table), 3);
         assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(1).getIndexTable(), "cf_arr", "abc")), 2);
         assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(2).getIndexTable(), "cf_firstname", M1_FNAME_VALUE)), 1);
@@ -484,8 +487,8 @@ public class TestPrestoBatchWriter
         scan = createIndexScanner(0, "cf_age");
         iter = scan.iterator();
         assertTrue(iter.hasNext());
-        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age", "row1", "");
-        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age_car", "car", ENCODER.encode(1L));
+        assertKeyValuePair(iter.next(), shard(AGE_VALUE), "cf_age", "row1", "");
+        assertKeyValuePair(iter.next(), shard(AGE_VALUE), "cf_age_car", "car", ENCODER.encode(1L));
         assertFalse(iter.hasNext());
         scan.close();
 
@@ -509,7 +512,7 @@ public class TestPrestoBatchWriter
         assertFalse(iter.hasNext());
         scan.close();
 
-        assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(0).getIndexTable(), "cf_age", AGE_VALUE, "private", "moreprivate")), 1);
+        assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(0).getIndexTable(), "cf_age", shard(AGE_VALUE), "private", "moreprivate")), 1);
         assertEquals(metricsStorage.newReader().getNumRowsInTable(table), 1);
         assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(1).getIndexTable(), "cf_arr", "abc", "private", "moreprivate")), 1);
         assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(2).getIndexTable(), "cf_firstname", M1_FNAME_VALUE, "private", "moreprivate")), 1);
@@ -536,10 +539,10 @@ public class TestPrestoBatchWriter
         scan = createIndexScanner(0, "cf_age");
         iter = scan.iterator();
         assertTrue(iter.hasNext());
-        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age", "row1", "");
-        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age", "row2", "private", "");
-        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age_car", "car", ENCODER.encode(1L));
-        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age_car", "car", "private", ENCODER.encode(1L));
+        assertKeyValuePair(iter.next(), shard(AGE_VALUE), "cf_age", "row1", "");
+        assertKeyValuePair(iter.next(), shard(AGE_VALUE), "cf_age", "row2", "private", "");
+        assertKeyValuePair(iter.next(), shard(AGE_VALUE), "cf_age_car", "car", ENCODER.encode(1L));
+        assertKeyValuePair(iter.next(), shard(AGE_VALUE), "cf_age_car", "car", "private", ENCODER.encode(1L));
         assertFalse(iter.hasNext());
         scan.close();
 
@@ -571,7 +574,7 @@ public class TestPrestoBatchWriter
         assertFalse(iter.hasNext());
         scan.close();
 
-        assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(0).getIndexTable(), "cf_age", AGE_VALUE, "private", "moreprivate")), 2);
+        assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(0).getIndexTable(), "cf_age", shard(AGE_VALUE), "private", "moreprivate")), 2);
         assertEquals(metricsStorage.newReader().getNumRowsInTable(table), 2);
         assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(1).getIndexTable(), "cf_arr", "abc", "private", "moreprivate")), 2);
         assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(2).getIndexTable(), "cf_firstname", M1_FNAME_VALUE, "private", "moreprivate")), 1);
@@ -604,12 +607,12 @@ public class TestPrestoBatchWriter
         scan = createIndexScanner(0, "cf_age");
         iter = scan.iterator();
         assertTrue(iter.hasNext());
-        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age", "row1", "");
-        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age", "row2", "private", "");
-        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age", "row3", "moreprivate", "");
-        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age_car", "car", ENCODER.encode(1L));
-        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age_car", "car", "moreprivate", ENCODER.encode(1L));
-        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age_car", "car", "private", ENCODER.encode(1L));
+        assertKeyValuePair(iter.next(), shard(AGE_VALUE), "cf_age", "row1", "");
+        assertKeyValuePair(iter.next(), shard(AGE_VALUE), "cf_age", "row2", "private", "");
+        assertKeyValuePair(iter.next(), shard(AGE_VALUE), "cf_age", "row3", "moreprivate", "");
+        assertKeyValuePair(iter.next(), shard(AGE_VALUE), "cf_age_car", "car", ENCODER.encode(1L));
+        assertKeyValuePair(iter.next(), shard(AGE_VALUE), "cf_age_car", "car", "moreprivate", ENCODER.encode(1L));
+        assertKeyValuePair(iter.next(), shard(AGE_VALUE), "cf_age_car", "car", "private", ENCODER.encode(1L));
         assertFalse(iter.hasNext());
         scan.close();
 
@@ -649,7 +652,7 @@ public class TestPrestoBatchWriter
         assertFalse(iter.hasNext());
         scan.close();
 
-        assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(0).getIndexTable(), "cf_age", AGE_VALUE, "private", "moreprivate")), 3);
+        assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(0).getIndexTable(), "cf_age", shard(AGE_VALUE), "private", "moreprivate")), 3);
         assertEquals(metricsStorage.newReader().getNumRowsInTable(table), 3);
         assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(1).getIndexTable(), "cf_arr", "abc", "private", "moreprivate")), 2);
         assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(2).getIndexTable(), "cf_firstname", M1_FNAME_VALUE, "private", "moreprivate")), 1);
@@ -701,12 +704,12 @@ public class TestPrestoBatchWriter
         scan = createIndexScanner(0, "cf_age");
         iter = scan.iterator();
         assertTrue(iter.hasNext());
-        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age", "row1", "");
-        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age", "row2", "private", "");
-        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age", "row3", "moreprivate", "");
-        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age_car", "car", ENCODER.encode(1L));
-        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age_car", "car", "moreprivate", ENCODER.encode(1L));
-        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age_car", "car", "private", ENCODER.encode(1L));
+        assertKeyValuePair(iter.next(), shard(AGE_VALUE), "cf_age", "row1", "");
+        assertKeyValuePair(iter.next(), shard(AGE_VALUE), "cf_age", "row2", "private", "");
+        assertKeyValuePair(iter.next(), shard(AGE_VALUE), "cf_age", "row3", "moreprivate", "");
+        assertKeyValuePair(iter.next(), shard(AGE_VALUE), "cf_age_car", "car", ENCODER.encode(1L));
+        assertKeyValuePair(iter.next(), shard(AGE_VALUE), "cf_age_car", "car", "moreprivate", ENCODER.encode(1L));
+        assertKeyValuePair(iter.next(), shard(AGE_VALUE), "cf_age_car", "car", "private", ENCODER.encode(1L));
         assertFalse(iter.hasNext());
         scan.close();
 
@@ -746,7 +749,7 @@ public class TestPrestoBatchWriter
         assertFalse(iter.hasNext());
         scan.close();
 
-        assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(0).getIndexTable(), "cf_age", AGE_VALUE, "private", "moreprivate")), 3);
+        assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(0).getIndexTable(), "cf_age", shard(AGE_VALUE), "private", "moreprivate")), 3);
         assertEquals(metricsStorage.newReader().getNumRowsInTable(table), 1);
         assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(1).getIndexTable(), "cf_arr", "abc", "private", "moreprivate")), 2);
         assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(2).getIndexTable(), "cf_firstname", M1_FNAME_VALUE, "private", "moreprivate")), 1);
@@ -796,12 +799,12 @@ public class TestPrestoBatchWriter
         scan = createIndexScanner(0, "cf_age");
         iter = scan.iterator();
         assertTrue(iter.hasNext());
-        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age", "row1", "");
-        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age", "row2", "private", "");
-        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age", "row3", "moreprivate", "");
-        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age_car", "car", ENCODER.encode(1L));
-        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age_car", "car", "moreprivate", ENCODER.encode(1L));
-        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age_car", "car", "private", ENCODER.encode(1L));
+        assertKeyValuePair(iter.next(), shard(AGE_VALUE), "cf_age", "row1", "");
+        assertKeyValuePair(iter.next(), shard(AGE_VALUE), "cf_age", "row2", "private", "");
+        assertKeyValuePair(iter.next(), shard(AGE_VALUE), "cf_age", "row3", "moreprivate", "");
+        assertKeyValuePair(iter.next(), shard(AGE_VALUE), "cf_age_car", "car", ENCODER.encode(1L));
+        assertKeyValuePair(iter.next(), shard(AGE_VALUE), "cf_age_car", "car", "moreprivate", ENCODER.encode(1L));
+        assertKeyValuePair(iter.next(), shard(AGE_VALUE), "cf_age_car", "car", "private", ENCODER.encode(1L));
         assertFalse(iter.hasNext());
         scan.close();
 
@@ -841,7 +844,7 @@ public class TestPrestoBatchWriter
         assertFalse(iter.hasNext());
         scan.close();
 
-        assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(0).getIndexTable(), "cf_age", AGE_VALUE, "private", "moreprivate")), 3);
+        assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(0).getIndexTable(), "cf_age", shard(AGE_VALUE), "private", "moreprivate")), 3);
         assertEquals(metricsStorage.newReader().getNumRowsInTable(table), 3);
         assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(1).getIndexTable(), "cf_arr", "abc", "private", "moreprivate")), 2);
         assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(2).getIndexTable(), "cf_firstname", M1_FNAME_VALUE, "private", "moreprivate")), 1);
@@ -901,12 +904,12 @@ public class TestPrestoBatchWriter
         scan = createIndexScanner(0, "cf_age");
         iter = scan.iterator();
         assertTrue(iter.hasNext());
-        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age", "row1", "");
-        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age", "row2", "private", "");
-        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age", "row3", "moreprivate", "");
-        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age_car", "car", ENCODER.encode(1L));
-        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age_car", "car", "moreprivate", ENCODER.encode(1L));
-        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age_car", "car", "private", ENCODER.encode(1L));
+        assertKeyValuePair(iter.next(), shard(AGE_VALUE), "cf_age", "row1", "");
+        assertKeyValuePair(iter.next(), shard(AGE_VALUE), "cf_age", "row2", "private", "");
+        assertKeyValuePair(iter.next(), shard(AGE_VALUE), "cf_age", "row3", "moreprivate", "");
+        assertKeyValuePair(iter.next(), shard(AGE_VALUE), "cf_age_car", "car", ENCODER.encode(1L));
+        assertKeyValuePair(iter.next(), shard(AGE_VALUE), "cf_age_car", "car", "moreprivate", ENCODER.encode(1L));
+        assertKeyValuePair(iter.next(), shard(AGE_VALUE), "cf_age_car", "car", "private", ENCODER.encode(1L));
         assertFalse(iter.hasNext());
         scan.close();
 
@@ -946,7 +949,7 @@ public class TestPrestoBatchWriter
         assertFalse(iter.hasNext());
         scan.close();
 
-        assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(0).getIndexTable(), "cf_age", AGE_VALUE, "private", "moreprivate")), 3);
+        assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(0).getIndexTable(), "cf_age", shard(AGE_VALUE), "private", "moreprivate")), 3);
         assertEquals(metricsStorage.newReader().getNumRowsInTable(table), 3);
         assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(1).getIndexTable(), "cf_arr", "abc", "private", "moreprivate")), 2);
         assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(2).getIndexTable(), "cf_firstname", M1_FNAME_VALUE, "private", "moreprivate")), 1);
@@ -997,10 +1000,10 @@ public class TestPrestoBatchWriter
         scan = createIndexScanner(0, "cf_age");
         iter = scan.iterator();
         assertTrue(iter.hasNext());
-        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age", "row2", "private", "");
-        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age", "row3", "moreprivate", "");
-        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age_car", "car", "moreprivate", ENCODER.encode(1L));
-        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age_car", "car", "private", ENCODER.encode(1L));
+        assertKeyValuePair(iter.next(), shard(AGE_VALUE), "cf_age", "row2", "private", "");
+        assertKeyValuePair(iter.next(), shard(AGE_VALUE), "cf_age", "row3", "moreprivate", "");
+        assertKeyValuePair(iter.next(), shard(AGE_VALUE), "cf_age_car", "car", "moreprivate", ENCODER.encode(1L));
+        assertKeyValuePair(iter.next(), shard(AGE_VALUE), "cf_age_car", "car", "private", ENCODER.encode(1L));
         assertFalse(iter.hasNext());
         scan.close();
 
@@ -1032,7 +1035,7 @@ public class TestPrestoBatchWriter
         assertFalse(iter.hasNext());
         scan.close();
 
-        assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(0).getIndexTable(), "cf_age", AGE_VALUE, "private", "moreprivate")), 2);
+        assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(0).getIndexTable(), "cf_age", shard(AGE_VALUE), "private", "moreprivate")), 2);
         assertEquals(metricsStorage.newReader().getNumRowsInTable(table), 3);
         assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(1).getIndexTable(), "cf_arr", "abc", "private", "moreprivate")), 2);
         assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(2).getIndexTable(), "cf_firstname", M1_FNAME_VALUE, "private", "moreprivate")), 1);
@@ -1084,7 +1087,7 @@ public class TestPrestoBatchWriter
             scan.close();
         }
 
-        assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(0).getIndexTable(), "cf_age", AGE_VALUE, "private", "moreprivate")), 0);
+        assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(0).getIndexTable(), "cf_age", shard(AGE_VALUE), "private", "moreprivate")), 0);
         assertEquals(metricsStorage.newReader().getNumRowsInTable(table), 3);
         assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(1).getIndexTable(), "cf_arr", "abc", "private", "moreprivate")), 0);
         assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(2).getIndexTable(), "cf_firstname", M1_FNAME_VALUE, "private", "moreprivate")), 0);
@@ -1127,12 +1130,12 @@ public class TestPrestoBatchWriter
         scan = createIndexScanner(0, "cf_age");
         iter = scan.iterator();
         assertTrue(iter.hasNext());
-        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age", "row1", "");
-        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age", "row3", "moreprivate", "");
-        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age_car", "car", ENCODER.encode(1L));
-        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age_car", "car", "moreprivate", ENCODER.encode(1L));
-        assertKeyValuePair(iter.next(), UPDATED_AGE_VALUE, "cf_age", "row2", "");
-        assertKeyValuePair(iter.next(), UPDATED_AGE_VALUE, "cf_age_car", "car", ENCODER.encode(1L));
+        assertKeyValuePair(iter.next(), shard(UPDATED_AGE_VALUE), "cf_age", "row2", "", "");
+        assertKeyValuePair(iter.next(), shard(UPDATED_AGE_VALUE), "cf_age_car", "car", "", ENCODER.encode(1L));
+        assertKeyValuePair(iter.next(), shard(AGE_VALUE), "cf_age", "row1", "", "");
+        assertKeyValuePair(iter.next(), shard(AGE_VALUE), "cf_age", "row3", "moreprivate", "");
+        assertKeyValuePair(iter.next(), shard(AGE_VALUE), "cf_age_car", "car", "", ENCODER.encode(1L));
+        assertKeyValuePair(iter.next(), shard(AGE_VALUE), "cf_age_car", "car", "moreprivate", ENCODER.encode(1L));
         assertFalse(iter.hasNext());
         scan.close();
 
@@ -1172,8 +1175,8 @@ public class TestPrestoBatchWriter
         assertFalse(iter.hasNext());
         scan.close();
 
-        assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(0).getIndexTable(), "cf_age", AGE_VALUE, "private", "moreprivate")), 2);
-        assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(0).getIndexTable(), "cf_age", UPDATED_AGE_VALUE)), 1);
+        assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(0).getIndexTable(), "cf_age", shard(AGE_VALUE), "private", "moreprivate")), 2);
+        assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(0).getIndexTable(), "cf_age", shard(UPDATED_AGE_VALUE))), 1);
         assertEquals(metricsStorage.newReader().getNumRowsInTable(table), 3);
         assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(1).getIndexTable(), "cf_arr", "abc", "private", "moreprivate")), 2);
         assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(2).getIndexTable(), "cf_firstname", M1_FNAME_VALUE, "private", "moreprivate")), 1);
@@ -1208,12 +1211,12 @@ public class TestPrestoBatchWriter
         scan = createIndexScanner(0, "cf_age");
         iter = scan.iterator();
         assertTrue(iter.hasNext());
-        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age", "row1", "");
-        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age", "row3", "moreprivate", "");
-        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age_car", "car", ENCODER.encode(1L));
-        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age_car", "car", "moreprivate", ENCODER.encode(1L));
-        assertKeyValuePair(iter.next(), UPDATED_AGE_VALUE, "cf_age", "row2", "");
-        assertKeyValuePair(iter.next(), UPDATED_AGE_VALUE, "cf_age_car", "car", ENCODER.encode(1L));
+        assertKeyValuePair(iter.next(), shard(UPDATED_AGE_VALUE), "cf_age", "row2", "");
+        assertKeyValuePair(iter.next(), shard(UPDATED_AGE_VALUE), "cf_age_car", "car", ENCODER.encode(1L));
+        assertKeyValuePair(iter.next(), shard(AGE_VALUE), "cf_age", "row1", "");
+        assertKeyValuePair(iter.next(), shard(AGE_VALUE), "cf_age", "row3", "moreprivate", "");
+        assertKeyValuePair(iter.next(), shard(AGE_VALUE), "cf_age_car", "car", ENCODER.encode(1L));
+        assertKeyValuePair(iter.next(), shard(AGE_VALUE), "cf_age_car", "car", "moreprivate", ENCODER.encode(1L));
         assertFalse(iter.hasNext());
         scan.close();
 
@@ -1253,8 +1256,8 @@ public class TestPrestoBatchWriter
         assertFalse(iter.hasNext());
         scan.close();
 
-        assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(0).getIndexTable(), "cf_age", AGE_VALUE, "private", "moreprivate")), 2);
-        assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(0).getIndexTable(), "cf_age", UPDATED_AGE_VALUE)), 1);
+        assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(0).getIndexTable(), "cf_age", shard(AGE_VALUE), "private", "moreprivate")), 2);
+        assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(0).getIndexTable(), "cf_age", shard(UPDATED_AGE_VALUE))), 1);
         assertEquals(metricsStorage.newReader().getNumRowsInTable(table), 3);
         assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(1).getIndexTable(), "cf_arr", "abc", "private", "moreprivate")), 2);
         assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(2).getIndexTable(), "cf_firstname", M1_FNAME_VALUE, "private", "moreprivate")), 1);
@@ -1291,12 +1294,12 @@ public class TestPrestoBatchWriter
         scan = createIndexScanner(0, "cf_age");
         iter = scan.iterator();
         assertTrue(iter.hasNext());
-        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age", "row1", "");
-        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age", "row3", "moreprivate", "");
-        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age_car", "car", ENCODER.encode(1L));
-        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age_car", "car", "moreprivate", ENCODER.encode(1L));
-        assertKeyValuePair(iter.next(), UPDATED_AGE_VALUE, "cf_age", "row2", "");
-        assertKeyValuePair(iter.next(), UPDATED_AGE_VALUE, "cf_age_car", "car", ENCODER.encode(1L));
+        assertKeyValuePair(iter.next(), shard(UPDATED_AGE_VALUE), "cf_age", "row2", "");
+        assertKeyValuePair(iter.next(), shard(UPDATED_AGE_VALUE), "cf_age_car", "car", ENCODER.encode(1L));
+        assertKeyValuePair(iter.next(), shard(AGE_VALUE), "cf_age", "row1", "");
+        assertKeyValuePair(iter.next(), shard(AGE_VALUE), "cf_age", "row3", "moreprivate", "");
+        assertKeyValuePair(iter.next(), shard(AGE_VALUE), "cf_age_car", "car", ENCODER.encode(1L));
+        assertKeyValuePair(iter.next(), shard(AGE_VALUE), "cf_age_car", "car", "moreprivate", ENCODER.encode(1L));
         assertFalse(iter.hasNext());
         scan.close();
 
@@ -1335,8 +1338,8 @@ public class TestPrestoBatchWriter
         assertFalse(iter.hasNext());
         scan.close();
 
-        assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(0).getIndexTable(), "cf_age", AGE_VALUE, "private", "moreprivate")), 2);
-        assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(0).getIndexTable(), "cf_age", UPDATED_AGE_VALUE)), 1);
+        assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(0).getIndexTable(), "cf_age", shard(AGE_VALUE), "private", "moreprivate")), 2);
+        assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(0).getIndexTable(), "cf_age", shard(UPDATED_AGE_VALUE))), 1);
         assertEquals(metricsStorage.newReader().getNumRowsInTable(table), 3);
         assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(1).getIndexTable(), "cf_arr", "abc", "private", "moreprivate")), 1);
         assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(2).getIndexTable(), "cf_firstname", M1_FNAME_VALUE, "private", "moreprivate")), 1);
@@ -1383,12 +1386,12 @@ public class TestPrestoBatchWriter
         scan = createIndexScanner(0, "cf_age");
         iter = scan.iterator();
         assertTrue(iter.hasNext());
-        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age", "row1", "");
-        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age", "row3", "moreprivate", "");
-        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age_car", "car", ENCODER.encode(1L));
-        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age_car", "car", "moreprivate", ENCODER.encode(1L));
-        assertKeyValuePair(iter.next(), UPDATED_AGE_VALUE, "cf_age", "row2", "moreprivate", "");
-        assertKeyValuePair(iter.next(), UPDATED_AGE_VALUE, "cf_age_car", "car", "moreprivate", ENCODER.encode(1L));
+        assertKeyValuePair(iter.next(), shard(UPDATED_AGE_VALUE), "cf_age", "row2", "moreprivate", "");
+        assertKeyValuePair(iter.next(), shard(UPDATED_AGE_VALUE), "cf_age_car", "car", "moreprivate", ENCODER.encode(1L));
+        assertKeyValuePair(iter.next(), shard(AGE_VALUE), "cf_age", "row1", "");
+        assertKeyValuePair(iter.next(), shard(AGE_VALUE), "cf_age", "row3", "moreprivate", "");
+        assertKeyValuePair(iter.next(), shard(AGE_VALUE), "cf_age_car", "car", ENCODER.encode(1L));
+        assertKeyValuePair(iter.next(), shard(AGE_VALUE), "cf_age_car", "car", "moreprivate", ENCODER.encode(1L));
         assertFalse(iter.hasNext());
         scan.close();
 
@@ -1426,7 +1429,9 @@ public class TestPrestoBatchWriter
         assertKeyValuePair(iter.next(), UPDATED_M2_FNAME_VALUE, "cf_firstname_car", "car", "moreprivate", ENCODER.encode(1L));
         assertFalse(iter.hasNext());
         scan.close();
-        assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(0).getIndexTable(), "cf_age", AGE_VALUE, "private", "moreprivate")), 2);
+
+        assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(0).getIndexTable(), "cf_age", shard(AGE_VALUE), "private", "moreprivate")), 2);
+        assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(0).getIndexTable(), "cf_age", shard(UPDATED_AGE_VALUE), "private", "moreprivate")), 1);
         assertEquals(metricsStorage.newReader().getNumRowsInTable(table), 3);
         assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(1).getIndexTable(), "cf_arr", "abc", "private", "moreprivate")), 1);
         assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(2).getIndexTable(), "cf_firstname", M1_FNAME_VALUE, "private", "moreprivate")), 1);
@@ -1468,10 +1473,10 @@ public class TestPrestoBatchWriter
         scan = createIndexScanner(0, "cf_age");
         iter = scan.iterator();
         assertTrue(iter.hasNext());
-        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age", "row2", "private", "");
-        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age", "row3", "moreprivate", "");
-        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age_car", "car", "moreprivate", ENCODER.encode(1L));
-        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age_car", "car", "private", ENCODER.encode(1L));
+        assertKeyValuePair(iter.next(), shard(AGE_VALUE), "cf_age", "row2", "private", "");
+        assertKeyValuePair(iter.next(), shard(AGE_VALUE), "cf_age", "row3", "moreprivate", "");
+        assertKeyValuePair(iter.next(), shard(AGE_VALUE), "cf_age_car", "car", "moreprivate", ENCODER.encode(1L));
+        assertKeyValuePair(iter.next(), shard(AGE_VALUE), "cf_age_car", "car", "private", ENCODER.encode(1L));
         assertFalse(iter.hasNext());
         scan.close();
 
@@ -1503,7 +1508,7 @@ public class TestPrestoBatchWriter
         assertFalse(iter.hasNext());
         scan.close();
 
-        assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(0).getIndexTable(), "cf_age", AGE_VALUE, "private", "moreprivate")), 2);
+        assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(0).getIndexTable(), "cf_age", shard(AGE_VALUE), "private", "moreprivate")), 2);
         assertEquals(metricsStorage.newReader().getNumRowsInTable(table), 2);
         assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(1).getIndexTable(), "cf_arr", "abc", "private", "moreprivate")), 1);
         assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(2).getIndexTable(), "cf_firstname", M1_FNAME_VALUE, "private", "moreprivate")), 0);
@@ -1530,8 +1535,8 @@ public class TestPrestoBatchWriter
         scan = createIndexScanner(0, "cf_age");
         iter = scan.iterator();
         assertTrue(iter.hasNext());
-        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age", "row3", "moreprivate", "");
-        assertKeyValuePair(iter.next(), AGE_VALUE, "cf_age_car", "car", "moreprivate", ENCODER.encode(1L));
+        assertKeyValuePair(iter.next(), shard(AGE_VALUE), "cf_age", "row3", "moreprivate", "");
+        assertKeyValuePair(iter.next(), shard(AGE_VALUE), "cf_age_car", "car", "moreprivate", ENCODER.encode(1L));
         assertFalse(iter.hasNext());
         scan.close();
 
@@ -1555,7 +1560,7 @@ public class TestPrestoBatchWriter
         assertFalse(iter.hasNext());
         scan.close();
 
-        assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(0).getIndexTable(), "cf_age", AGE_VALUE, "private", "moreprivate")), 1);
+        assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(0).getIndexTable(), "cf_age", shard(AGE_VALUE), "private", "moreprivate")), 1);
         assertEquals(metricsStorage.newReader().getNumRowsInTable(table), 1);
         assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(1).getIndexTable(), "cf_arr", "abc", "private", "moreprivate")), 0);
         assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(2).getIndexTable(), "cf_firstname", M1_FNAME_VALUE, "private", "moreprivate")), 0);
@@ -1581,7 +1586,7 @@ public class TestPrestoBatchWriter
             scan.close();
         }
 
-        assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(0).getIndexTable(), "cf_age", AGE_VALUE, "private", "moreprivate")), 0);
+        assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(0).getIndexTable(), "cf_age", shard(AGE_VALUE), "private", "moreprivate")), 0);
         assertEquals(metricsStorage.newReader().getNumRowsInTable(table), 0);
         assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(1).getIndexTable(), "cf_arr", "abc", "private", "moreprivate")), 0);
         assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(2).getIndexTable(), "cf_firstname", M1_FNAME_VALUE, "private", "moreprivate")), 0);
@@ -1614,7 +1619,7 @@ public class TestPrestoBatchWriter
             scan.close();
         }
 
-        assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(0).getIndexTable(), "cf_age", AGE_VALUE, "private", "moreprivate")), 0);
+        assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(0).getIndexTable(), "cf_age", shard(AGE_VALUE), "private", "moreprivate")), 0);
         assertEquals(metricsStorage.newReader().getNumRowsInTable(table), 0);
         assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(1).getIndexTable(), "cf_arr", "abc", "private", "moreprivate")), 0);
         assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(2).getIndexTable(), "cf_firstname", M1_FNAME_VALUE, "private", "moreprivate")), 0);
@@ -1679,14 +1684,19 @@ public class TestPrestoBatchWriter
         assertEquals(e.getValue().get(), value);
     }
 
+    private Scanner createIndexScanner(int index, String column)
+            throws TableNotFoundException
+    {
+        return connector.createScanner(table.getParsedIndexColumns().get(index).getIndexTable(), new Authorizations("private", "moreprivate"));
+    }
+
     private static byte[] bytes(String s)
     {
         return s.getBytes(UTF_8);
     }
 
-    private Scanner createIndexScanner(int index, String column)
-            throws TableNotFoundException
+    private static byte[] shard(byte[] bytes)
     {
-        return connector.createScanner(table.getParsedIndexColumns().get(index).getIndexTable(), new Authorizations("private", "moreprivate"));
+        return new ShardedIndexStorage(DEFAULT_NUM_SHARDS).encode(bytes);
     }
 }
