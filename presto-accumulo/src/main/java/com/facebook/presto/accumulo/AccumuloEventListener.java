@@ -85,7 +85,6 @@ public class AccumuloEventListener
     public static final String SPLIT = "split";
     public static final Type SPLIT_TYPE;
 
-    private static final AccumuloTable TABLE;
     private static final Logger LOG = Logger.get(AccumuloEventListener.class);
     private static final String FAILURE = "failure";
     private static final String INDEX_COLUMNS = "create_time,start_time,end_time";
@@ -93,7 +92,6 @@ public class AccumuloEventListener
     private static final String OUTPUT = "output";
     private static final String ROW_ID = "id";
     private static final String SCHEMA = "presto";
-    private static final String TABLE_NAME = "query_archive";
     private static final String QUERY = "query";
     private static final Type FAILURE_TYPE;
     private static final Type INPUT_TYPE;
@@ -103,69 +101,58 @@ public class AccumuloEventListener
             MethodHandleUtil.methodHandle(Slice.class, "equals", Object.class).asType(MethodType.methodType(boolean.class, Slice.class, Slice.class)),
             MethodHandleUtil.methodHandle(Slice.class, "hashCode").asType(MethodType.methodType(long.class, Slice.class)),
             MethodHandleUtil.methodHandle(AccumuloEventListener.class, "blockVarcharHashCode", Block.class, int.class));
+    private static final RowSchema ROW_SCHEMA = new RowSchema();
 
     private final AccumuloRowSerializer serializer = new LexicoderRowSerializer();
 
     static {
-        RowSchema schema = new RowSchema();
-        schema.addRowId("id", VARCHAR);
-        schema.addColumn("source", Optional.of(QUERY), Optional.of("source"), VARCHAR);
-        schema.addColumn("user", Optional.of(QUERY), Optional.of("user"), VARCHAR);
-        schema.addColumn("user_agent", Optional.of(QUERY), Optional.of("user_agent"), VARCHAR);
+        ROW_SCHEMA.addRowId("id", VARCHAR);
+        ROW_SCHEMA.addColumn("source", Optional.of(QUERY), Optional.of("source"), VARCHAR);
+        ROW_SCHEMA.addColumn("user", Optional.of(QUERY), Optional.of("user"), VARCHAR);
+        ROW_SCHEMA.addColumn("user_agent", Optional.of(QUERY), Optional.of("user_agent"), VARCHAR);
 
-        schema.addColumn("sql", Optional.of(QUERY), Optional.of("sql"), VARCHAR);
-        schema.addColumn("session_properties", Optional.of(QUERY), Optional.of("session_properties"), SESSION_PROPERTIES_TYPE);
-        schema.addColumn("schema", Optional.of(QUERY), Optional.of("schema"), VARCHAR);
-        schema.addColumn("transaction_id", Optional.of(QUERY), Optional.of("transaction_id"), VARCHAR);
-        schema.addColumn("state", Optional.of(QUERY), Optional.of("state"), VARCHAR);
-        schema.addColumn("is_complete", Optional.of(QUERY), Optional.of("is_complete"), BOOLEAN);
-        schema.addColumn("uri", Optional.of(QUERY), Optional.of("uri"), VARCHAR);
+        ROW_SCHEMA.addColumn("sql", Optional.of(QUERY), Optional.of("sql"), VARCHAR);
+        ROW_SCHEMA.addColumn("session_properties", Optional.of(QUERY), Optional.of("session_properties"), SESSION_PROPERTIES_TYPE);
+        ROW_SCHEMA.addColumn("schema", Optional.of(QUERY), Optional.of("schema"), VARCHAR);
+        ROW_SCHEMA.addColumn("transaction_id", Optional.of(QUERY), Optional.of("transaction_id"), VARCHAR);
+        ROW_SCHEMA.addColumn("state", Optional.of(QUERY), Optional.of("state"), VARCHAR);
+        ROW_SCHEMA.addColumn("is_complete", Optional.of(QUERY), Optional.of("is_complete"), BOOLEAN);
+        ROW_SCHEMA.addColumn("uri", Optional.of(QUERY), Optional.of("uri"), VARCHAR);
 
-        schema.addColumn("create_time", Optional.of(QUERY), Optional.of("create_time"), TIMESTAMP);
-        schema.addColumn("start_time", Optional.of(QUERY), Optional.of("start_time"), TIMESTAMP);
-        schema.addColumn("end_time", Optional.of(QUERY), Optional.of("end_time"), TIMESTAMP);
-        schema.addColumn("cpu_time", Optional.of(QUERY), Optional.of("cpu_time"), BIGINT);
-        schema.addColumn("analysis_time", Optional.of(QUERY), Optional.of("analysis_time"), BIGINT);
-        schema.addColumn("planning_time", Optional.of(QUERY), Optional.of("planning_time"), BIGINT);
-        schema.addColumn("queued_time", Optional.of(QUERY), Optional.of("queued_time"), BIGINT);
-        schema.addColumn("wall_time", Optional.of(QUERY), Optional.of("wall_time"), BIGINT);
+        ROW_SCHEMA.addColumn("create_time", Optional.of(QUERY), Optional.of("create_time"), TIMESTAMP);
+        ROW_SCHEMA.addColumn("start_time", Optional.of(QUERY), Optional.of("start_time"), TIMESTAMP);
+        ROW_SCHEMA.addColumn("end_time", Optional.of(QUERY), Optional.of("end_time"), TIMESTAMP);
+        ROW_SCHEMA.addColumn("cpu_time", Optional.of(QUERY), Optional.of("cpu_time"), BIGINT);
+        ROW_SCHEMA.addColumn("analysis_time", Optional.of(QUERY), Optional.of("analysis_time"), BIGINT);
+        ROW_SCHEMA.addColumn("planning_time", Optional.of(QUERY), Optional.of("planning_time"), BIGINT);
+        ROW_SCHEMA.addColumn("queued_time", Optional.of(QUERY), Optional.of("queued_time"), BIGINT);
+        ROW_SCHEMA.addColumn("wall_time", Optional.of(QUERY), Optional.of("wall_time"), BIGINT);
 
-        schema.addColumn("completed_splits", Optional.of(QUERY), Optional.of("completed_splits"), INTEGER);
-        schema.addColumn("total_bytes", Optional.of(QUERY), Optional.of("total_bytes"), BIGINT);
-        schema.addColumn("total_rows", Optional.of(QUERY), Optional.of("total_rows"), BIGINT);
-        schema.addColumn("peak_mem_bytes", Optional.of(QUERY), Optional.of("peak_mem_bytes"), BIGINT);
+        ROW_SCHEMA.addColumn("completed_splits", Optional.of(QUERY), Optional.of("completed_splits"), INTEGER);
+        ROW_SCHEMA.addColumn("total_bytes", Optional.of(QUERY), Optional.of("total_bytes"), BIGINT);
+        ROW_SCHEMA.addColumn("total_rows", Optional.of(QUERY), Optional.of("total_rows"), BIGINT);
+        ROW_SCHEMA.addColumn("peak_mem_bytes", Optional.of(QUERY), Optional.of("peak_mem_bytes"), BIGINT);
 
-        schema.addColumn("environment", Optional.of(QUERY), Optional.of("environment"), VARCHAR);
-        schema.addColumn("remote_client_address", Optional.of(QUERY), Optional.of("remote_client_address"), VARCHAR);
-        schema.addColumn("server_address", Optional.of(QUERY), Optional.of("server_address"), VARCHAR);
-        schema.addColumn("server_version", Optional.of(QUERY), Optional.of("server_version"), VARCHAR);
+        ROW_SCHEMA.addColumn("environment", Optional.of(QUERY), Optional.of("environment"), VARCHAR);
+        ROW_SCHEMA.addColumn("remote_client_address", Optional.of(QUERY), Optional.of("remote_client_address"), VARCHAR);
+        ROW_SCHEMA.addColumn("server_address", Optional.of(QUERY), Optional.of("server_address"), VARCHAR);
+        ROW_SCHEMA.addColumn("server_version", Optional.of(QUERY), Optional.of("server_version"), VARCHAR);
 
         INPUT_TYPE = new ArrayType(new RowType(ImmutableList.of(VARCHAR, VARCHAR, VARCHAR, VARCHAR, VARCHAR), Optional.of(ImmutableList.of("connector_id", "table", "schema", "columns", "connector_info"))));
-        schema.addColumn("inputs", Optional.of(INPUT), Optional.of(INPUT), INPUT_TYPE);
+        ROW_SCHEMA.addColumn("inputs", Optional.of(INPUT), Optional.of(INPUT), INPUT_TYPE);
 
-        schema.addColumn("output_connector_id", Optional.of(OUTPUT), Optional.of("connector_id"), VARCHAR);
-        schema.addColumn("output_schema", Optional.of(OUTPUT), Optional.of("schema"), VARCHAR);
-        schema.addColumn("output_table", Optional.of(OUTPUT), Optional.of("table"), VARCHAR);
+        ROW_SCHEMA.addColumn("output_connector_id", Optional.of(OUTPUT), Optional.of("connector_id"), VARCHAR);
+        ROW_SCHEMA.addColumn("output_schema", Optional.of(OUTPUT), Optional.of("schema"), VARCHAR);
+        ROW_SCHEMA.addColumn("output_table", Optional.of(OUTPUT), Optional.of("table"), VARCHAR);
 
         FAILURE_TYPE = new RowType(ImmutableList.of(VARCHAR, VARCHAR, VARCHAR, VARCHAR, VARCHAR, VARCHAR), Optional.of(ImmutableList.of("code", "type", "msg", "task", "host", "json")));
-        schema.addColumn("failure", Optional.of(FAILURE), Optional.of("failure"), FAILURE_TYPE);
+        ROW_SCHEMA.addColumn("failure", Optional.of(FAILURE), Optional.of("failure"), FAILURE_TYPE);
 
         SPLIT_TYPE = new ArrayType(new RowType(
                 ImmutableList.of(BIGINT, BIGINT, BIGINT, BIGINT, TIMESTAMP, TIMESTAMP, VARCHAR, VARCHAR, BIGINT, VARCHAR, TIMESTAMP, VARCHAR, BIGINT, BIGINT, BIGINT, BIGINT),
                 Optional.of(ImmutableList.of("completed_data_size_bytes", "completed_positions", "completed_read_time", "cpu_time", "create_time", "end_time", "failure_msg", "failure_type", "queued_time", "stage_id", "start_time", "task_id", "time_to_first_byte", "time_to_last_byte", "user_time", "wall_time"))));
-        schema.addColumn("splits", Optional.of(SPLIT), Optional.of(SPLIT), SPLIT_TYPE);
 
-        TABLE = new AccumuloTable(
-                SCHEMA,
-                TABLE_NAME,
-                schema.getColumns(),
-                ROW_ID,
-                true,
-                LexicoderRowSerializer.class.getCanonicalName(),
-                Optional.empty(),
-                Optional.of(AccumuloMetricsStorage.class.getCanonicalName()),
-                true,
-                Optional.of(INDEX_COLUMNS));
+        ROW_SCHEMA.addColumn("splits", Optional.of(SPLIT), Optional.of(SPLIT), SPLIT_TYPE);
     }
 
     @SuppressWarnings("unused")
@@ -175,6 +162,7 @@ public class AccumuloEventListener
     }
 
     private final AccumuloConfig config;
+    private final AccumuloTable table;
     private final BatchWriterConfig batchWriterConfig;
     private final Duration timeout;
     private final Duration latency;
@@ -184,7 +172,14 @@ public class AccumuloEventListener
     private Connector connector;
     private PrestoBatchWriter writer;
 
-    public AccumuloEventListener(String instance, String zooKeepers, String user, String password, Duration timeout, Duration latency)
+    public AccumuloEventListener(
+            String instance,
+            String zooKeepers,
+            String user,
+            String password,
+            Duration timeout,
+            Duration latency,
+            String tableName)
     {
         requireNonNull(instance, "instance is null");
         requireNonNull(zooKeepers, "zookeepers is null");
@@ -192,9 +187,22 @@ public class AccumuloEventListener
         requireNonNull(password, "password is null");
         this.timeout = requireNonNull(timeout, "timeout is null");
         this.latency = requireNonNull(latency, "latency is null");
+        requireNonNull(tableName, "tableName is null");
 
         this.config = new AccumuloConfig().setInstance(instance).setZooKeepers(zooKeepers).setUsername(user).setPassword(password);
         this.batchWriterConfig = new BatchWriterConfig().setTimeout(timeout.toMillis(), MILLISECONDS).setMaxLatency(latency.toMillis(), MILLISECONDS);
+
+        table = new AccumuloTable(
+                SCHEMA,
+                tableName,
+                ROW_SCHEMA.getColumns(),
+                ROW_ID,
+                true,
+                LexicoderRowSerializer.class.getCanonicalName(),
+                Optional.empty(),
+                Optional.of(AccumuloMetricsStorage.class.getCanonicalName()),
+                true,
+                Optional.of(INDEX_COLUMNS));
 
         Thread writerThread = new Thread(new MutationWriter(instance, zooKeepers, password));
         writerThread.setName("event-listener-writer");
@@ -355,11 +363,11 @@ public class AccumuloEventListener
         do {
             try {
                 createTableIfNotExists();
-                writer = new PrestoBatchWriter(connector, connector.securityOperations().getUserAuthorizations(user), TABLE, batchWriterConfig);
-                LOG.info("Created BatchWriter against table %s with timeout %s and latency %s", TABLE.getFullTableName(), timeout, latency);
+                writer = new PrestoBatchWriter(connector, connector.securityOperations().getUserAuthorizations(user), table, batchWriterConfig);
+                LOG.info("Created BatchWriter against table %s with timeout %s and latency %s", table.getFullTableName(), timeout, latency);
             }
             catch (TableNotFoundException e) {
-                LOG.warn("Table %s not found. Recreating...", TABLE.getFullTableName());
+                LOG.warn("Table %s not found. Recreating...", table.getFullTableName());
                 createTableIfNotExists();
             }
             catch (AccumuloSecurityException e) {
@@ -381,42 +389,42 @@ public class AccumuloEventListener
     private void createTableIfNotExists()
     {
         ZooKeeperMetadataManager metadataManager = new ZooKeeperMetadataManager(config, new DummyTypeRegistry() {});
-        if (!metadataManager.exists(TABLE.getSchemaTableName())) {
-            metadataManager.createTableMetadata(TABLE);
-            LOG.info("Created metadata for table " + TABLE.getSchemaTableName());
+        if (!metadataManager.exists(table.getSchemaTableName())) {
+            metadataManager.createTableMetadata(table);
+            LOG.info("Created metadata for table " + table.getSchemaTableName());
         }
 
         AccumuloTableManager tableManager = new AccumuloTableManager(connector);
-        tableManager.ensureNamespace(TABLE.getSchema());
-        if (!tableManager.exists(TABLE.getFullTableName())) {
-            tableManager.createAccumuloTable(TABLE.getFullTableName());
+        tableManager.ensureNamespace(table.getSchema());
+        if (!tableManager.exists(table.getFullTableName())) {
+            tableManager.createAccumuloTable(table.getFullTableName());
 
             try {
                 IteratorSetting setting = new IteratorSetting(19, ListCombiner.class);
                 ListCombiner.setCombineAllColumns(setting, false);
                 ListCombiner.setColumns(setting, ImmutableList.of(new Column(SPLIT, SPLIT)));
-                connector.tableOperations().attachIterator(TABLE.getFullTableName(), setting);
-                LOG.info("Created Accumulo table %s", TABLE.getFullTableName());
+                connector.tableOperations().attachIterator(table.getFullTableName(), setting);
+                LOG.info("Created Accumulo table %s", table.getFullTableName());
             }
             catch (AccumuloSecurityException | AccumuloException e) {
                 throw new PrestoException(AccumuloErrorCode.UNEXPECTED_ACCUMULO_ERROR, "Failed to set iterator", e);
             }
             catch (TableNotFoundException e) {
-                LOG.warn("Failed to set iterator, table %s does not exist", TABLE.getFullTableName());
+                LOG.warn("Failed to set iterator, table %s does not exist", table.getFullTableName());
             }
         }
 
-        for (IndexColumn indexColumn : TABLE.getParsedIndexColumns()) {
+        for (IndexColumn indexColumn : table.getParsedIndexColumns()) {
             if (!tableManager.exists(indexColumn.getIndexTable())) {
                 tableManager.createAccumuloTable(indexColumn.getIndexTable());
                 LOG.info("Created Accumulo table %s", indexColumn.getIndexTable());
             }
         }
 
-        MetricsStorage storage = TABLE.getMetricsStorageInstance(connector);
-        if (!storage.exists(TABLE.getSchemaTableName())) {
-            storage.create(TABLE);
-            LOG.info("Created metrics storage for %s", TABLE.getFullTableName());
+        MetricsStorage storage = table.getMetricsStorageInstance(connector);
+        if (!storage.exists(table.getSchemaTableName())) {
+            storage.create(table);
+            LOG.info("Created metrics storage for %s", table.getFullTableName());
         }
     }
 

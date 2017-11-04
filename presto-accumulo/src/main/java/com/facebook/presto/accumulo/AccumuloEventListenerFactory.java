@@ -45,6 +45,7 @@ public class AccumuloEventListenerFactory
                 config.getOrDefault(USERNAME, "root"),
                 config.getOrDefault(PASSWORD, "secret"),
                 Duration.valueOf(config.getOrDefault("accumulo.timeout", "1m")),
-                Duration.valueOf(config.getOrDefault("accumulo.latency", "10s")));
+                Duration.valueOf(config.getOrDefault("accumulo.latency", "10s")),
+                config.getOrDefault("accumulo.query.archive.table.name", "query_archive"));
     }
 }
