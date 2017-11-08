@@ -299,7 +299,8 @@ public class TabletSplitGenerationMachine
                 // Else, we are going to use the index, now we just need to figure out if we are going to distribute it
 
                 // If there is only one intersection column and it is greater than some threshold to distribute it to the workers
-                if (canDistributeIndexLookup(indexQueryParameters)) {
+                if (canDistributeIndexLookup(lowestCardinality.getValue())) {
+                    indexQueryParameters = ImmutableList.of(lowestCardinality.getValue());
                     state = State.DISTRIBUTE;
                     return;
                 }
@@ -325,33 +326,32 @@ public class TabletSplitGenerationMachine
                     state = State.FULL;
                 }
             }
-            else if (canDistributeIndexLookup(indexQueryParameters)) {
-                state = State.DISTRIBUTE;
-            }
             else {
-                // Else, we don't need to intersect the columns and we can just use the column with the lowest cardinality
-                LOG.debug("Not intersecting columns, using column with lowest cardinality: " + lowestCardinality.getValue().getIndexColumn());
-                indexQueryParameters = ImmutableList.of(lowestCardinality.getValue());
-                state = State.INDEX;
+                if (canDistributeIndexLookup(lowestCardinality.getValue())) {
+                    indexQueryParameters = ImmutableList.of(lowestCardinality.getValue());
+                    state = State.DISTRIBUTE;
+                }
+                else {
+                    // Else, we don't need to intersect the columns and we can just use the column with the lowest cardinality
+                    LOG.debug("Not intersecting columns, using column with lowest cardinality: " + lowestCardinality.getValue().getIndexColumn());
+                    indexQueryParameters = ImmutableList.of(lowestCardinality.getValue());
+                    state = State.INDEX;
+                }
             }
         }
 
-        private boolean canDistributeIndexLookup(List<IndexQueryParameters> queryParameters)
+        private boolean canDistributeIndexLookup(IndexQueryParameters queryParameter)
         {
             long threshold = getIndexDistributionThreshold(session);
             if (threshold == 0) {
                 LOG.debug("Distribution of index is disabled by session property");
                 return false;
             }
-            else if (queryParameters.size() != 1) {
-                LOG.debug("Distribution of index is disabled, too many query parameters to distribute index.  Expected 1, actual " + queryParameters.size());
-                return false;
-            }
-            else if (queryParameters.get(0).getCardinality() < threshold) {
+            else if (queryParameter.getCardinality() < threshold) {
                 LOG.debug("Distribution of index is disabled, cardinality of query column is too large.  Needs to be greater than or equal to " + threshold);
                 return false;
             }
-            else if (queryParameters.get(0).getRanges().stream().anyMatch(Indexer::isExact)) {
+            else if (queryParameter.getRanges().stream().anyMatch(Indexer::isExact)) {
                 LOG.debug("Distribution of index is disabled, query contains an exact key lookup.  Distribution is only supported for range scans");
                 return false;
             }
