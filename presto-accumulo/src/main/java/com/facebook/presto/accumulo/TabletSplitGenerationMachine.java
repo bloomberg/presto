@@ -36,6 +36,7 @@ import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Multimap;
 import com.google.common.collect.Sets;
+import com.google.common.collect.Streams;
 import io.airlift.log.Logger;
 import org.apache.accumulo.core.client.AccumuloException;
 import org.apache.accumulo.core.client.AccumuloSecurityException;
@@ -46,11 +47,14 @@ import org.apache.accumulo.core.security.Authorizations;
 
 import javax.inject.Inject;
 
+import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 import static com.facebook.presto.accumulo.AccumuloErrorCode.EXCEEDED_INDEX_THRESHOLD;
@@ -63,6 +67,7 @@ import static com.facebook.presto.accumulo.conf.AccumuloSessionProperties.getInd
 import static com.facebook.presto.accumulo.conf.AccumuloSessionProperties.getMaxRowsPerSplit;
 import static com.facebook.presto.accumulo.conf.AccumuloSessionProperties.getMinRowsPerSplit;
 import static com.facebook.presto.accumulo.conf.AccumuloSessionProperties.getNumIndexRowsPerSplit;
+import static com.facebook.presto.accumulo.conf.AccumuloSessionProperties.getScanAuths;
 import static com.facebook.presto.accumulo.conf.AccumuloSessionProperties.getScanUsername;
 import static com.facebook.presto.accumulo.conf.AccumuloSessionProperties.getSplitsPerWorker;
 import static com.facebook.presto.accumulo.conf.AccumuloSessionProperties.isIndexMetricsEnabled;
@@ -81,6 +86,7 @@ public class TabletSplitGenerationMachine
 {
     private static final Logger LOG = Logger.get(TabletSplitGenerationMachine.class);
     private static final Splitter COMMA_SPLITTER = Splitter.on(',').omitEmptyStrings().trimResults();
+    private static final Splitter SPACE_SPLITTER = Splitter.on(' ').omitEmptyStrings().trimResults();
 
     private enum State
     {
@@ -466,9 +472,24 @@ public class TabletSplitGenerationMachine
                 throws AccumuloException, AccumuloSecurityException
         {
             String sessionScanUser = getScanUsername(session);
+            String sessionScanAuths = getScanAuths(session);
             if (sessionScanUser != null) {
                 Authorizations scanAuths = connector.securityOperations().getUserAuthorizations(sessionScanUser);
                 LOG.debug("Using session scan auths for user %s: %s", sessionScanUser, scanAuths);
+
+                if (sessionScanAuths != null) {
+                    Set<ByteBuffer> userAuths = new HashSet<>(scanAuths.getAuthorizationsBB());
+                    userAuths.retainAll(Streams.stream(SPACE_SPLITTER.split(sessionScanAuths)).map(x -> ByteBuffer.wrap(x.getBytes(UTF_8))).collect(Collectors.toList()));
+                    scanAuths = new Authorizations(new ArrayList<>(userAuths));
+                    LOG.debug("Filtered session session scan auths for user %s to %s", sessionScanUser, scanAuths);
+                }
+
+                return scanAuths;
+            }
+
+            if (sessionScanAuths != null) {
+                Authorizations scanAuths = new Authorizations(Iterables.toArray(SPACE_SPLITTER.split(sessionScanAuths), String.class));
+                LOG.debug("Using set session scan auths: %s", scanAuths);
                 return scanAuths;
             }
 

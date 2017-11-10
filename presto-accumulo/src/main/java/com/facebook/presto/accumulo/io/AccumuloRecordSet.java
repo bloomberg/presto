@@ -13,7 +13,6 @@
  */
 package com.facebook.presto.accumulo.io;
 
-import com.facebook.presto.accumulo.conf.AccumuloSessionProperties;
 import com.facebook.presto.accumulo.index.IndexLookup;
 import com.facebook.presto.accumulo.model.AccumuloColumnConstraint;
 import com.facebook.presto.accumulo.model.AccumuloColumnHandle;
@@ -27,6 +26,7 @@ import com.facebook.presto.spi.type.Type;
 import com.google.common.base.Splitter;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Iterables;
+import com.google.common.collect.Streams;
 import io.airlift.log.Logger;
 import io.airlift.slice.Slice;
 import org.apache.accumulo.core.client.AccumuloException;
@@ -36,13 +36,21 @@ import org.apache.accumulo.core.client.Connector;
 import org.apache.accumulo.core.data.Range;
 import org.apache.accumulo.core.security.Authorizations;
 
+import java.nio.ByteBuffer;
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 import static com.facebook.presto.accumulo.AccumuloErrorCode.UNEXPECTED_ACCUMULO_ERROR;
+import static com.facebook.presto.accumulo.conf.AccumuloSessionProperties.getScanAuths;
+import static com.facebook.presto.accumulo.conf.AccumuloSessionProperties.getScanUsername;
 import static com.facebook.presto.accumulo.conf.AccumuloSessionProperties.isTracingEnabled;
 import static com.facebook.presto.spi.StandardErrorCode.NOT_FOUND;
 import static java.lang.String.format;
+import static java.nio.charset.StandardCharsets.UTF_8;
 import static java.util.Objects.requireNonNull;
 
 /**
@@ -56,6 +64,7 @@ public class AccumuloRecordSet
 {
     private static final Logger LOG = Logger.get(AccumuloRecordSet.class);
     private static final Splitter COMMA_SPLITTER = Splitter.on(',').omitEmptyStrings().trimResults();
+    private static final Splitter SPACE_SPLITTER = Splitter.on(' ').omitEmptyStrings().trimResults();
 
     private final List<AccumuloColumnHandle> columnHandles;
     private final List<AccumuloColumnConstraint> constraints;
@@ -148,10 +157,25 @@ public class AccumuloRecordSet
     private static Authorizations getScanAuthorizations(ConnectorSession session, AccumuloSplit split, Connector connector, String username)
             throws AccumuloException, AccumuloSecurityException
     {
-        String sessionScanUser = AccumuloSessionProperties.getScanUsername(session);
+        String sessionScanUser = getScanUsername(session);
+        String sessionScanAuths = getScanAuths(session);
         if (sessionScanUser != null) {
             Authorizations scanAuths = connector.securityOperations().getUserAuthorizations(sessionScanUser);
-            LOG.debug("Using session scanner auths for user %s: %s", sessionScanUser, scanAuths);
+            LOG.debug("Using session scan auths for user %s: %s", sessionScanUser, scanAuths);
+
+            if (sessionScanAuths != null) {
+                Set<ByteBuffer> userAuths = new HashSet<>(scanAuths.getAuthorizationsBB());
+                userAuths.retainAll(Streams.stream(SPACE_SPLITTER.split(sessionScanAuths)).map(x -> ByteBuffer.wrap(x.getBytes(UTF_8))).collect(Collectors.toList()));
+                scanAuths = new Authorizations(new ArrayList<>(userAuths));
+                LOG.debug("Filtered session session scan auths for user %s to %s", sessionScanUser, scanAuths);
+            }
+
+            return scanAuths;
+        }
+
+        if (sessionScanAuths != null) {
+            Authorizations scanAuths = new Authorizations(Iterables.toArray(SPACE_SPLITTER.split(sessionScanAuths), String.class));
+            LOG.debug("Using set session scan auths: %s", scanAuths);
             return scanAuths;
         }
 

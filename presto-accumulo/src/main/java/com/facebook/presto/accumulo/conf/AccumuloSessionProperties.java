@@ -55,6 +55,7 @@ public final class AccumuloSessionProperties
     private static final String TRACING_ENABLED = "tracing_enabled";
     private static final String INDEX_DISTRIBUTION_THRESHOLD = "index_distribution_threshold";
     private static final String INDEX_MAXIMUM_THRESHOLD = "index_maximum_threshold";
+    private static final String SCAN_AUTHS = "scan_auths";
 
     private final List<PropertyMetadata<?>> sessionProperties;
 
@@ -158,7 +159,13 @@ public final class AccumuloSessionProperties
                 50_000_000L,
                 false);
 
-        sessionProperties = ImmutableList.of(s2, s3, s4, s5, s6, s7, s8, s9, s10, s11, s12, s13, s14, s15, s16, s17);
+        PropertyMetadata<String> s18 = stringSessionProperty(
+                SCAN_AUTHS,
+                "Space-delimited list of scan auths to set for the batch scanner.  If scan_username is also set, the intersection of those auths with these are used.",
+                null,
+                false);
+
+        sessionProperties = ImmutableList.of(s2, s3, s4, s5, s6, s7, s8, s9, s10, s11, s12, s13, s14, s15, s16, s17, s18);
     }
 
     public List<PropertyMetadata<?>> getSessionProperties()
@@ -282,5 +289,10 @@ public final class AccumuloSessionProperties
     public static long getIndexMaximumThreshold(ConnectorSession session)
     {
         return session.getProperty(INDEX_MAXIMUM_THRESHOLD, Long.class);
+    }
+
+    public static String getScanAuths(ConnectorSession session)
+    {
+        return session.getProperty(SCAN_AUTHS, String.class);
     }
 }
