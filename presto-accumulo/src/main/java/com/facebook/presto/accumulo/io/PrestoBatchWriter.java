@@ -182,7 +182,7 @@ public class PrestoBatchWriter
         Mutation mutation = toMutation(row, rowIdOrdinal, columns, serializer);
         dataWriter.addMutation(mutation);
         if (indexer.isPresent()) {
-            indexer.get().index(mutation, true);
+            indexer.get().index(mutation, true, auths);
         }
     }
 
@@ -238,7 +238,7 @@ public class PrestoBatchWriter
             splitMutation(mutation, add, delete);
 
             if (add.size() > 0) {
-                indexer.get().index(add, incrementNumRows && delete.size() == 0);
+                indexer.get().index(add, incrementNumRows && delete.size() == 0, auths);
             }
 
             if (delete.size() > 0) {
@@ -306,9 +306,9 @@ public class PrestoBatchWriter
             throws AccumuloException, TableNotFoundException, AccumuloSecurityException
     {
         ImmutableMap.Builder<Triple<String, String, ColumnVisibility>, Object> columnUpdateBuilder = ImmutableMap.builder();
-        columnUpdates.entrySet().forEach(entry -> {
-            Pair<String, String> column = findColumnFamilyQualifier(entry.getKey().getLeft());
-            columnUpdateBuilder.put(Triple.of(column.getLeft(), column.getRight(), entry.getKey().getRight()), entry.getValue());
+        columnUpdates.forEach((key, value) -> {
+            Pair<String, String> column = findColumnFamilyQualifier(key.getLeft());
+            columnUpdateBuilder.put(Triple.of(column.getLeft(), column.getRight(), key.getRight()), value);
         });
         updateColumns(rowId, columnUpdateBuilder.build());
     }

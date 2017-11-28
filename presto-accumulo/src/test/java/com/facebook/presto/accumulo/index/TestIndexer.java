@@ -681,7 +681,7 @@ public class TestIndexer
         Indexer indexer = new Indexer(connector, table, multiTableBatchWriter, metricsWriter);
 
         dataWriter.addMutation(mutation);
-        indexer.index(mutation);
+        indexer.index(mutation, new Authorizations("private", "moreprivate"));
         metricsWriter.close();
         multiTableBatchWriter.close();
     }

@@ -13,10 +13,12 @@
  */
 package com.facebook.presto.accumulo.index;
 
+import com.facebook.presto.accumulo.AccumuloErrorCode;
 import com.facebook.presto.accumulo.Types;
 import com.facebook.presto.accumulo.index.metrics.MetricsStorage.TimestampPrecision;
 import com.facebook.presto.accumulo.index.metrics.MetricsWriter;
 import com.facebook.presto.accumulo.index.storage.IndexStorage;
+import com.facebook.presto.accumulo.index.storage.PostfixedIndexStorage;
 import com.facebook.presto.accumulo.index.storage.ShardedIndexStorage;
 import com.facebook.presto.accumulo.metadata.AccumuloTable;
 import com.facebook.presto.accumulo.model.AccumuloColumnHandle;
@@ -35,6 +37,7 @@ import com.google.common.collect.Multimap;
 import com.google.common.collect.MultimapBuilder;
 import com.google.common.collect.MultimapBuilder.ListMultimapBuilder;
 import com.google.common.primitives.Bytes;
+import io.airlift.log.Logger;
 import org.apache.accumulo.core.client.AccumuloException;
 import org.apache.accumulo.core.client.AccumuloSecurityException;
 import org.apache.accumulo.core.client.BatchScanner;
@@ -62,6 +65,7 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.sql.Timestamp;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
@@ -79,10 +83,12 @@ import static com.facebook.presto.accumulo.index.metrics.MetricsStorage.Timestam
 import static com.facebook.presto.accumulo.index.metrics.MetricsStorage.TimestampPrecision.SECOND;
 import static com.facebook.presto.accumulo.serializers.AccumuloRowSerializer.getBlockFromArray;
 import static com.facebook.presto.accumulo.serializers.AccumuloRowSerializer.getBlockFromMap;
+import static com.facebook.presto.spi.StandardErrorCode.FUNCTION_IMPLEMENTATION_ERROR;
 import static com.facebook.presto.spi.StandardErrorCode.NOT_FOUND;
 import static com.facebook.presto.spi.StandardErrorCode.NOT_SUPPORTED;
 import static com.facebook.presto.spi.type.TimestampType.TIMESTAMP;
 import static com.google.common.base.Preconditions.checkArgument;
+import static java.lang.String.format;
 import static java.nio.ByteBuffer.wrap;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static java.util.Objects.requireNonNull;
@@ -131,6 +137,7 @@ public class Indexer
     public static final byte[] EMPTY_BYTE = new byte[0];
     public static final byte[] HYPHEN_BYTE = new byte[] {'-'};
     public static final byte[] NULL_BYTE = new byte[] {'\0'};
+    public static final int WHOLE_ROW_ITERATOR_PRIORITY = 21;
 
     public static final Map<TimestampPrecision, byte[]> TIMESTAMP_CARDINALITY_FAMILIES = ImmutableMap.of(
             MILLISECOND, "".getBytes(UTF_8),
@@ -140,7 +147,7 @@ public class Indexer
             DAY, "_tsd".getBytes(UTF_8));
 
     private static final byte UNDERSCORE = '_';
-    public static final int WHOLE_ROW_ITERATOR_PRIORITY = 21;
+    private static final Logger LOG = Logger.get(Indexer.class);
 
     private final AccumuloTable table;
     private final MultiTableBatchWriter indexWriter;
@@ -179,11 +186,12 @@ public class Indexer
      * For higher throughput the modifications to the metrics table are tracked in memory and added to the metrics storage when the indexer is flushed or closed.
      *
      * @param mutation Mutation to index
+     * @param auths Authorizations to scan the table for deleting the entries.  For proper deletes, these authorizations must encapsulate whatever the visibility of the existing row is, otherwise you'll have duplicate values
      */
-    public void index(Mutation mutation)
+    public void index(Mutation mutation, Authorizations auths)
             throws AccumuloException, AccumuloSecurityException, TableNotFoundException
     {
-        index(mutation, true);
+        index(mutation, true, auths);
     }
 
     /**
@@ -197,8 +205,9 @@ public class Indexer
      *
      * @param mutation Mutation to index
      * @param increment True to increment the row count in the metrics table
+     * @param auths Authorizations to scan the table for deleting the entries.  For proper deletes, these authorizations must encapsulate whatever the visibility of the existing row is, otherwise you'll have duplicate values
      */
-    public void index(Mutation mutation, boolean increment)
+    public void index(Mutation mutation, boolean increment, Authorizations auths)
             throws AccumuloException, AccumuloSecurityException, TableNotFoundException
     {
         checkArgument(mutation.getUpdates().size() > 0, "Mutation must have at least one column update");
@@ -217,14 +226,26 @@ public class Indexer
             updates.put(Pair.of(family, qualifier), columnUpdate);
         }
 
-        applyUpdate(mutation.getRow(), updates, false);
+        applyUpdate(mutation.getRow(), updates, false, auths);
     }
 
-    public void index(Iterable<Mutation> mutations)
+    /**
+     * Index the given mutations, adding mutations to the index and metrics storage.
+     * This function will reject any mutation that contains any 'delete' updates.
+     * Use {@link Indexer#delete(Authorizations, Mutation)} if you need to delete index entries
+     * or {@link Indexer#delete(Authorizations, byte[])} if you want to delete an entire now.
+     * <p>
+     * Like typical use of a BatchWriter, this method does not flush mutations to the underlying index table.
+     * For higher throughput the modifications to the metrics table are tracked in memory and added to the metrics storage when the indexer is flushed or closed.
+     *
+     * @param mutations Mutations to index
+     * @param auths Authorizations to scan the table for deleting the entries.  For proper deletes, these authorizations must encapsulate whatever the visibility of the existing row is, otherwise you'll have duplicate values
+     */
+    public void index(Iterable<Mutation> mutations, Authorizations auths)
             throws AccumuloException, AccumuloSecurityException, TableNotFoundException
     {
         for (Mutation mutation : mutations) {
-            index(mutation, true);
+            index(mutation, true, auths);
         }
     }
 
@@ -282,7 +303,7 @@ public class Indexer
                 deleteEntries.put(Pair.of(family, qualifier), new ColumnUpdate(family.array(), qualifier.array(), visibility, true, deleteTimestamp, true, entry.getValue().get()));
             }
 
-            applyUpdate(rowBytes, deleteEntries, true);
+            applyUpdate(rowBytes, deleteEntries, true, auths);
         }
         finally {
             if (scanner != null) {
@@ -316,7 +337,7 @@ public class Indexer
         }
 
         // Apply the update mutations
-        applyUpdate(rowBytes, updateEntries, false);
+        applyUpdate(rowBytes, updateEntries, false, auths);
     }
 
     /**
@@ -376,7 +397,7 @@ public class Indexer
                     byte[] visibility = entry.getKey().getColumnVisibility(text).copyBytes();
                     deleteEntries.put(Pair.of(family, qualifier), new ColumnUpdate(family.array(), qualifier.array(), visibility, true, deleteTimestamp, true, entry.getValue().get()));
                 }
-                applyUpdate(rowId, deleteEntries, true);
+                applyUpdate(rowId, deleteEntries, true, auths);
                 metricsWriter.decrementRowCount();
             }
         }
@@ -417,21 +438,23 @@ public class Indexer
                 ByteBuffer qualifier = wrap(entry.getKey().getColumnQualifier(text).copyBytes());
 
                 // If this mutation contains a delete entry for this column
-                Optional<ColumnUpdate> deleteUpdate = mutation.getUpdates().stream().filter(update -> wrap(update.getColumnFamily()).equals(family) && wrap(update.getColumnQualifier()).equals(qualifier) && update.isDeleted()).findAny();
-                deleteUpdate.ifPresent(columnUpdate -> deleteEntries.put(
-                        Pair.of(family, qualifier),
-                        new ColumnUpdate(
-                                family.array(),
-                                qualifier.array(),
-                                entry.getKey().getColumnVisibility(text).copyBytes(),
-                                columnUpdate.hasTimestamp(),
-                                columnUpdate.getTimestamp(),
-                                true,
-                                entry.getValue().get())));
+                mutation.getUpdates().stream()
+                        .filter(update -> wrap(update.getColumnFamily()).equals(family) && wrap(update.getColumnQualifier()).equals(qualifier) && update.isDeleted())
+                        .forEach(columnUpdate ->
+                                deleteEntries.put(
+                                        Pair.of(family, qualifier),
+                                        new ColumnUpdate(
+                                                family.array(),
+                                                qualifier.array(),
+                                                entry.getKey().getColumnVisibility(text).copyBytes(),
+                                                columnUpdate.hasTimestamp(),
+                                                columnUpdate.getTimestamp(),
+                                                true,
+                                                entry.getValue().get())));
             }
 
             if (!deleteEntries.isEmpty()) {
-                applyUpdate(mutation.getRow(), deleteEntries, true);
+                applyUpdate(mutation.getRow(), deleteEntries, true, auths);
             }
         }
         finally {
@@ -467,7 +490,7 @@ public class Indexer
                 return timestamp.getAsLong();
             }
 
-            throw new PrestoException(StandardErrorCode.FUNCTION_IMPLEMENTATION_ERROR, "getTimestamp called with an empty list");
+            throw new PrestoException(FUNCTION_IMPLEMENTATION_ERROR, "getTimestamp called with an empty list");
         }
     }
 
@@ -477,7 +500,7 @@ public class Indexer
         METRIC
     }
 
-    private void applyUpdate(byte[] row, Multimap<Pair<ByteBuffer, ByteBuffer>, ColumnUpdate> updates, boolean delete)
+    private void applyUpdate(byte[] row, Multimap<Pair<ByteBuffer, ByteBuffer>, ColumnUpdate> updates, boolean delete, Authorizations auths)
             throws AccumuloException, AccumuloSecurityException, TableNotFoundException
     {
         // Start stepping through each index we want to create
@@ -489,7 +512,7 @@ public class Indexer
                     addIndexMutation(indexColumn, wrap(indexValue.getColumnQualifier()), wrap(indexValue.getColumnFamily()), row, new ColumnVisibility(indexValue.getColumnVisibility()), indexValue.hasTimestamp() ? Optional.of(indexValue.getTimestamp()) : Optional.empty());
                 }
                 else {
-                    deleteIndexMutation(indexColumn, wrap(indexValue.getColumnQualifier()), wrap(indexValue.getColumnFamily()), row, new ColumnVisibility(indexValue.getColumnVisibility()), indexValue.hasTimestamp() ? Optional.of(indexValue.getTimestamp()) : Optional.empty());
+                    deleteIndexMutation(indexColumn, wrap(indexValue.getColumnQualifier()), wrap(indexValue.getColumnFamily()), row, new ColumnVisibility(indexValue.getColumnVisibility()), indexValue.hasTimestamp() ? Optional.of(indexValue.getTimestamp()) : Optional.empty(), auths);
                 }
             }
 
@@ -507,19 +530,6 @@ public class Indexer
                 }
             }
         }
-    }
-
-    public static ListMultimap<Destination, ColumnUpdate> getIndexColumnUpdates(AccumuloTable table, IndexColumn indexColumn, Mutation mutation, AccumuloRowSerializer serializer)
-    {
-        // Convert the list of updates into a data structure we can use for indexing
-        ListMultimap<Pair<ByteBuffer, ByteBuffer>, ColumnUpdate> updates = ListMultimapBuilder.hashKeys().arrayListValues().build();
-        for (ColumnUpdate columnUpdate : mutation.getUpdates()) {
-            ByteBuffer family = wrap(columnUpdate.getColumnFamily());
-            ByteBuffer qualifier = wrap(columnUpdate.getColumnQualifier());
-            updates.put(Pair.of(family, qualifier), columnUpdate);
-        }
-
-        return getIndexColumnUpdates(table, indexColumn, updates, serializer);
     }
 
     private static ListMultimap<Destination, ColumnUpdate> getIndexColumnUpdates(AccumuloTable table, IndexColumn indexColumn, Multimap<Pair<ByteBuffer, ByteBuffer>, ColumnUpdate> updates, AccumuloRowSerializer serializer)
@@ -541,8 +551,14 @@ public class Indexer
             ColumnVisibility visibility = indexValueEntry.getKey();
             for (String column : indexColumn.getColumns()) {
                 AccumuloColumnHandle handle = table.getColumn(column);
-                byte[] family = handle.getFamily().get().getBytes(UTF_8);
-                byte[] qualifier = handle.getQualifier().get().getBytes(UTF_8);
+                byte[] family = handle.getFamily().orElseGet(() -> {
+                    throw new PrestoException(FUNCTION_IMPLEMENTATION_ERROR, format("Family for column handle %s is no present", column));
+                }).getBytes(UTF_8);
+
+                byte[] qualifier = handle.getQualifier().orElseGet(() -> {
+                    throw new PrestoException(FUNCTION_IMPLEMENTATION_ERROR, format("Qualifier for column handle %s is no present", column));
+                }).getBytes(UTF_8);
+
                 Type type = handle.getType();
                 for (ColumnUpdate baseUpdate : indexValueEntry.getValue().getValues(Pair.of(wrap(family), wrap(qualifier)))) {
                     if (Types.isArrayType(type)) {
@@ -597,8 +613,13 @@ public class Indexer
             AccumuloColumnHandle handle = table.getColumn(column);
 
             // Family/qualifier are guaranteed to exist due to pre-check in metadata
-            byte[] family = handle.getFamily().get().getBytes(UTF_8);
-            byte[] qualifier = handle.getQualifier().get().getBytes(UTF_8);
+            byte[] family = handle.getFamily().orElseGet(() -> {
+                throw new PrestoException(FUNCTION_IMPLEMENTATION_ERROR, format("Family for column handle %s is no present", column));
+            }).getBytes(UTF_8);
+
+            byte[] qualifier = handle.getQualifier().orElseGet(() -> {
+                throw new PrestoException(FUNCTION_IMPLEMENTATION_ERROR, format("Qualifier for column handle %s is no present", column));
+            }).getBytes(UTF_8);
 
             indexFamilyBuilder = indexFamilyBuilder.length == 0
                     ? getIndexColumnFamily(family, qualifier)
@@ -612,10 +633,15 @@ public class Indexer
         Map<ColumnVisibility, IndexValues> visibilityToIndexValues = new HashMap<>();
         for (String column : indexColumn.getColumns()) {
             AccumuloColumnHandle handle = table.getColumn(column);
-
             // Family/qualifier are guaranteed to exist due to pre-check in metadata
-            ByteBuffer family = wrap(handle.getFamily().get().getBytes(UTF_8));
-            ByteBuffer qualifier = wrap(handle.getQualifier().get().getBytes(UTF_8));
+            ByteBuffer family = wrap(handle.getFamily().orElseGet(() -> {
+                throw new PrestoException(FUNCTION_IMPLEMENTATION_ERROR, format("Family for column handle %s is no present", column));
+            }).getBytes(UTF_8));
+
+            ByteBuffer qualifier = wrap(handle.getQualifier().orElseGet(() -> {
+                throw new PrestoException(FUNCTION_IMPLEMENTATION_ERROR, format("Qualifier for column handle %s is no present", column));
+            }).getBytes(UTF_8));
+
             Pair<ByteBuffer, ByteBuffer> familyQualifierPair = Pair.of(family, qualifier);
 
             // Populate the map of visibility to the entries containing that visibility
@@ -698,12 +724,40 @@ public class Indexer
         indexWriter.getBatchWriter(column.getIndexTable()).addMutation(indexMutation);
     }
 
-    private void deleteIndexMutation(IndexColumn column, ByteBuffer row, ByteBuffer family, byte[] qualifier, ColumnVisibility visibility, Optional<Long> timestamp)
+    private void deleteIndexMutation(IndexColumn column, ByteBuffer row, ByteBuffer family, byte[] qualifier, ColumnVisibility visibility, Optional<Long> timestamp, Authorizations auths)
             throws AccumuloException, AccumuloSecurityException, TableNotFoundException
     {
         byte[] rowBytes = row.array();
         for (IndexStorage storage : column.getIndexStorageMethods()) {
-            rowBytes = storage.encode(rowBytes);
+            if (storage instanceof PostfixedIndexStorage) {
+                Scanner scanner = null;
+                try {
+                    scanner = connector.createScanner(column.getIndexTable(), auths);
+                    scanner.fetchColumn(new Text(family.array()), new Text(qualifier));
+                    Iterator<Entry<Key, Value>> iterator = scanner.iterator();
+                    if (iterator.hasNext()) {
+                        rowBytes = iterator.next().getKey().getRow().copyBytes();
+                    }
+                    else {
+                        LOG.warn("Failed to scan postfixed index entry for %s from %s", new String(rowBytes, UTF_8), column.getIndexTable());
+                    }
+
+                    if (iterator.hasNext()) {
+                        LOG.warn("Iterator has another postfixed index entry for %s from %s", new String(rowBytes, UTF_8), column.getIndexTable());
+                    }
+                }
+                catch (TableNotFoundException e) {
+                    throw new PrestoException(AccumuloErrorCode.ACCUMULO_TABLE_DNE, format("Index table %s does not exist", column.getIndexTable()));
+                }
+                finally {
+                    if (scanner != null) {
+                        scanner.close();
+                    }
+                }
+            }
+            else {
+                rowBytes = storage.encode(rowBytes);
+            }
         }
 
         // Create the mutation and add it to the batch writer

@@ -17,6 +17,7 @@ import com.facebook.presto.accumulo.AccumuloQueryRunner;
 import com.facebook.presto.accumulo.conf.AccumuloConfig;
 import com.facebook.presto.accumulo.index.metrics.MetricCacheKey;
 import com.facebook.presto.accumulo.index.metrics.MetricsStorage;
+import com.facebook.presto.accumulo.index.storage.PostfixedIndexStorage;
 import com.facebook.presto.accumulo.index.storage.ShardedIndexStorage;
 import com.facebook.presto.accumulo.metadata.AccumuloTable;
 import com.facebook.presto.accumulo.model.AccumuloColumnHandle;
@@ -48,6 +49,7 @@ import java.util.Optional;
 import java.util.stream.Collectors;
 
 import static com.facebook.presto.accumulo.index.metrics.AccumuloMetricsStorage.ENCODER;
+import static com.facebook.presto.accumulo.metadata.AccumuloTable.DEFAULT_NUM_POSTFIX_BYTES;
 import static com.facebook.presto.accumulo.metadata.AccumuloTable.DEFAULT_NUM_SHARDS;
 import static com.facebook.presto.accumulo.serializers.AccumuloRowSerializer.getBlockFromArray;
 import static com.facebook.presto.spi.type.BigintType.BIGINT;
@@ -112,7 +114,7 @@ public class TestPrestoBatchWriter
         AccumuloColumnHandle c3 = new AccumuloColumnHandle("firstname", Optional.of("cf"), Optional.of("firstname"), VARCHAR, 2, "");
         AccumuloColumnHandle c4 = new AccumuloColumnHandle("arr", Optional.of("cf"), Optional.of("arr"), new ArrayType(VARCHAR), 3, "");
 
-        table = new AccumuloTable("default", "presto_batch_writer_test_table", ImmutableList.of(c1, c2, c3, c4), "id", false, LexicoderRowSerializer.class.getCanonicalName(), null, Optional.empty(), false, Optional.of(format("age-shard:%s,firstname,arr", DEFAULT_NUM_SHARDS)));
+        table = new AccumuloTable("default", "presto_batch_writer_test_table", ImmutableList.of(c1, c2, c3, c4), "id", false, LexicoderRowSerializer.class.getCanonicalName(), null, Optional.empty(), false, Optional.of(format("age-shard:%s,firstname-postfix:%s,arr", DEFAULT_NUM_SHARDS, DEFAULT_NUM_POSTFIX_BYTES)));
 
         m1 = new Mutation(M1_ROWID);
         m1.put(ROW_ID_COLUMN, ROW_ID_COLUMN, M1_ROWID);
@@ -220,8 +222,8 @@ public class TestPrestoBatchWriter
         scan = createIndexScanner(2, "cf_firstname");
         iter = scan.iterator();
         assertTrue(iter.hasNext());
-        assertKeyValuePair(iter.next(), M1_FNAME_VALUE, "cf_firstname", "row1", "");
         assertKeyValuePair(iter.next(), M1_FNAME_VALUE, "cf_firstname_car", "car", ENCODER.encode(1L));
+        assertKeyValuePairDecodePostFix(iter.next(), M1_FNAME_VALUE, "cf_firstname", "row1", "");
         assertFalse(iter.hasNext());
         scan.close();
 
@@ -277,10 +279,10 @@ public class TestPrestoBatchWriter
         scan = createIndexScanner(2, "cf_firstname");
         iter = scan.iterator();
         assertTrue(iter.hasNext());
-        assertKeyValuePair(iter.next(), M1_FNAME_VALUE, "cf_firstname", "row1", "");
         assertKeyValuePair(iter.next(), M1_FNAME_VALUE, "cf_firstname_car", "car", ENCODER.encode(1L));
-        assertKeyValuePair(iter.next(), M2_FNAME_VALUE, "cf_firstname", "row2", "");
+        assertKeyValuePairDecodePostFix(iter.next(), M1_FNAME_VALUE, "cf_firstname", "row1", "");
         assertKeyValuePair(iter.next(), M2_FNAME_VALUE, "cf_firstname_car", "car", ENCODER.encode(1L));
+        assertKeyValuePairDecodePostFix(iter.next(), M2_FNAME_VALUE, "cf_firstname", "row2", "");
         assertFalse(iter.hasNext());
         scan.close();
 
@@ -347,12 +349,12 @@ public class TestPrestoBatchWriter
         scan = createIndexScanner(2, "cf_firstname");
         iter = scan.iterator();
         assertTrue(iter.hasNext());
-        assertKeyValuePair(iter.next(), M1_FNAME_VALUE, "cf_firstname", "row1", "");
         assertKeyValuePair(iter.next(), M1_FNAME_VALUE, "cf_firstname_car", "car", ENCODER.encode(1L));
-        assertKeyValuePair(iter.next(), M2_FNAME_VALUE, "cf_firstname", "row2", "");
+        assertKeyValuePairDecodePostFix(iter.next(), M1_FNAME_VALUE, "cf_firstname", "row1", "");
         assertKeyValuePair(iter.next(), M2_FNAME_VALUE, "cf_firstname_car", "car", ENCODER.encode(1L));
-        assertKeyValuePair(iter.next(), M3_FNAME_VALUE, "cf_firstname", "row3", "");
+        assertKeyValuePairDecodePostFix(iter.next(), M2_FNAME_VALUE, "cf_firstname", "row2", "");
         assertKeyValuePair(iter.next(), M3_FNAME_VALUE, "cf_firstname_car", "car", ENCODER.encode(1L));
+        assertKeyValuePairDecodePostFix(iter.next(), M3_FNAME_VALUE, "cf_firstname", "row3", "");
         assertFalse(iter.hasNext());
         scan.close();
 
@@ -436,12 +438,12 @@ public class TestPrestoBatchWriter
         scan = createIndexScanner(2, "cf_firstname");
         iter = scan.iterator();
         assertTrue(iter.hasNext());
-        assertKeyValuePair(iter.next(), M1_FNAME_VALUE, "cf_firstname", "row1", "");
         assertKeyValuePair(iter.next(), M1_FNAME_VALUE, "cf_firstname_car", "car", ENCODER.encode(1L));
-        assertKeyValuePair(iter.next(), M2_FNAME_VALUE, "cf_firstname", "row2", "");
+        assertKeyValuePairDecodePostFix(iter.next(), M1_FNAME_VALUE, "cf_firstname", "row1", "");
         assertKeyValuePair(iter.next(), M2_FNAME_VALUE, "cf_firstname_car", "car", ENCODER.encode(1L));
-        assertKeyValuePair(iter.next(), M3_FNAME_VALUE, "cf_firstname", "row3", "");
+        assertKeyValuePairDecodePostFix(iter.next(), M2_FNAME_VALUE, "cf_firstname", "row2", "");
         assertKeyValuePair(iter.next(), M3_FNAME_VALUE, "cf_firstname_car", "car", ENCODER.encode(1L));
+        assertKeyValuePairDecodePostFix(iter.next(), M3_FNAME_VALUE, "cf_firstname", "row3", "");
         assertFalse(iter.hasNext());
         scan.close();
 
@@ -507,8 +509,8 @@ public class TestPrestoBatchWriter
         scan = createIndexScanner(2, "cf_firstname");
         iter = scan.iterator();
         assertTrue(iter.hasNext());
-        assertKeyValuePair(iter.next(), M1_FNAME_VALUE, "cf_firstname", "row1", "");
         assertKeyValuePair(iter.next(), M1_FNAME_VALUE, "cf_firstname_car", "car", ENCODER.encode(1L));
+        assertKeyValuePairDecodePostFix(iter.next(), M1_FNAME_VALUE, "cf_firstname", "row1", "");
         assertFalse(iter.hasNext());
         scan.close();
 
@@ -567,10 +569,10 @@ public class TestPrestoBatchWriter
         scan = createIndexScanner(2, "cf_firstname");
         iter = scan.iterator();
         assertTrue(iter.hasNext());
-        assertKeyValuePair(iter.next(), M1_FNAME_VALUE, "cf_firstname", "row1", "");
         assertKeyValuePair(iter.next(), M1_FNAME_VALUE, "cf_firstname_car", "car", ENCODER.encode(1L));
-        assertKeyValuePair(iter.next(), M2_FNAME_VALUE, "cf_firstname", "row2", "private", "");
+        assertKeyValuePairDecodePostFix(iter.next(), M1_FNAME_VALUE, "cf_firstname", "row1", "");
         assertKeyValuePair(iter.next(), M2_FNAME_VALUE, "cf_firstname_car", "car", "private", ENCODER.encode(1L));
+        assertKeyValuePairDecodePostFix(iter.next(), M2_FNAME_VALUE, "cf_firstname", "row2", "private", "");
         assertFalse(iter.hasNext());
         scan.close();
 
@@ -643,12 +645,12 @@ public class TestPrestoBatchWriter
         scan = createIndexScanner(2, "cf_firstname");
         iter = scan.iterator();
         assertTrue(iter.hasNext());
-        assertKeyValuePair(iter.next(), M1_FNAME_VALUE, "cf_firstname", "row1", "");
         assertKeyValuePair(iter.next(), M1_FNAME_VALUE, "cf_firstname_car", "car", ENCODER.encode(1L));
-        assertKeyValuePair(iter.next(), M2_FNAME_VALUE, "cf_firstname", "row2", "private", "");
+        assertKeyValuePairDecodePostFix(iter.next(), M1_FNAME_VALUE, "cf_firstname", "row1", "");
         assertKeyValuePair(iter.next(), M2_FNAME_VALUE, "cf_firstname_car", "car", "private", ENCODER.encode(1L));
-        assertKeyValuePair(iter.next(), M3_FNAME_VALUE, "cf_firstname", "row3", "moreprivate", "");
+        assertKeyValuePairDecodePostFix(iter.next(), M2_FNAME_VALUE, "cf_firstname", "row2", "private", "");
         assertKeyValuePair(iter.next(), M3_FNAME_VALUE, "cf_firstname_car", "car", "moreprivate", ENCODER.encode(1L));
+        assertKeyValuePairDecodePostFix(iter.next(), M3_FNAME_VALUE, "cf_firstname", "row3", "moreprivate", "");
         assertFalse(iter.hasNext());
         scan.close();
 
@@ -740,12 +742,12 @@ public class TestPrestoBatchWriter
         scan = createIndexScanner(2, "cf_firstname");
         iter = scan.iterator();
         assertTrue(iter.hasNext());
-        assertKeyValuePair(iter.next(), M1_FNAME_VALUE, "cf_firstname", "row1", "");
         assertKeyValuePair(iter.next(), M1_FNAME_VALUE, "cf_firstname_car", "car", ENCODER.encode(1L));
-        assertKeyValuePair(iter.next(), M2_FNAME_VALUE, "cf_firstname", "row2", "private", "");
+        assertKeyValuePairDecodePostFix(iter.next(), M1_FNAME_VALUE, "cf_firstname", "row1", "");
         assertKeyValuePair(iter.next(), M2_FNAME_VALUE, "cf_firstname_car", "car", "private", ENCODER.encode(1L));
-        assertKeyValuePair(iter.next(), M3_FNAME_VALUE, "cf_firstname", "row3", "moreprivate", "");
+        assertKeyValuePairDecodePostFix(iter.next(), M2_FNAME_VALUE, "cf_firstname", "row2", "private", "");
         assertKeyValuePair(iter.next(), M3_FNAME_VALUE, "cf_firstname_car", "car", "moreprivate", ENCODER.encode(1L));
+        assertKeyValuePairDecodePostFix(iter.next(), M3_FNAME_VALUE, "cf_firstname", "row3", "moreprivate", "");
         assertFalse(iter.hasNext());
         scan.close();
 
@@ -835,12 +837,12 @@ public class TestPrestoBatchWriter
         scan = createIndexScanner(2, "cf_firstname");
         iter = scan.iterator();
         assertTrue(iter.hasNext());
-        assertKeyValuePair(iter.next(), M1_FNAME_VALUE, "cf_firstname", "row1", "");
         assertKeyValuePair(iter.next(), M1_FNAME_VALUE, "cf_firstname_car", "car", ENCODER.encode(1L));
-        assertKeyValuePair(iter.next(), M2_FNAME_VALUE, "cf_firstname", "row2", "private", "");
+        assertKeyValuePairDecodePostFix(iter.next(), M1_FNAME_VALUE, "cf_firstname", "row1", "");
         assertKeyValuePair(iter.next(), M2_FNAME_VALUE, "cf_firstname_car", "car", "private", ENCODER.encode(1L));
-        assertKeyValuePair(iter.next(), M3_FNAME_VALUE, "cf_firstname", "row3", "moreprivate", "");
+        assertKeyValuePairDecodePostFix(iter.next(), M2_FNAME_VALUE, "cf_firstname", "row2", "private", "");
         assertKeyValuePair(iter.next(), M3_FNAME_VALUE, "cf_firstname_car", "car", "moreprivate", ENCODER.encode(1L));
+        assertKeyValuePairDecodePostFix(iter.next(), M3_FNAME_VALUE, "cf_firstname", "row3", "moreprivate", "");
         assertFalse(iter.hasNext());
         scan.close();
 
@@ -940,12 +942,12 @@ public class TestPrestoBatchWriter
         scan = createIndexScanner(2, "cf_firstname");
         iter = scan.iterator();
         assertTrue(iter.hasNext());
-        assertKeyValuePair(iter.next(), M1_FNAME_VALUE, "cf_firstname", "row3", "private", "");
         assertKeyValuePair(iter.next(), M1_FNAME_VALUE, "cf_firstname_car", "car", "private", ENCODER.encode(1L));
-        assertKeyValuePair(iter.next(), M2_FNAME_VALUE, "cf_firstname", "row1", "");
+        assertKeyValuePairDecodePostFix(iter.next(), M1_FNAME_VALUE, "cf_firstname", "row3", "private", "");
         assertKeyValuePair(iter.next(), M2_FNAME_VALUE, "cf_firstname_car", "car", ENCODER.encode(1L));
-        assertKeyValuePair(iter.next(), M3_FNAME_VALUE, "cf_firstname", "row2", "moreprivate", "");
+        assertKeyValuePairDecodePostFix(iter.next(), M2_FNAME_VALUE, "cf_firstname", "row1", "");
         assertKeyValuePair(iter.next(), M3_FNAME_VALUE, "cf_firstname_car", "car", "moreprivate", ENCODER.encode(1L));
+        assertKeyValuePairDecodePostFix(iter.next(), M3_FNAME_VALUE, "cf_firstname", "row2", "moreprivate", "");
         assertFalse(iter.hasNext());
         scan.close();
 
@@ -1028,10 +1030,10 @@ public class TestPrestoBatchWriter
         scan = createIndexScanner(2, "cf_firstname");
         iter = scan.iterator();
         assertTrue(iter.hasNext());
-        assertKeyValuePair(iter.next(), M1_FNAME_VALUE, "cf_firstname", "row1", "");
         assertKeyValuePair(iter.next(), M1_FNAME_VALUE, "cf_firstname_car", "car", ENCODER.encode(1L));
-        assertKeyValuePair(iter.next(), M3_FNAME_VALUE, "cf_firstname", "row3", "moreprivate", "");
+        assertKeyValuePairDecodePostFix(iter.next(), M1_FNAME_VALUE, "cf_firstname", "row1", "");
         assertKeyValuePair(iter.next(), M3_FNAME_VALUE, "cf_firstname_car", "car", "moreprivate", ENCODER.encode(1L));
+        assertKeyValuePairDecodePostFix(iter.next(), M3_FNAME_VALUE, "cf_firstname", "row3", "moreprivate", "");
         assertFalse(iter.hasNext());
         scan.close();
 
@@ -1166,12 +1168,12 @@ public class TestPrestoBatchWriter
         scan = createIndexScanner(2, "cf_firstname");
         iter = scan.iterator();
         assertTrue(iter.hasNext());
-        assertKeyValuePair(iter.next(), M1_FNAME_VALUE, "cf_firstname", "row1", "");
         assertKeyValuePair(iter.next(), M1_FNAME_VALUE, "cf_firstname_car", "car", ENCODER.encode(1L));
-        assertKeyValuePair(iter.next(), M2_FNAME_VALUE, "cf_firstname", "row2", "private", "");
+        assertKeyValuePairDecodePostFix(iter.next(), M1_FNAME_VALUE, "cf_firstname", "row1", "");
         assertKeyValuePair(iter.next(), M2_FNAME_VALUE, "cf_firstname_car", "car", "private", ENCODER.encode(1L));
-        assertKeyValuePair(iter.next(), M3_FNAME_VALUE, "cf_firstname", "row3", "moreprivate", "");
+        assertKeyValuePairDecodePostFix(iter.next(), M2_FNAME_VALUE, "cf_firstname", "row2", "private", "");
         assertKeyValuePair(iter.next(), M3_FNAME_VALUE, "cf_firstname_car", "car", "moreprivate", ENCODER.encode(1L));
+        assertKeyValuePairDecodePostFix(iter.next(), M3_FNAME_VALUE, "cf_firstname", "row3", "moreprivate", "");
         assertFalse(iter.hasNext());
         scan.close();
 
@@ -1247,12 +1249,12 @@ public class TestPrestoBatchWriter
         scan = createIndexScanner(2, "cf_firstname");
         iter = scan.iterator();
         assertTrue(iter.hasNext());
-        assertKeyValuePair(iter.next(), M1_FNAME_VALUE, "cf_firstname", "row1", "");
         assertKeyValuePair(iter.next(), M1_FNAME_VALUE, "cf_firstname_car", "car", ENCODER.encode(1L));
-        assertKeyValuePair(iter.next(), M3_FNAME_VALUE, "cf_firstname", "row3", "moreprivate", "");
+        assertKeyValuePairDecodePostFix(iter.next(), M1_FNAME_VALUE, "cf_firstname", "row1", "");
         assertKeyValuePair(iter.next(), M3_FNAME_VALUE, "cf_firstname_car", "car", "moreprivate", ENCODER.encode(1L));
-        assertKeyValuePair(iter.next(), UPDATED_M2_FNAME_VALUE, "cf_firstname", "row2", "moreprivate", "");
+        assertKeyValuePairDecodePostFix(iter.next(), M3_FNAME_VALUE, "cf_firstname", "row3", "moreprivate", "");
         assertKeyValuePair(iter.next(), UPDATED_M2_FNAME_VALUE, "cf_firstname_car", "car", "moreprivate", ENCODER.encode(1L));
+        assertKeyValuePairDecodePostFix(iter.next(), UPDATED_M2_FNAME_VALUE, "cf_firstname", "row2", "moreprivate", "");
         assertFalse(iter.hasNext());
         scan.close();
 
@@ -1329,12 +1331,12 @@ public class TestPrestoBatchWriter
         scan = createIndexScanner(2, "cf_firstname");
         iter = scan.iterator();
         assertTrue(iter.hasNext());
-        assertKeyValuePair(iter.next(), M1_FNAME_VALUE, "cf_firstname", "row1", "");
         assertKeyValuePair(iter.next(), M1_FNAME_VALUE, "cf_firstname_car", "car", ENCODER.encode(1L));
-        assertKeyValuePair(iter.next(), M3_FNAME_VALUE, "cf_firstname", "row3", "moreprivate", "");
+        assertKeyValuePairDecodePostFix(iter.next(), M1_FNAME_VALUE, "cf_firstname", "row1", "");
         assertKeyValuePair(iter.next(), M3_FNAME_VALUE, "cf_firstname_car", "car", "moreprivate", ENCODER.encode(1L));
-        assertKeyValuePair(iter.next(), UPDATED_M2_FNAME_VALUE, "cf_firstname", "row2", "moreprivate", "");
+        assertKeyValuePairDecodePostFix(iter.next(), M3_FNAME_VALUE, "cf_firstname", "row3", "moreprivate", "");
         assertKeyValuePair(iter.next(), UPDATED_M2_FNAME_VALUE, "cf_firstname_car", "car", "moreprivate", ENCODER.encode(1L));
+        assertKeyValuePairDecodePostFix(iter.next(), UPDATED_M2_FNAME_VALUE, "cf_firstname", "row2", "moreprivate", "");
         assertFalse(iter.hasNext());
         scan.close();
 
@@ -1421,12 +1423,12 @@ public class TestPrestoBatchWriter
         scan = createIndexScanner(2, "cf_firstname");
         iter = scan.iterator();
         assertTrue(iter.hasNext());
-        assertKeyValuePair(iter.next(), M1_FNAME_VALUE, "cf_firstname", "row1", "");
         assertKeyValuePair(iter.next(), M1_FNAME_VALUE, "cf_firstname_car", "car", ENCODER.encode(1L));
-        assertKeyValuePair(iter.next(), M3_FNAME_VALUE, "cf_firstname", "row3", "moreprivate", "");
+        assertKeyValuePairDecodePostFix(iter.next(), M1_FNAME_VALUE, "cf_firstname", "row1", "");
         assertKeyValuePair(iter.next(), M3_FNAME_VALUE, "cf_firstname_car", "car", "moreprivate", ENCODER.encode(1L));
-        assertKeyValuePair(iter.next(), UPDATED_M2_FNAME_VALUE, "cf_firstname", "row2", "moreprivate", "");
+        assertKeyValuePairDecodePostFix(iter.next(), M3_FNAME_VALUE, "cf_firstname", "row3", "moreprivate", "");
         assertKeyValuePair(iter.next(), UPDATED_M2_FNAME_VALUE, "cf_firstname_car", "car", "moreprivate", ENCODER.encode(1L));
+        assertKeyValuePairDecodePostFix(iter.next(), UPDATED_M2_FNAME_VALUE, "cf_firstname", "row2", "moreprivate", "");
         assertFalse(iter.hasNext());
         scan.close();
 
@@ -1501,10 +1503,10 @@ public class TestPrestoBatchWriter
         scan = createIndexScanner(2, "cf_firstname");
         iter = scan.iterator();
         assertTrue(iter.hasNext());
-        assertKeyValuePair(iter.next(), M2_FNAME_VALUE, "cf_firstname", "row2", "private", "");
         assertKeyValuePair(iter.next(), M2_FNAME_VALUE, "cf_firstname_car", "car", "private", ENCODER.encode(1L));
-        assertKeyValuePair(iter.next(), M3_FNAME_VALUE, "cf_firstname", "row3", "moreprivate", "");
+        assertKeyValuePairDecodePostFix(iter.next(), M2_FNAME_VALUE, "cf_firstname", "row2", "private", "");
         assertKeyValuePair(iter.next(), M3_FNAME_VALUE, "cf_firstname_car", "car", "moreprivate", ENCODER.encode(1L));
+        assertKeyValuePairDecodePostFix(iter.next(), M3_FNAME_VALUE, "cf_firstname", "row3", "moreprivate", "");
         assertFalse(iter.hasNext());
         scan.close();
 
@@ -1555,8 +1557,8 @@ public class TestPrestoBatchWriter
         scan = createIndexScanner(2, "cf_firstname");
         iter = scan.iterator();
         assertTrue(iter.hasNext());
-        assertKeyValuePair(iter.next(), M3_FNAME_VALUE, "cf_firstname", "row3", "moreprivate", "");
         assertKeyValuePair(iter.next(), M3_FNAME_VALUE, "cf_firstname_car", "car", "moreprivate", ENCODER.encode(1L));
+        assertKeyValuePairDecodePostFix(iter.next(), M3_FNAME_VALUE, "cf_firstname", "row3", "moreprivate", "");
         assertFalse(iter.hasNext());
         scan.close();
 
@@ -1644,6 +1646,30 @@ public class TestPrestoBatchWriter
     private MetricCacheKey mck(String indexTable, String family, byte[] range, String... auths)
     {
         return new MetricCacheKey(indexTable, new Text(family), new Authorizations(auths), new Range(new Text(range)), metricsStorage);
+    }
+
+    private void assertKeyValuePairDecodePostFix(Entry<Key, Value> e, byte[] row, String cf, String cq, String value)
+    {
+        assertKeyValuePairDecodePostFix(e, row, cf, cq, value.getBytes(UTF_8));
+    }
+
+    private void assertKeyValuePairDecodePostFix(Entry<Key, Value> e, byte[] row, String cf, String cq, byte[] value)
+    {
+        assertEquals(new PostfixedIndexStorage(DEFAULT_NUM_POSTFIX_BYTES).decode(e.getKey().getRow().copyBytes()), row);
+        assertEquals(e.getKey().getColumnFamily().toString(), cf);
+        assertEquals(e.getKey().getColumnQualifier().toString(), cq);
+        assertTrue(e.getKey().getTimestamp() > 0, "Timestamp is zero");
+        assertEquals(e.getValue().get(), value);
+    }
+
+    private void assertKeyValuePairDecodePostFix(Entry<Key, Value> e, byte[] row, String cf, String cq, String cv, String value)
+    {
+        assertEquals(new PostfixedIndexStorage(DEFAULT_NUM_POSTFIX_BYTES).decode(e.getKey().getRow().copyBytes()), row);
+        assertEquals(e.getKey().getColumnFamily().toString(), cf);
+        assertEquals(e.getKey().getColumnQualifier().toString(), cq);
+        assertEquals(e.getKey().getColumnVisibility().toString(), cv);
+        assertTrue(e.getKey().getTimestamp() > 0, "Timestamp is zero");
+        assertEquals(e.getValue().toString(), value);
     }
 
     private void assertKeyValuePair(Entry<Key, Value> e, byte[] row, String cf, String cq, String value)
