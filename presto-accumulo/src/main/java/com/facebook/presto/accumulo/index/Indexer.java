@@ -532,7 +532,7 @@ public class Indexer
         }
     }
 
-    private static ListMultimap<Destination, ColumnUpdate> getIndexColumnUpdates(AccumuloTable table, IndexColumn indexColumn, Multimap<Pair<ByteBuffer, ByteBuffer>, ColumnUpdate> updates, AccumuloRowSerializer serializer)
+    public static ListMultimap<Destination, ColumnUpdate> getIndexColumnUpdates(AccumuloTable table, IndexColumn indexColumn, Multimap<Pair<ByteBuffer, ByteBuffer>, ColumnUpdate> updates, AccumuloRowSerializer serializer)
     {
         // We'll first need to gather all of the values together by column visibility
         // This ensures the index entries we create will have the same visibility labels as the mutations
