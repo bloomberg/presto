@@ -48,6 +48,7 @@ import org.apache.accumulo.core.iterators.user.WholeRowIterator;
 import org.apache.accumulo.core.security.Authorizations;
 import org.apache.accumulo.core.security.ColumnVisibility;
 import org.apache.commons.lang3.tuple.Pair;
+import org.apache.commons.lang3.tuple.Triple;
 import org.apache.hadoop.io.Text;
 
 import java.io.IOException;
@@ -267,12 +268,29 @@ public class PrestoBatchWriter
      *
      * @param rowId Row ID, a Java object of the row value
      * @param columnName Presto column name to update
-     * @param value New value of the row
+     * @param value New value of the cell
      */
     public void updateColumnByName(Object rowId, String columnName, Object value)
             throws AccumuloException, TableNotFoundException, AccumuloSecurityException
     {
         updateColumnByName(rowId, columnName, new ColumnVisibility(), value);
+    }
+
+    /**
+     * Update the column of the row to the given value, identified by the Presto column name, using an empty column visibility.
+     * <br>
+     * The previous value is used for faster updates by creating the proper delete mutations instead of querying Accumulo.
+     * Failure to provide the correct previous value will result in data inconsistencies.
+     *
+     * @param rowId Row ID, a Java object of the row value
+     * @param columnName Presto column name to update
+     * @param value New value of the cell
+     * @param prevValue Previous value of the cell
+     */
+    public void updateColumnByNameWithPrevious(Object rowId, String columnName, Object value, Object prevValue)
+            throws AccumuloException, TableNotFoundException, AccumuloSecurityException
+    {
+        updateColumnByNameWithPrevious(rowId, columnName, new ColumnVisibility(), value, prevValue);
     }
 
     /**
@@ -283,13 +301,31 @@ public class PrestoBatchWriter
      * @param rowId Row ID, a Java object of the row value
      * @param columnName Presto column name to update
      * @param visibility Column visibility of the new cell in the table
-     * @param value New value of the row
+     * @param value New value of the cell
      */
     public void updateColumnByName(Object rowId, String columnName, ColumnVisibility visibility, Object value)
             throws AccumuloException, TableNotFoundException, AccumuloSecurityException
     {
         Pair<String, String> column = findColumnFamilyQualifier(columnName);
         updateColumn(rowId, column.getLeft(), column.getRight(), visibility, value);
+    }
+
+    /**
+     * Update the column of the row to the given value, identified by the Presto column name, using an the given visibility.
+     * <br>
+     * The previous value is used for faster updates by creating the proper delete mutations instead of querying Accumulo.
+     * Failure to provide the correct previous value will result in data inconsistencies.
+     *
+     * @param rowId Row ID, a Java object of the row value
+     * @param columnName Presto column name to update
+     * @param value New value of the cell
+     * @param prevValue Previous value of the cell
+     */
+    public void updateColumnByNameWithPrevious(Object rowId, String columnName, ColumnVisibility visibility, Object value, Object prevValue)
+            throws AccumuloException, TableNotFoundException, AccumuloSecurityException
+    {
+        Pair<String, String> column = findColumnFamilyQualifier(columnName);
+        updateColumnWithPrevious(rowId, column.getLeft(), column.getRight(), visibility, value, prevValue);
     }
 
     /**
@@ -328,6 +364,27 @@ public class PrestoBatchWriter
         Multimap<Pair<ByteBuffer, ByteBuffer>, Pair<ColumnVisibility, Object>> updates = MultimapBuilder.hashKeys().arrayListValues().build();
         updates.put(Pair.of(wrap(family.getBytes(UTF_8)), wrap(qualifier.getBytes(UTF_8))), Pair.of(visibility, value));
         updateColumns(rowId, updates);
+    }
+
+    /**
+     * Update the given column of the row to the given value, identified by the Accumulo column family/qualifier/visibility.
+     * <br>
+     * The previous value is used for faster updates by creating the proper delete mutations instead of querying Accumulo.
+     * Failure to provide the correct previous value will result in data inconsistencies.
+     *
+     * @param rowId Row ID, a Java object of the row value
+     * @param family Accumulo column family
+     * @param qualifier Accumulo column qualifier
+     * @param visibility Accumulo column visibility
+     * @param value New value of the row
+     * @param prevValue Previous value of the row
+     */
+    public void updateColumnWithPrevious(Object rowId, String family, String qualifier, ColumnVisibility visibility, Object value, Object prevValue)
+            throws AccumuloException, TableNotFoundException, AccumuloSecurityException
+    {
+        Multimap<Pair<ByteBuffer, ByteBuffer>, Triple<ColumnVisibility, Object, Object>> updates = MultimapBuilder.hashKeys().arrayListValues().build();
+        updates.put(Pair.of(wrap(family.getBytes(UTF_8)), wrap(qualifier.getBytes(UTF_8))), Triple.of(visibility, value, prevValue));
+        updateColumnsWithPrevious(rowId, updates);
     }
 
     /**
@@ -390,6 +447,58 @@ public class PrestoBatchWriter
             else {
                 // Encode POJO
                 value = new Value(setText(type, entry.getValue().getRight(), text, serializer).copyBytes());
+            }
+
+            updateMutation.put(
+                    new Text(entry.getKey().getLeft().array()),
+                    new Text(entry.getKey().getRight().array()),
+                    entry.getValue().getLeft(),
+                    updateTimestamp,
+                    value);
+        }
+
+        // Update data table
+        dataWriter.addMutation(updateMutation);
+    }
+
+    public void updateColumnsWithPrevious(Object rowId, Multimap<Pair<ByteBuffer, ByteBuffer>, Triple<ColumnVisibility, Object, Object>> columnUpdates)
+            throws AccumuloException, TableNotFoundException, AccumuloSecurityException
+    {
+        // Get Row ID
+        Text text = new Text();
+        byte[] rowBytes = setText(columns.get(rowIdOrdinal).getType(), rowId, text, serializer).copyBytes();
+
+        // Update index first, which uses the existing entry in the data table
+        if (indexer.isPresent()) {
+            indexer.get().updateWithPrevious(rowBytes, columnUpdates, auths);
+        }
+
+        // Create delete mutation for data store
+        long deleteTimestamp = System.currentTimeMillis();
+        for (Entry<Pair<ByteBuffer, ByteBuffer>, Triple<ColumnVisibility, Object, Object>> entry : columnUpdates.entries()) {
+            Mutation deleteMutation = new Mutation(rowBytes);
+            deleteMutation.putDelete(entry.getKey().getLeft().array(), entry.getKey().getRight().array(), entry.getValue().getLeft(), deleteTimestamp);
+            dataWriter.addMutation(deleteMutation);
+        }
+
+        // Create update mutation
+        long updateTimestamp = deleteTimestamp + 1;
+        Mutation updateMutation = new Mutation(rowBytes);
+        for (Entry<Pair<ByteBuffer, ByteBuffer>, Triple<ColumnVisibility, Object, Object>> entry : columnUpdates.entries()) {
+            Type type = findColumnHandle(Pair.of(entry.getKey().getLeft(), entry.getKey().getRight())).getType();
+
+            Value value;
+            if (Types.isArrayType(type)) {
+                // Encode list as a Block
+                value = new Value(setText(type, getBlockFromArray(Types.getElementType(type), (List<?>) entry.getValue().getMiddle()), text, serializer).copyBytes());
+            }
+            else if (Types.isMapType(type)) {
+                // Encode map as a Block
+                value = new Value(setText(type, getBlockFromMap(type, (Map<?, ?>) entry.getValue().getMiddle()), text, serializer).copyBytes());
+            }
+            else {
+                // Encode POJO
+                value = new Value(setText(type, entry.getValue().getMiddle(), text, serializer).copyBytes());
             }
 
             updateMutation.put(

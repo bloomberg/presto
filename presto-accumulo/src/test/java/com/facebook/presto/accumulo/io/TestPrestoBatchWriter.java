@@ -23,6 +23,7 @@ import com.facebook.presto.accumulo.metadata.AccumuloTable;
 import com.facebook.presto.accumulo.model.AccumuloColumnHandle;
 import com.facebook.presto.accumulo.model.IndexColumn;
 import com.facebook.presto.accumulo.model.Row;
+import com.facebook.presto.accumulo.serializers.AccumuloRowSerializer;
 import com.facebook.presto.accumulo.serializers.LexicoderRowSerializer;
 import com.facebook.presto.spi.type.ArrayType;
 import com.facebook.presto.spi.type.Type;
@@ -1355,6 +1356,263 @@ public class TestPrestoBatchWriter
         assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(1).getIndexTable(), "cf_arr", "mno", "private", "moreprivate")), 1);
         assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(1).getIndexTable(), "cf_arr", "mno", "private")), 0);
         assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(1).getIndexTable(), "cf_arr", "mno", "private", "moreprivate")), 1);
+    }
+
+    @Test
+    public void testUpdateColumnWithPrevious()
+            throws Exception
+    {
+        testAddMutations();
+
+        PrestoBatchWriter prestoBatchWriter = new PrestoBatchWriter(connector, connector.securityOperations().getUserAuthorizations("root"), table);
+        prestoBatchWriter.updateColumnByNameWithPrevious("row2", "age", new ColumnVisibility("private"), 28L, 27L);
+        prestoBatchWriter.flush();
+
+        Scanner scan = connector.createScanner(table.getFullTableName(), new Authorizations("private", "moreprivate"));
+        Iterator<Entry<Key, Value>> iter = scan.iterator();
+        assertTrue(iter.hasNext());
+        assertKeyValuePair(iter.next(), bytes("row1"), "___ROW___", "___ROW___", "row1");
+        assertKeyValuePair(iter.next(), bytes("row1"), "cf", "age", AGE_VALUE);
+        assertKeyValuePair(iter.next(), bytes("row1"), "cf", "arr", M1_ARR_VALUE);
+        assertKeyValuePair(iter.next(), bytes("row1"), "cf", "firstname", M1_FNAME_VALUE);
+        assertKeyValuePair(iter.next(), bytes("row2"), "___ROW___", "___ROW___", "row2");
+        assertKeyValuePair(iter.next(), bytes("row2"), "cf", "age", encode(BIGINT, 28L));
+        assertKeyValuePair(iter.next(), bytes("row2"), "cf", "arr", M2_ARR_VALUE);
+        assertKeyValuePair(iter.next(), bytes("row2"), "cf", "firstname", M2_FNAME_VALUE);
+        assertKeyValuePair(iter.next(), bytes("row3"), "___ROW___", "___ROW___", "row3");
+        assertKeyValuePair(iter.next(), bytes("row3"), "cf", "age", AGE_VALUE);
+        assertKeyValuePair(iter.next(), bytes("row3"), "cf", "arr", M3_ARR_VALUE);
+        assertKeyValuePair(iter.next(), bytes("row3"), "cf", "firstname", M3_FNAME_VALUE);
+        assertFalse(iter.hasNext());
+        scan.close();
+
+        scan = createIndexScanner(0, "cf_age");
+        iter = scan.iterator();
+        assertTrue(iter.hasNext());
+        assertKeyValuePair(iter.next(), shard(UPDATED_AGE_VALUE), "cf_age", "row2", "private", "");
+        assertKeyValuePair(iter.next(), shard(UPDATED_AGE_VALUE), "cf_age_car", "car", "private", ENCODER.encode(1L));
+        assertKeyValuePair(iter.next(), shard(AGE_VALUE), "cf_age", "row1", "", "");
+        assertKeyValuePair(iter.next(), shard(AGE_VALUE), "cf_age", "row3", "moreprivate", "");
+        assertKeyValuePair(iter.next(), shard(AGE_VALUE), "cf_age_car", "car", "", ENCODER.encode(1L));
+        assertKeyValuePair(iter.next(), shard(AGE_VALUE), "cf_age_car", "car", "moreprivate", ENCODER.encode(1L));
+        assertFalse(iter.hasNext());
+        scan.close();
+
+        scan = createIndexScanner(1, "cf_arr");
+        iter = scan.iterator();
+        assertTrue(iter.hasNext());
+        assertKeyValuePair(iter.next(), bytes("abc"), "cf_arr", "row1", "");
+        assertKeyValuePair(iter.next(), bytes("abc"), "cf_arr", "row2", "private", "");
+        assertKeyValuePair(iter.next(), bytes("abc"), "cf_arr_car", "car", ENCODER.encode(1L));
+        assertKeyValuePair(iter.next(), bytes("abc"), "cf_arr_car", "car", "private", ENCODER.encode(1L));
+        assertKeyValuePair(iter.next(), bytes("def"), "cf_arr", "row1", "");
+        assertKeyValuePair(iter.next(), bytes("def"), "cf_arr", "row3", "moreprivate", "");
+        assertKeyValuePair(iter.next(), bytes("def"), "cf_arr_car", "car", ENCODER.encode(1L));
+        assertKeyValuePair(iter.next(), bytes("def"), "cf_arr_car", "car", "moreprivate", ENCODER.encode(1L));
+        assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr", "row1", "");
+        assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr", "row2", "private", "");
+        assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr", "row3", "moreprivate", "");
+        assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr_car", "car", ENCODER.encode(1L));
+        assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr_car", "car", "moreprivate", ENCODER.encode(1L));
+        assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr_car", "car", "private", ENCODER.encode(1L));
+        assertKeyValuePair(iter.next(), bytes("jkl"), "cf_arr", "row3", "moreprivate", "");
+        assertKeyValuePair(iter.next(), bytes("jkl"), "cf_arr_car", "car", "moreprivate", ENCODER.encode(1L));
+        assertKeyValuePair(iter.next(), bytes("mno"), "cf_arr", "row2", "private", "");
+        assertKeyValuePair(iter.next(), bytes("mno"), "cf_arr_car", "car", "private", ENCODER.encode(1L));
+        assertFalse(iter.hasNext());
+        scan.close();
+
+        scan = createIndexScanner(2, "cf_firstname");
+        iter = scan.iterator();
+        assertTrue(iter.hasNext());
+        assertKeyValuePair(iter.next(), M1_FNAME_VALUE, "cf_firstname_car", "car", ENCODER.encode(1L));
+        assertKeyValuePairDecodePostFix(iter.next(), M1_FNAME_VALUE, "cf_firstname", "row1", "");
+        assertKeyValuePair(iter.next(), M2_FNAME_VALUE, "cf_firstname_car", "car", "private", ENCODER.encode(1L));
+        assertKeyValuePairDecodePostFix(iter.next(), M2_FNAME_VALUE, "cf_firstname", "row2", "private", "");
+        assertKeyValuePair(iter.next(), M3_FNAME_VALUE, "cf_firstname_car", "car", "moreprivate", ENCODER.encode(1L));
+        assertKeyValuePairDecodePostFix(iter.next(), M3_FNAME_VALUE, "cf_firstname", "row3", "moreprivate", "");
+        assertFalse(iter.hasNext());
+        scan.close();
+
+        assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(0).getIndexTable(), "cf_age", shard(AGE_VALUE), "private", "moreprivate")), 2);
+        assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(0).getIndexTable(), "cf_age", shard(UPDATED_AGE_VALUE), "private")), 1);
+        assertEquals(metricsStorage.newReader().getNumRowsInTable(table), 3);
+        assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(1).getIndexTable(), "cf_arr", "abc", "private", "moreprivate")), 2);
+        assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(2).getIndexTable(), "cf_firstname", M1_FNAME_VALUE, "private", "moreprivate")), 1);
+        assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(2).getIndexTable(), "cf_firstname", M2_FNAME_VALUE, "private", "moreprivate")), 1);
+        assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(2).getIndexTable(), "cf_firstname", M3_FNAME_VALUE, "private", "moreprivate")), 1);
+        assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(1).getIndexTable(), "cf_arr", "def", "private", "moreprivate")), 2);
+        assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(1).getIndexTable(), "cf_arr", "ghi", "private", "moreprivate")), 3);
+        assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(1).getIndexTable(), "cf_arr", "jkl", "private", "moreprivate")), 1);
+        assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(1).getIndexTable(), "cf_arr", "mno", "private", "moreprivate")), 1);
+
+        prestoBatchWriter.updateColumnByNameWithPrevious("row2", "firstname", new ColumnVisibility("private"), "dave", "bob");
+        prestoBatchWriter.flush();
+
+        scan = connector.createScanner(table.getFullTableName(), new Authorizations("private", "moreprivate"));
+        iter = scan.iterator();
+        assertTrue(iter.hasNext());
+        assertKeyValuePair(iter.next(), bytes("row1"), "___ROW___", "___ROW___", "row1");
+        assertKeyValuePair(iter.next(), bytes("row1"), "cf", "age", AGE_VALUE);
+        assertKeyValuePair(iter.next(), bytes("row1"), "cf", "arr", M1_ARR_VALUE);
+        assertKeyValuePair(iter.next(), bytes("row1"), "cf", "firstname", M1_FNAME_VALUE);
+        assertKeyValuePair(iter.next(), bytes("row2"), "___ROW___", "___ROW___", "row2");
+        assertKeyValuePair(iter.next(), bytes("row2"), "cf", "age", encode(BIGINT, 28L));
+        assertKeyValuePair(iter.next(), bytes("row2"), "cf", "arr", M2_ARR_VALUE);
+        assertKeyValuePair(iter.next(), bytes("row2"), "cf", "firstname", "dave");
+        assertKeyValuePair(iter.next(), bytes("row3"), "___ROW___", "___ROW___", "row3");
+        assertKeyValuePair(iter.next(), bytes("row3"), "cf", "age", AGE_VALUE);
+        assertKeyValuePair(iter.next(), bytes("row3"), "cf", "arr", M3_ARR_VALUE);
+        assertKeyValuePair(iter.next(), bytes("row3"), "cf", "firstname", M3_FNAME_VALUE);
+        assertFalse(iter.hasNext());
+        scan.close();
+
+        scan = createIndexScanner(0, "cf_age");
+        iter = scan.iterator();
+        assertTrue(iter.hasNext());
+        assertKeyValuePair(iter.next(), shard(UPDATED_AGE_VALUE), "cf_age", "row2", "private", "");
+        assertKeyValuePair(iter.next(), shard(UPDATED_AGE_VALUE), "cf_age_car", "car", ENCODER.encode(1L));
+        assertKeyValuePair(iter.next(), shard(AGE_VALUE), "cf_age", "row1", "");
+        assertKeyValuePair(iter.next(), shard(AGE_VALUE), "cf_age", "row3", "moreprivate", "");
+        assertKeyValuePair(iter.next(), shard(AGE_VALUE), "cf_age_car", "car", ENCODER.encode(1L));
+        assertKeyValuePair(iter.next(), shard(AGE_VALUE), "cf_age_car", "car", "moreprivate", ENCODER.encode(1L));
+        assertFalse(iter.hasNext());
+        scan.close();
+
+        scan = createIndexScanner(1, "cf_arr");
+        iter = scan.iterator();
+        assertTrue(iter.hasNext());
+        assertKeyValuePair(iter.next(), bytes("abc"), "cf_arr", "row1", "");
+        assertKeyValuePair(iter.next(), bytes("abc"), "cf_arr", "row2", "private", "");
+        assertKeyValuePair(iter.next(), bytes("abc"), "cf_arr_car", "car", ENCODER.encode(1L));
+        assertKeyValuePair(iter.next(), bytes("abc"), "cf_arr_car", "car", "private", ENCODER.encode(1L));
+        assertKeyValuePair(iter.next(), bytes("def"), "cf_arr", "row1", "");
+        assertKeyValuePair(iter.next(), bytes("def"), "cf_arr", "row3", "moreprivate", "");
+        assertKeyValuePair(iter.next(), bytes("def"), "cf_arr_car", "car", ENCODER.encode(1L));
+        assertKeyValuePair(iter.next(), bytes("def"), "cf_arr_car", "car", "moreprivate", ENCODER.encode(1L));
+        assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr", "row1", "");
+        assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr", "row2", "private", "");
+        assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr", "row3", "moreprivate", "");
+        assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr_car", "car", ENCODER.encode(1L));
+        assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr_car", "car", "moreprivate", ENCODER.encode(1L));
+        assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr_car", "car", "private", ENCODER.encode(1L));
+        assertKeyValuePair(iter.next(), bytes("jkl"), "cf_arr", "row3", "moreprivate", "");
+        assertKeyValuePair(iter.next(), bytes("jkl"), "cf_arr_car", "car", "moreprivate", ENCODER.encode(1L));
+        assertKeyValuePair(iter.next(), bytes("mno"), "cf_arr", "row2", "private", "");
+        assertKeyValuePair(iter.next(), bytes("mno"), "cf_arr_car", "car", "private", ENCODER.encode(1L));
+        assertFalse(iter.hasNext());
+        scan.close();
+
+        scan = createIndexScanner(2, "cf_firstname");
+        iter = scan.iterator();
+        assertTrue(iter.hasNext());
+        assertKeyValuePair(iter.next(), M1_FNAME_VALUE, "cf_firstname_car", "car", ENCODER.encode(1L));
+        assertKeyValuePairDecodePostFix(iter.next(), M1_FNAME_VALUE, "cf_firstname", "row1", "");
+        assertKeyValuePair(iter.next(), M3_FNAME_VALUE, "cf_firstname_car", "car", "moreprivate", ENCODER.encode(1L));
+        assertKeyValuePairDecodePostFix(iter.next(), M3_FNAME_VALUE, "cf_firstname", "row3", "moreprivate", "");
+        assertKeyValuePair(iter.next(), UPDATED_M2_FNAME_VALUE, "cf_firstname_car", "car", "private", ENCODER.encode(1L));
+        assertKeyValuePairDecodePostFix(iter.next(), UPDATED_M2_FNAME_VALUE, "cf_firstname", "row2", "private", "");
+        assertFalse(iter.hasNext());
+        scan.close();
+
+        assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(0).getIndexTable(), "cf_age", shard(AGE_VALUE), "private", "moreprivate")), 2);
+        assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(0).getIndexTable(), "cf_age", shard(UPDATED_AGE_VALUE), "private")), 1);
+        assertEquals(metricsStorage.newReader().getNumRowsInTable(table), 3);
+        assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(1).getIndexTable(), "cf_arr", "abc", "private", "moreprivate")), 2);
+        assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(2).getIndexTable(), "cf_firstname", M1_FNAME_VALUE, "private", "moreprivate")), 1);
+        assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(2).getIndexTable(), "cf_firstname", M2_FNAME_VALUE, "private", "moreprivate")), 0);
+        assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(2).getIndexTable(), "cf_firstname", M3_FNAME_VALUE, "private", "moreprivate")), 1);
+        assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(2).getIndexTable(), "cf_firstname", UPDATED_M2_FNAME_VALUE)), 0);
+        assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(2).getIndexTable(), "cf_firstname", UPDATED_M2_FNAME_VALUE, "private", "moreprivate")), 1);
+        assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(1).getIndexTable(), "cf_arr", "def", "private", "moreprivate")), 2);
+        assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(1).getIndexTable(), "cf_arr", "ghi", "private", "moreprivate")), 3);
+        assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(1).getIndexTable(), "cf_arr", "jkl", "private", "moreprivate")), 1);
+        assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(1).getIndexTable(), "cf_arr", "mno", "private", "moreprivate")), 1);
+
+        prestoBatchWriter.updateColumnByNameWithPrevious("row2", "arr", new ColumnVisibility("private"), ImmutableList.of("jkl", "mno", "pqr"), AccumuloRowSerializer.getBlockFromArray(VARCHAR, ImmutableList.of("ghi", "mno", "abc")));
+        prestoBatchWriter.close();
+
+        scan = connector.createScanner(table.getFullTableName(), new Authorizations("private", "moreprivate"));
+        iter = scan.iterator();
+        assertTrue(iter.hasNext());
+        assertKeyValuePair(iter.next(), bytes("row1"), "___ROW___", "___ROW___", "row1");
+        assertKeyValuePair(iter.next(), bytes("row1"), "cf", "age", AGE_VALUE);
+        assertKeyValuePair(iter.next(), bytes("row1"), "cf", "arr", M1_ARR_VALUE);
+        assertKeyValuePair(iter.next(), bytes("row1"), "cf", "firstname", M1_FNAME_VALUE);
+        assertKeyValuePair(iter.next(), bytes("row2"), "___ROW___", "___ROW___", "row2");
+        assertKeyValuePair(iter.next(), bytes("row2"), "cf", "age", encode(BIGINT, 28L));
+        assertKeyValuePair(iter.next(), bytes("row2"), "cf", "arr", encode(new ArrayType(VARCHAR), getBlockFromArray(VARCHAR, ImmutableList.of("jkl", "mno", "pqr"))));
+        assertKeyValuePair(iter.next(), bytes("row2"), "cf", "firstname", "dave");
+        assertKeyValuePair(iter.next(), bytes("row3"), "___ROW___", "___ROW___", "row3");
+        assertKeyValuePair(iter.next(), bytes("row3"), "cf", "age", AGE_VALUE);
+        assertKeyValuePair(iter.next(), bytes("row3"), "cf", "arr", M3_ARR_VALUE);
+        assertKeyValuePair(iter.next(), bytes("row3"), "cf", "firstname", M3_FNAME_VALUE);
+        assertFalse(iter.hasNext());
+        scan.close();
+
+        scan = createIndexScanner(0, "cf_age");
+        iter = scan.iterator();
+        assertTrue(iter.hasNext());
+        assertKeyValuePair(iter.next(), shard(UPDATED_AGE_VALUE), "cf_age", "row2", "private", "");
+        assertKeyValuePair(iter.next(), shard(UPDATED_AGE_VALUE), "cf_age_car", "car", ENCODER.encode(1L));
+        assertKeyValuePair(iter.next(), shard(AGE_VALUE), "cf_age", "row1", "");
+        assertKeyValuePair(iter.next(), shard(AGE_VALUE), "cf_age", "row3", "moreprivate", "");
+        assertKeyValuePair(iter.next(), shard(AGE_VALUE), "cf_age_car", "car", ENCODER.encode(1L));
+        assertKeyValuePair(iter.next(), shard(AGE_VALUE), "cf_age_car", "car", "moreprivate", ENCODER.encode(1L));
+        assertFalse(iter.hasNext());
+        scan.close();
+
+        scan = createIndexScanner(1, "cf_arr");
+        iter = scan.iterator();
+        assertTrue(iter.hasNext());
+        assertKeyValuePair(iter.next(), bytes("abc"), "cf_arr", "row1", "");
+        assertKeyValuePair(iter.next(), bytes("abc"), "cf_arr_car", "car", ENCODER.encode(1L));
+        assertKeyValuePair(iter.next(), bytes("def"), "cf_arr", "row1", "");
+        assertKeyValuePair(iter.next(), bytes("def"), "cf_arr", "row3", "moreprivate", "");
+        assertKeyValuePair(iter.next(), bytes("def"), "cf_arr_car", "car", ENCODER.encode(1L));
+        assertKeyValuePair(iter.next(), bytes("def"), "cf_arr_car", "car", "moreprivate", ENCODER.encode(1L));
+        assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr", "row1", "");
+        assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr", "row3", "moreprivate", "");
+        assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr_car", "car", ENCODER.encode(1L));
+        assertKeyValuePair(iter.next(), bytes("ghi"), "cf_arr_car", "car", "moreprivate", ENCODER.encode(1L));
+        assertKeyValuePair(iter.next(), bytes("jkl"), "cf_arr", "row2", "private", "");
+        assertKeyValuePair(iter.next(), bytes("jkl"), "cf_arr", "row3", "moreprivate", "");
+        assertKeyValuePair(iter.next(), bytes("jkl"), "cf_arr_car", "car", "moreprivate", ENCODER.encode(1L));
+        assertKeyValuePair(iter.next(), bytes("jkl"), "cf_arr_car", "car", "private", ENCODER.encode(1L));
+        assertKeyValuePair(iter.next(), bytes("mno"), "cf_arr", "row2", "private", "");
+        assertKeyValuePair(iter.next(), bytes("mno"), "cf_arr_car", "car", "private", ENCODER.encode(1L));
+        assertKeyValuePair(iter.next(), bytes("pqr"), "cf_arr", "row2", "private", "");
+        assertKeyValuePair(iter.next(), bytes("pqr"), "cf_arr_car", "car", "private", ENCODER.encode(1L));
+        assertFalse(iter.hasNext());
+        scan.close();
+
+        scan = createIndexScanner(2, "cf_firstname");
+        iter = scan.iterator();
+        assertTrue(iter.hasNext());
+        assertKeyValuePair(iter.next(), M1_FNAME_VALUE, "cf_firstname_car", "car", ENCODER.encode(1L));
+        assertKeyValuePairDecodePostFix(iter.next(), M1_FNAME_VALUE, "cf_firstname", "row1", "");
+        assertKeyValuePair(iter.next(), M3_FNAME_VALUE, "cf_firstname_car", "car", "moreprivate", ENCODER.encode(1L));
+        assertKeyValuePairDecodePostFix(iter.next(), M3_FNAME_VALUE, "cf_firstname", "row3", "moreprivate", "");
+        assertKeyValuePair(iter.next(), UPDATED_M2_FNAME_VALUE, "cf_firstname_car", "car", "private", ENCODER.encode(1L));
+        assertKeyValuePairDecodePostFix(iter.next(), UPDATED_M2_FNAME_VALUE, "cf_firstname", "row2", "private", "");
+        assertFalse(iter.hasNext());
+        scan.close();
+
+        assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(0).getIndexTable(), "cf_age", shard(AGE_VALUE), "private", "moreprivate")), 2);
+        assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(0).getIndexTable(), "cf_age", shard(UPDATED_AGE_VALUE), "private")), 1);
+        assertEquals(metricsStorage.newReader().getNumRowsInTable(table), 3);
+        assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(1).getIndexTable(), "cf_arr", "abc", "private", "moreprivate")), 1);
+        assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(2).getIndexTable(), "cf_firstname", M1_FNAME_VALUE, "private", "moreprivate")), 1);
+        assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(2).getIndexTable(), "cf_firstname", M2_FNAME_VALUE, "private", "moreprivate")), 0);
+        assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(2).getIndexTable(), "cf_firstname", M3_FNAME_VALUE, "private", "moreprivate")), 1);
+        assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(2).getIndexTable(), "cf_firstname", UPDATED_M2_FNAME_VALUE)), 0);
+        assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(2).getIndexTable(), "cf_firstname", UPDATED_M2_FNAME_VALUE, "private", "moreprivate")), 1);
+        assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(1).getIndexTable(), "cf_arr", "def", "private", "moreprivate")), 2);
+        assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(1).getIndexTable(), "cf_arr", "ghi", "private", "moreprivate")), 2);
+        assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(1).getIndexTable(), "cf_arr", "jkl", "private", "moreprivate")), 2);
+        assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(1).getIndexTable(), "cf_arr", "mno", "private", "moreprivate")), 1);
+        assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(1).getIndexTable(), "cf_arr", "mno", "private", "moreprivate")), 1);
+        assertEquals(metricsStorage.newReader().getCardinality(mck(table.getParsedIndexColumns().get(1).getIndexTable(), "cf_arr", "pqr", "private", "moreprivate")), 1);
     }
 
     @Test

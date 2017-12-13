@@ -341,6 +341,72 @@ public class Indexer
     }
 
     /**
+     * Update the index value and metrics for the given row ID using the provided column updates.
+     * <p>
+     * This method uses a Scanner to fetch the existing values of row, applying delete Mutations to
+     * the given columns with the visibility they were written with (using the Authorizations to scan
+     * the table), and then applying the new updates.
+     *
+     * @param rowBytes Serialized bytes of the row ID to update
+     * @param columnUpdates Multimap of a Pair of the column family/qualifier to all updates for this column containing the visibility and Java Object for this column type, along with the previous value of this column
+     * @param auths Authorizations to scan the table for deleting the entries.  For proper deletes, these authorizations must encapsulate whatever the visibility of the existing row is, otherwise you'll have duplicate values
+     */
+    public void updateWithPrevious(byte[] rowBytes, Multimap<Pair<ByteBuffer, ByteBuffer>, Triple<ColumnVisibility, Object, Object>> columnUpdates, Authorizations auths)
+            throws AccumuloException, TableNotFoundException, AccumuloSecurityException
+    {
+        // Delete the column updates
+        long deleteTimestamp = System.currentTimeMillis();
+
+        Multimap<Pair<ByteBuffer, ByteBuffer>, ColumnUpdate> deleteEntries = MultimapBuilder.hashKeys().arrayListValues().build();
+        columnUpdates.forEach((column, update) -> {
+            AccumuloColumnHandle handle = table.getColumn(new String(column.getLeft().array(), UTF_8), new String(column.getRight().array(), UTF_8));
+
+            if (!handle.getFamily().isPresent() || !handle.getQualifier().isPresent()) {
+                throw new PrestoException(StandardErrorCode.INVALID_TABLE_PROPERTY, "Row ID column cannot be indexed");
+            }
+
+            deleteEntries.put(column, new ColumnUpdate(
+                    column.getLeft().array(),
+                    column.getRight().array(),
+                    update.getLeft().getExpression(),
+                    true,
+                    deleteTimestamp,
+                    true,
+                    serializer.encode(handle.getType(), update.getRight())));
+        });
+
+        applyUpdate(rowBytes, deleteEntries, true, auths);
+
+        // Encode the values of the column updates and gather the entries
+        long updateTimestamp = deleteTimestamp + 1;
+        Multimap<Pair<ByteBuffer, ByteBuffer>, ColumnUpdate> updateEntries = MultimapBuilder.hashKeys().arrayListValues().build();
+
+        for (Entry<Pair<ByteBuffer, ByteBuffer>, Triple<ColumnVisibility, Object, Object>> update : columnUpdates.entries()) {
+            AccumuloColumnHandle handle = table.getColumn(new String(update.getKey().getLeft().array(), UTF_8), new String(update.getKey().getRight().array(), UTF_8));
+
+            if (!handle.getFamily().isPresent() || !handle.getQualifier().isPresent()) {
+                throw new PrestoException(StandardErrorCode.INVALID_TABLE_PROPERTY, "Row ID column cannot be indexed");
+            }
+
+            byte[] value;
+            if (Types.isArrayType(handle.getType())) {
+                value = serializer.encode(handle.getType(), getBlockFromArray(Types.getElementType(handle.getType()), (List<?>) update.getValue().getMiddle()));
+            }
+            else if (Types.isMapType(handle.getType())) {
+                value = serializer.encode(handle.getType(), getBlockFromMap(Types.getElementType(handle.getType()), (Map<?, ?>) update.getValue().getMiddle()));
+            }
+            else {
+                value = serializer.encode(handle.getType(), update.getValue().getMiddle());
+            }
+
+            updateEntries.put(update.getKey(), new ColumnUpdate(update.getKey().getLeft().array(), update.getKey().getRight().array(), update.getValue().getLeft().getExpression(), true, updateTimestamp, false, value));
+        }
+
+        // Apply the update mutations
+        applyUpdate(rowBytes, updateEntries, false, auths);
+    }
+
+    /**
      * Deletes the index entries associated with the given row ID, as well as decrementing the associated metrics.
      * <p>
      * This method creates a new BatchScanner per call, so use {@link Indexer#delete(Authorizations, Iterable)} if deleting multiple entries.
