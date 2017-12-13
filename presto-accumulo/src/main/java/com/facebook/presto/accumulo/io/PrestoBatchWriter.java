@@ -26,7 +26,6 @@ import com.facebook.presto.spi.block.Block;
 import com.facebook.presto.spi.type.Type;
 import com.facebook.presto.spi.type.VarcharType;
 import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Multimap;
 import com.google.common.collect.MultimapBuilder;
 import org.apache.accumulo.core.client.AccumuloException;
@@ -49,7 +48,6 @@ import org.apache.accumulo.core.iterators.user.WholeRowIterator;
 import org.apache.accumulo.core.security.Authorizations;
 import org.apache.accumulo.core.security.ColumnVisibility;
 import org.apache.commons.lang3.tuple.Pair;
-import org.apache.commons.lang3.tuple.Triple;
 import org.apache.hadoop.io.Text;
 
 import java.io.IOException;
@@ -305,12 +303,12 @@ public class PrestoBatchWriter
     public void updateColumnByName(Object rowId, Map<Pair<String, ColumnVisibility>, Object> columnUpdates)
             throws AccumuloException, TableNotFoundException, AccumuloSecurityException
     {
-        ImmutableMap.Builder<Triple<String, String, ColumnVisibility>, Object> columnUpdateBuilder = ImmutableMap.builder();
+        Multimap<Pair<ByteBuffer, ByteBuffer>, Pair<ColumnVisibility, Object>> updates = MultimapBuilder.hashKeys().arrayListValues().build();
         columnUpdates.forEach((key, value) -> {
             Pair<String, String> column = findColumnFamilyQualifier(key.getLeft());
-            columnUpdateBuilder.put(Triple.of(column.getLeft(), column.getRight(), key.getRight()), value);
+            updates.put(Pair.of(wrap(column.getLeft().getBytes(UTF_8)), wrap(column.getRight().getBytes(UTF_8))), Pair.of(key.getRight(), value));
         });
-        updateColumns(rowId, columnUpdateBuilder.build());
+        updateColumns(rowId, updates);
     }
 
     /**
@@ -327,25 +325,8 @@ public class PrestoBatchWriter
     public void updateColumn(Object rowId, String family, String qualifier, ColumnVisibility visibility, Object value)
             throws AccumuloException, TableNotFoundException, AccumuloSecurityException
     {
-        updateColumns(rowId, ImmutableMap.of(Triple.of(family, qualifier, visibility), value));
-    }
-
-    /**
-     * Update all the given columns of the row to their mapped value, identified by the Accumulo column family/qualifier/visibility.
-     * <p>
-     * This method will remove the existing entry, regardless of the new visibility (assuming the given authorizations are able to scan the entry)
-     *
-     * @param rowId Row ID, a Java object of the row value
-     * @param columnUpdates A map of Accumulo column family/qualifier/visibility triples to their new value
-     */
-    @Deprecated
-    public void updateColumns(Object rowId, Map<Triple<String, String, ColumnVisibility>, Object> columnUpdates)
-            throws AccumuloException, TableNotFoundException, AccumuloSecurityException
-    {
         Multimap<Pair<ByteBuffer, ByteBuffer>, Pair<ColumnVisibility, Object>> updates = MultimapBuilder.hashKeys().arrayListValues().build();
-        for (Entry<Triple<String, String, ColumnVisibility>, Object> update : columnUpdates.entrySet()) {
-            updates.put(Pair.of(wrap(update.getKey().getLeft().getBytes(UTF_8)), wrap(update.getKey().getMiddle().getBytes(UTF_8))), Pair.of(update.getKey().getRight(), update.getValue()));
-        }
+        updates.put(Pair.of(wrap(family.getBytes(UTF_8)), wrap(qualifier.getBytes(UTF_8))), Pair.of(visibility, value));
         updateColumns(rowId, updates);
     }
 
