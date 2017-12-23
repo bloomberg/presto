@@ -42,8 +42,7 @@ public abstract class MetricsReader
      * @param table Accumulo table
      * @return Number of rows in the given table
      */
-    public abstract long getNumRowsInTable(AccumuloTable table)
-            throws Exception;
+    public abstract long getNumRowsInTable(AccumuloTable table);
 
     /**
      * Gets the number of rows in the table where a column contains a specific value,
@@ -54,8 +53,7 @@ public abstract class MetricsReader
      * @param key Metric key
      * @return Cardinality of the given value/column combination
      */
-    public abstract long getCardinality(MetricCacheKey key)
-            throws Exception;
+    public abstract long getCardinality(MetricCacheKey key);
 
     /**
      * Gets the number of rows in the table where a column contains a specific value,
@@ -68,8 +66,7 @@ public abstract class MetricsReader
      * @param keys Collection of metric keys
      * @return A map containing the cardinality
      */
-    public abstract Map<MetricCacheKey, Long> getCardinalities(Collection<MetricCacheKey> keys)
-            throws Exception;
+    public abstract Map<MetricCacheKey, Long> getCardinalities(Collection<MetricCacheKey> keys);
 
     /**
      * Gets the number of rows in the table where a column contains a series of values,
@@ -80,8 +77,7 @@ public abstract class MetricsReader
      * @param keys Collection of metric keys
      * @return A map containing the cardinality
      */
-    public abstract Long getCardinality(Collection<MetricCacheKey> keys)
-            throws Exception;
+    public abstract Long getCardinality(Collection<MetricCacheKey> keys);
 
     /**
      * Gets any key from the given non-empty collection, validating that all other keys

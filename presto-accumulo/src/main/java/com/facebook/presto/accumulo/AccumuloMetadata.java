@@ -42,13 +42,12 @@ import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
 import io.airlift.slice.Slice;
 
-import javax.inject.Inject;
-
 import java.util.Collection;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.OptionalLong;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -69,14 +68,16 @@ public class AccumuloMetadata
     private final String connectorId;
     private final AccumuloClient client;
     private final AtomicReference<Runnable> rollbackAction = new AtomicReference<>();
+    private final boolean supportMetadataDeletes;
 
-    @Inject
     public AccumuloMetadata(
             AccumuloConnectorId connectorId,
-            AccumuloClient client)
+            AccumuloClient client,
+            boolean supportMetadataDeletes)
     {
         this.connectorId = requireNonNull(connectorId, "connectorId is null").toString();
         this.client = requireNonNull(client, "client is null");
+        this.supportMetadataDeletes = supportMetadataDeletes;
     }
 
     @Override
@@ -217,6 +218,28 @@ public class AccumuloMetadata
     }
 
     @Override
+    public boolean supportsMetadataDelete(ConnectorSession session, ConnectorTableHandle tableHandle, ConnectorTableLayoutHandle tableLayoutHandle)
+    {
+        if (!supportMetadataDeletes) {
+            throw new PrestoException(NOT_SUPPORTED, "This connector has been configured to reject full-table DELETEs.  Set accumulo.support.metadata.deletes = true and restart Presto");
+        }
+
+        return true;
+    }
+
+    @Override
+    public OptionalLong metadataDelete(ConnectorSession session, ConnectorTableHandle tableHandle, ConnectorTableLayoutHandle tableLayoutHandle)
+    {
+        AccumuloTableHandle handle = (AccumuloTableHandle) tableHandle;
+        AccumuloTable table = client.getTable(handle.toSchemaTableName());
+        if (table != null) {
+            return client.truncateTable(table);
+        }
+
+        return OptionalLong.empty();
+    }
+
+    @Override
     public ConnectorInsertTableHandle beginInsert(ConnectorSession session, ConnectorTableHandle tableHandle)
     {
         checkNoRollback();
@@ -241,6 +264,48 @@ public class AccumuloMetadata
         // with the same values, so that isn't a problem.
         AccumuloTableHandle handle = (AccumuloTableHandle) insertHandle;
         throw new PrestoException(NOT_SUPPORTED, format("Unable to rollback insert for table %s.%s. Some rows may have been written. Please run your insert again.", handle.getSchema(), handle.getTable()));
+    }
+
+    @Override
+    public ColumnHandle getUpdateRowIdColumnHandle(ConnectorSession session, ConnectorTableHandle tableHandle)
+    {
+        AccumuloTableHandle handle = (AccumuloTableHandle) tableHandle;
+        AccumuloColumnHandle updateRowId = client.getTable(handle.toSchemaTableName()).getColumn(((AccumuloTableHandle) tableHandle).getRowId());
+        return new AccumuloColumnHandle(updateRowId.getName(),
+                updateRowId.getFamily(),
+                updateRowId.getQualifier(),
+                updateRowId.getType(),
+                updateRowId.getOrdinal(),
+                updateRowId.getComment(),
+                updateRowId.isTimestamp(),
+                updateRowId.isVisibility(),
+                true);
+    }
+
+    @Override
+    public ConnectorTableHandle beginDelete(ConnectorSession session, ConnectorTableHandle tableHandle)
+    {
+        checkNoRollback();
+        AccumuloTableHandle handle = (AccumuloTableHandle) tableHandle;
+        setRollback(() -> rollbackDelete(handle));
+        return handle;
+    }
+
+    @Override
+    public void finishDelete(ConnectorSession session, ConnectorTableHandle tableHandle, Collection<Slice> fragments)
+    {
+        clearRollback();
+    }
+
+    private static void rollbackDelete(ConnectorInsertTableHandle insertHandle)
+    {
+        // Rollbacks for deletes are off the table when it comes to data in Accumulo.
+        // When a batch of Mutations fails to be inserted, the general strategy
+        // is to run the delete operation again until it is successful
+        // Any mutations that were successfully written will be overwritten
+        // with the same values, so that isn't a problem.
+        AccumuloTableHandle handle = (AccumuloTableHandle) insertHandle;
+        throw new PrestoException(NOT_SUPPORTED, format("Unable to rollback delete for table %s.%s. Some rows may have been deleted. Please run your delete again.", handle.getSchema(), handle.getTable()));
     }
 
     @Override

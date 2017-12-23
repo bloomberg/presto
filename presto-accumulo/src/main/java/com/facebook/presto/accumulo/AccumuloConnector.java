@@ -16,12 +16,12 @@ package com.facebook.presto.accumulo;
 import com.facebook.presto.accumulo.conf.AccumuloSessionProperties;
 import com.facebook.presto.accumulo.conf.AccumuloTableProperties;
 import com.facebook.presto.accumulo.io.AccumuloPageSinkProvider;
-import com.facebook.presto.accumulo.io.AccumuloRecordSetProvider;
+import com.facebook.presto.accumulo.io.AccumuloPageSourceProvider;
 import com.facebook.presto.spi.connector.Connector;
 import com.facebook.presto.spi.connector.ConnectorAccessControl;
 import com.facebook.presto.spi.connector.ConnectorMetadata;
 import com.facebook.presto.spi.connector.ConnectorPageSinkProvider;
-import com.facebook.presto.spi.connector.ConnectorRecordSetProvider;
+import com.facebook.presto.spi.connector.ConnectorPageSourceProvider;
 import com.facebook.presto.spi.connector.ConnectorSplitManager;
 import com.facebook.presto.spi.connector.ConnectorTransactionHandle;
 import com.facebook.presto.spi.session.PropertyMetadata;
@@ -52,8 +52,8 @@ public class AccumuloConnector
     private final LifeCycleManager lifeCycleManager;
     private final AccumuloMetadataFactory metadataFactory;
     private final AccumuloSplitManager splitManager;
-    private final AccumuloRecordSetProvider recordSetProvider;
     private final AccumuloPageSinkProvider pageSinkProvider;
+    private final AccumuloPageSourceProvider pageSourceProvider;
     private final AccumuloSessionProperties sessionProperties;
     private final AccumuloTableProperties tableProperties;
     private final ConcurrentMap<ConnectorTransactionHandle, AccumuloMetadata> transactions = new ConcurrentHashMap<>();
@@ -64,8 +64,8 @@ public class AccumuloConnector
             LifeCycleManager lifeCycleManager,
             AccumuloMetadataFactory metadataFactory,
             AccumuloSplitManager splitManager,
-            AccumuloRecordSetProvider recordSetProvider,
             AccumuloPageSinkProvider pageSinkProvider,
+            AccumuloPageSourceProvider pageSourceProvider,
             AccumuloSessionProperties sessionProperties,
             AccumuloTableProperties tableProperties,
             ConnectorAccessControl accessControl)
@@ -73,8 +73,8 @@ public class AccumuloConnector
         this.lifeCycleManager = requireNonNull(lifeCycleManager, "lifeCycleManager is null");
         this.metadataFactory = requireNonNull(metadataFactory, "metadata is null");
         this.splitManager = requireNonNull(splitManager, "splitManager is null");
-        this.recordSetProvider = requireNonNull(recordSetProvider, "recordSetProvider is null");
         this.pageSinkProvider = requireNonNull(pageSinkProvider, "pageSinkProvider is null");
+        this.pageSourceProvider = requireNonNull(pageSourceProvider, "pageSourceProvider is null");
         this.sessionProperties = requireNonNull(sessionProperties, "sessionProperties is null");
         this.tableProperties = requireNonNull(tableProperties, "tableProperties is null");
         this.accessControl = requireNonNull(accessControl, "accessControl is null");
@@ -118,15 +118,15 @@ public class AccumuloConnector
     }
 
     @Override
-    public ConnectorRecordSetProvider getRecordSetProvider()
-    {
-        return recordSetProvider;
-    }
-
-    @Override
     public ConnectorPageSinkProvider getPageSinkProvider()
     {
         return pageSinkProvider;
+    }
+
+    @Override
+    public ConnectorPageSourceProvider getPageSourceProvider()
+    {
+        return pageSourceProvider;
     }
 
     @Override

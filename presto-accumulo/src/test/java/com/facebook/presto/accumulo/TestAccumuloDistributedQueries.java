@@ -25,6 +25,7 @@ import java.sql.Timestamp;
 
 import static com.facebook.presto.accumulo.AccumuloQueryRunner.createAccumuloQueryRunner;
 import static com.google.common.collect.Iterables.getOnlyElement;
+import static java.lang.String.format;
 import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertFalse;
 import static org.testng.Assert.assertTrue;
@@ -97,7 +98,143 @@ public class TestAccumuloDistributedQueries
     @Override
     public void testDelete()
     {
-        // Deletes are not supported by the connector
+        // delete half the table, then delete the rest
+
+        assertUpdate("CREATE TABLE test_delete AS SELECT * FROM orders", "SELECT count(*) FROM orders");
+
+        assertUpdate("DELETE FROM test_delete WHERE orderkey % 2 = 0", "SELECT count(*) FROM orders WHERE orderkey % 2 = 0");
+        assertQuery("SELECT * FROM test_delete", "SELECT * FROM orders WHERE orderkey % 2 <> 0");
+
+        // Non-index tables do not return a row result
+        computeActual("DELETE FROM test_delete");
+        assertQuery("SELECT * FROM test_delete", "SELECT * FROM orders LIMIT 0");
+
+        assertUpdate("DROP TABLE test_delete");
+
+        // delete successive parts of the table
+
+        assertUpdate("CREATE TABLE test_delete AS SELECT * FROM orders", "SELECT count(*) FROM orders");
+
+        assertUpdate("DELETE FROM test_delete WHERE custkey <= 100", "SELECT count(*) FROM orders WHERE custkey <= 100");
+        assertQuery("SELECT * FROM test_delete", "SELECT * FROM orders WHERE custkey > 100");
+
+        assertUpdate("DELETE FROM test_delete WHERE custkey <= 300", "SELECT count(*) FROM orders WHERE custkey > 100 AND custkey <= 300");
+        assertQuery("SELECT * FROM test_delete", "SELECT * FROM orders WHERE custkey > 300");
+
+        assertUpdate("DELETE FROM test_delete WHERE custkey <= 500", "SELECT count(*) FROM orders WHERE custkey > 300 AND custkey <= 500");
+        assertQuery("SELECT * FROM test_delete", "SELECT * FROM orders WHERE custkey > 500");
+
+        assertUpdate("DROP TABLE test_delete");
+
+        // delete using a constant property
+
+        assertUpdate("CREATE TABLE test_delete AS SELECT * FROM orders", "SELECT count(*) FROM orders");
+
+        assertUpdate("DELETE FROM test_delete WHERE orderstatus = 'O'", "SELECT count(*) FROM orders WHERE orderstatus = 'O'");
+        assertQuery("SELECT * FROM test_delete", "SELECT * FROM orders WHERE orderstatus <> 'O'");
+
+        assertUpdate("DROP TABLE test_delete");
+
+        // delete without matching any rows
+
+        assertUpdate("CREATE TABLE test_delete AS SELECT * FROM orders", "SELECT count(*) FROM orders");
+        assertUpdate("DELETE FROM test_delete WHERE rand() < 0", 0);
+        assertUpdate("DELETE FROM test_delete WHERE orderkey < 0", 0);
+        assertUpdate("DROP TABLE test_delete");
+
+        // delete with a predicate that optimizes to false
+
+        assertUpdate("CREATE TABLE test_delete AS SELECT * FROM orders", "SELECT count(*) FROM orders");
+        assertUpdate("DELETE FROM test_delete WHERE orderkey > 5 AND orderkey < 4", 0);
+        assertUpdate("DROP TABLE test_delete");
+
+        // delete using a subquery
+
+        assertUpdate("CREATE TABLE test_delete AS SELECT * FROM lineitem", "SELECT count(*) FROM lineitem");
+
+        assertUpdate(
+                "DELETE FROM test_delete WHERE orderkey IN (SELECT orderkey FROM orders WHERE orderstatus = 'F')",
+                "SELECT count(*) FROM lineitem WHERE orderkey IN (SELECT orderkey FROM orders WHERE orderstatus = 'F')");
+        assertQuery(
+                "SELECT orderkey, partkey, suppkey, linenumber, " +
+                        "quantity, extendedprice, discount, tax, " +
+                        "returnflag, linestatus, shipdate, commitdate, " +
+                        "receiptdate, shipinstruct, shipmode, comment FROM test_delete",
+                "SELECT * " +
+                        "FROM lineitem WHERE orderkey IN (SELECT orderkey FROM orders WHERE orderstatus <> 'F')");
+
+        assertUpdate("DROP TABLE test_delete");
+
+        // delete with multiple SemiJoin
+
+        assertUpdate("CREATE TABLE test_delete AS SELECT * FROM lineitem", "SELECT count(*) FROM lineitem");
+
+        assertUpdate(
+                "DELETE FROM test_delete\n" +
+                        "WHERE orderkey IN (SELECT orderkey FROM orders WHERE orderstatus = 'F')\n" +
+                        "  AND orderkey IN (SELECT orderkey FROM orders WHERE custkey % 5 = 0)\n",
+                "SELECT count(*) FROM lineitem\n" +
+                        "WHERE orderkey IN (SELECT orderkey FROM orders WHERE orderstatus = 'F')\n" +
+                        "  AND orderkey IN (SELECT orderkey FROM orders WHERE custkey % 5 = 0)");
+        assertQuery(
+                " SELECT orderkey, partkey, suppkey, linenumber, " +
+                        "quantity, extendedprice, discount, tax, " +
+                        "returnflag, linestatus, shipdate, commitdate, " +
+                        "receiptdate, shipinstruct, shipmode, comment FROM test_delete",
+                "SELECT * FROM lineitem\n" +
+                        "WHERE orderkey IN (SELECT orderkey FROM orders WHERE orderstatus <> 'F')\n" +
+                        "  OR orderkey IN (SELECT orderkey FROM orders WHERE custkey % 5 <> 0)");
+
+        assertUpdate("DROP TABLE test_delete");
+
+        // delete with SemiJoin null handling
+
+        assertUpdate("CREATE TABLE test_delete AS SELECT * FROM orders", "SELECT count(*) FROM orders");
+
+        assertUpdate(
+                "DELETE FROM test_delete\n" +
+                        "WHERE (orderkey IN (SELECT CASE WHEN orderkey % 3 = 0 THEN NULL ELSE orderkey END FROM lineitem)) IS NULL\n",
+                "SELECT count(*) FROM orders\n" +
+                        "WHERE (orderkey IN (SELECT CASE WHEN orderkey % 3 = 0 THEN NULL ELSE orderkey END FROM lineitem)) IS NULL\n");
+        assertQuery(
+                "SELECT * FROM test_delete",
+                "SELECT * FROM orders\n" +
+                        "WHERE (orderkey IN (SELECT CASE WHEN orderkey % 3 = 0 THEN NULL ELSE orderkey END FROM lineitem)) IS NOT NULL\n");
+
+        assertUpdate("DROP TABLE test_delete");
+
+        // delete using a scalar and EXISTS subquery
+        assertUpdate("CREATE TABLE test_delete AS SELECT * FROM orders", "SELECT count(*) FROM orders");
+        assertUpdate("DELETE FROM test_delete WHERE orderkey = (SELECT orderkey FROM orders ORDER BY orderkey LIMIT 1)", 1);
+        assertUpdate("DELETE FROM test_delete WHERE orderkey = (SELECT orderkey FROM orders WHERE false)", 0);
+        assertUpdate("DELETE FROM test_delete WHERE EXISTS(SELECT 1 WHERE false)", 0);
+        assertUpdate("DELETE FROM test_delete WHERE EXISTS(SELECT 1)", "SELECT count(*) - 1 FROM orders");
+        assertUpdate("DROP TABLE test_delete");
+
+        // test EXPLAIN ANALYZE with CTAS
+        assertExplainAnalyze("EXPLAIN ANALYZE CREATE TABLE analyze_test AS SELECT UUID() as uuid, CAST(orderstatus AS VARCHAR(15)) orderstatus FROM orders");
+        assertQuery("SELECT orderstatus from analyze_test", "SELECT orderstatus FROM orders");
+        // check that INSERT works also
+        assertExplainAnalyze("EXPLAIN ANALYZE INSERT INTO analyze_test SELECT UUID() as uuid, clerk FROM orders");
+        assertQuery("SELECT orderstatus from analyze_test", "SELECT orderstatus FROM orders UNION ALL SELECT clerk FROM orders");
+        // check DELETE works with EXPLAIN ANALYZE
+        assertExplainAnalyze("EXPLAIN ANALYZE DELETE FROM analyze_test WHERE TRUE");
+        assertQuery("SELECT COUNT(*) from analyze_test", "SELECT 0");
+        assertUpdate("DROP TABLE analyze_test");
+    }
+
+    @Test
+    public void testDeleteMetadataWithIndex()
+    {
+        assertUpdate("CREATE TABLE test_delete_with_index WITH (index_columns = 'orderdate') AS SELECT * FROM orders", "SELECT count(*) FROM orders");
+
+        assertUpdate("DELETE FROM test_delete_with_index WHERE orderkey % 2 = 0", "SELECT count(*) FROM orders WHERE orderkey % 2 = 0");
+        assertQuery("SELECT * FROM test_delete_with_index", "SELECT * FROM orders WHERE orderkey % 2 <> 0");
+
+        assertUpdate("DELETE FROM test_delete_with_index", 7500L);
+        assertQuery("SELECT * FROM test_delete_with_index", "SELECT * FROM orders LIMIT 0");
+
+        assertUpdate("DROP TABLE test_delete_with_index");
     }
 
     @Override
@@ -529,5 +666,15 @@ public class TestAccumuloDistributedQueries
 
         assertUpdate("DROP TABLE test_rename_hidden_column");
         assertFalse(getQueryRunner().tableExists(getSession(), "test_rename_hidden_column"));
+    }
+
+    protected void assertExplainAnalyze(@Language("SQL") String query)
+    {
+        String value = getOnlyElement(computeActual(query).getOnlyColumnAsSet());
+
+        assertTrue(value.matches("(?s:.*)CPU:.*, Input:.*, Output(?s:.*)"), format("Expected output to contain \"CPU:.*, Input:.*, Output\", but it is %s", value));
+
+        // TODO: check that rendered plan is as expected, once stats are collected in a consistent way
+        // assertTrue(value.contains("Cost: "), format("Expected output to contain \"Cost: \", but it is %s", value));
     }
 }

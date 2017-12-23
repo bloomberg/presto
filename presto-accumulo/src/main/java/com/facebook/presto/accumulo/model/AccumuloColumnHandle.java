@@ -40,6 +40,7 @@ public final class AccumuloColumnHandle
     private final int ordinal;
     private final boolean timestamp;
     private final boolean visibility;
+    private final boolean delete;
 
     @JsonCreator
     public AccumuloColumnHandle(
@@ -50,7 +51,8 @@ public final class AccumuloColumnHandle
             @JsonProperty("ordinal") int ordinal,
             @JsonProperty("comment") String comment,
             @JsonProperty("timestamp") boolean timestamp,
-            @JsonProperty("visibility") boolean visibility)
+            @JsonProperty("visibility") boolean visibility,
+            @JsonProperty("delete") boolean delete)
     {
         this.name = requireNonNull(name, "name is null");
         this.family = requireNonNull(family, "family is null");
@@ -62,6 +64,19 @@ public final class AccumuloColumnHandle
         this.comment = requireNonNull(comment, "comment is null");
         this.timestamp = timestamp;
         this.visibility = visibility;
+        this.delete = delete;
+    }
+
+    public AccumuloColumnHandle(String name,
+            Optional<String> family,
+            Optional<String> qualifier,
+            Type type,
+            int ordinal,
+            String comment,
+            boolean timestamp,
+            boolean visibility)
+    {
+        this(name, family, qualifier, type, ordinal, comment, timestamp, visibility, false);
     }
 
     public AccumuloColumnHandle(String name,
@@ -71,16 +86,7 @@ public final class AccumuloColumnHandle
             int ordinal,
             String comment)
     {
-        this.name = requireNonNull(name, "name is null");
-        this.family = requireNonNull(family, "family is null");
-        this.qualifier = requireNonNull(qualifier, "qualifier is null");
-        this.type = requireNonNull(type, "type is null");
-        this.ordinal = ordinal;
-        checkArgument(ordinal >= 0, "ordinal must be >= zero");
-
-        this.comment = requireNonNull(comment, "comment is null");
-        this.timestamp = false;
-        this.visibility = false;
+        this(name, family, qualifier, type, ordinal, comment, false, false);
     }
 
     @JsonProperty
@@ -131,6 +137,12 @@ public final class AccumuloColumnHandle
         return visibility;
     }
 
+    @JsonProperty
+    public boolean isDelete()
+    {
+        return delete;
+    }
+
     @JsonIgnore
     public boolean isHidden()
     {
@@ -168,7 +180,8 @@ public final class AccumuloColumnHandle
                 && Objects.equals(this.ordinal, other.ordinal)
                 && Objects.equals(this.comment, other.comment)
                 && Objects.equals(this.timestamp, other.timestamp)
-                && Objects.equals(this.visibility, other.visibility);
+                && Objects.equals(this.visibility, other.visibility)
+                && Objects.equals(this.delete, other.delete);
     }
 
     @Override
@@ -183,6 +196,7 @@ public final class AccumuloColumnHandle
                 .add("comment", comment)
                 .add("timestamp", timestamp)
                 .add("visibility", visibility)
+                .add("delete", delete)
                 .toString();
     }
 

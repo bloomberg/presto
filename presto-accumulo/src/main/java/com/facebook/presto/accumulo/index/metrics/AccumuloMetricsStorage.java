@@ -177,6 +177,14 @@ public class AccumuloMetricsStorage
     }
 
     @Override
+    public long truncate(AccumuloTable table)
+    {
+        long numRows = newReader().getNumRowsInTable(table);
+        tableManager.truncateAccumuloTable(getMetricsTableName(table));
+        return numRows;
+    }
+
+    @Override
     public void drop(AccumuloTable table)
     {
         if (table.isExternal()) {
@@ -327,14 +335,12 @@ public class AccumuloMetricsStorage
 
         @Override
         public long getNumRowsInTable(AccumuloTable table)
-                throws Exception
         {
             return getCardinality(new MetricCacheKey(getMetricsTableName(table), METRICS_TABLE_ROWS_COLUMN_TEXT, EMPTY_AUTHS, METRICS_TABLE_ROWID_RANGE, metricsStorage));
         }
 
         @Override
         public long getCardinality(MetricCacheKey key)
-                throws Exception
         {
             // Get metrics table name and the column family for the scanner
             IteratorSetting setting = new IteratorSetting(Integer.MAX_VALUE, "valuesummingcombiner", ValueSummingIterator.class);
@@ -354,6 +360,12 @@ public class AccumuloMetricsStorage
                     sum += ENCODER.decode(entry.getValue().get());
                 }
                 return sum;
+            }
+            catch (AccumuloSecurityException | AccumuloException e) {
+                throw new PrestoException(UNEXPECTED_ACCUMULO_ERROR, "Failed to get cardinality", e);
+            }
+            catch (TableNotFoundException e) {
+                throw new PrestoException(ACCUMULO_TABLE_DNE, "Table does not exist", e);
             }
             finally {
                 if (scanner != null) {
@@ -428,7 +440,6 @@ public class AccumuloMetricsStorage
 
         @Override
         public Long getCardinality(Collection<MetricCacheKey> keys)
-                throws Exception
         {
             if (keys.isEmpty()) {
                 return 0L;

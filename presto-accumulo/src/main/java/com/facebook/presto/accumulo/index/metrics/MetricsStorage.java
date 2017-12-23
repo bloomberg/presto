@@ -88,11 +88,15 @@ public abstract class MetricsStorage
     public abstract void rename(AccumuloTable oldTable, AccumuloTable newTable);
 
     /**
+     * Truncates the metrics for the given Presto table
+     *
+     * @param table Presto table
+     * @return The number of rows in the table that were dropped
+     */
+    public abstract long truncate(AccumuloTable table);
+
+    /**
      * Drop metric storage for the given Presto table
-     * <p>
-     * This method must always succeed (barring any exception),
-     * i.e. if the metric storage does not exist for the table, then do nothing
-     * -- do not raise an exception.
      *
      * @param table Presto table
      */

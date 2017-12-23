@@ -50,6 +50,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.OptionalLong;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -674,5 +675,21 @@ public class AccumuloClient
             List<AccumuloColumnConstraint> constraints)
     {
         return tabletSplitMachine.getTabletSplits(session, auths, table, rowIdDomain, constraints, nodeManager.getWorkerNodes().size());
+    }
+
+    public OptionalLong truncateTable(AccumuloTable table)
+    {
+        // delete the table and index tables
+        String fullTableName = table.getFullTableName();
+        tableManager.truncateAccumuloTable(fullTableName);
+
+        if (table.isIndexed()) {
+            for (IndexColumn indexColumn : table.getParsedIndexColumns()) {
+                tableManager.truncateAccumuloTable(indexColumn.getIndexTable());
+            }
+
+            return OptionalLong.of(table.getMetricsStorageInstance(connector).truncate(table));
+        }
+        return OptionalLong.empty();
     }
 }

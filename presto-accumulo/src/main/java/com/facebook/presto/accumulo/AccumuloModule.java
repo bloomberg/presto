@@ -18,7 +18,7 @@ import com.facebook.presto.accumulo.conf.AccumuloSessionProperties;
 import com.facebook.presto.accumulo.conf.AccumuloTableProperties;
 import com.facebook.presto.accumulo.index.ColumnCardinalityCache;
 import com.facebook.presto.accumulo.io.AccumuloPageSinkProvider;
-import com.facebook.presto.accumulo.io.AccumuloRecordSetProvider;
+import com.facebook.presto.accumulo.io.AccumuloPageSourceProvider;
 import com.facebook.presto.accumulo.metadata.AccumuloTable;
 import com.facebook.presto.accumulo.metadata.ZooKeeperMetadataManager;
 import com.facebook.presto.spi.NodeManager;
@@ -93,12 +93,11 @@ public class AccumuloModule
 
         binder.bind(AccumuloConnector.class).in(Scopes.SINGLETON);
         binder.bind(AccumuloConnectorId.class).toInstance(new AccumuloConnectorId(connectorId));
-        binder.bind(AccumuloMetadata.class).in(Scopes.SINGLETON);
         binder.bind(AccumuloMetadataFactory.class).in(Scopes.SINGLETON);
         binder.bind(AccumuloClient.class).in(Scopes.SINGLETON);
         binder.bind(AccumuloSplitManager.class).in(Scopes.SINGLETON);
-        binder.bind(AccumuloRecordSetProvider.class).in(Scopes.SINGLETON);
         binder.bind(AccumuloPageSinkProvider.class).in(Scopes.SINGLETON);
+        binder.bind(AccumuloPageSourceProvider.class).in(Scopes.SINGLETON);
         binder.bind(AccumuloHandleResolver.class).in(Scopes.SINGLETON);
         binder.bind(AccumuloSessionProperties.class).in(Scopes.SINGLETON);
         binder.bind(AccumuloTableProperties.class).in(Scopes.SINGLETON);

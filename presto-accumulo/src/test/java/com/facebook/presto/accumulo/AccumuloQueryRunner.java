@@ -45,6 +45,7 @@ import static com.facebook.presto.accumulo.AccumuloErrorCode.MINI_ACCUMULO;
 import static com.facebook.presto.accumulo.AccumuloErrorCode.UNEXPECTED_ACCUMULO_ERROR;
 import static com.facebook.presto.accumulo.conf.AccumuloConfig.INSTANCE;
 import static com.facebook.presto.accumulo.conf.AccumuloConfig.PASSWORD;
+import static com.facebook.presto.accumulo.conf.AccumuloConfig.SUPPORT_METADATA_DELETES;
 import static com.facebook.presto.accumulo.conf.AccumuloConfig.USERNAME;
 import static com.facebook.presto.accumulo.conf.AccumuloConfig.ZOOKEEPERS;
 import static com.facebook.presto.accumulo.conf.AccumuloConfig.ZOOKEEPER_METADATA_ROOT;
@@ -90,6 +91,7 @@ public final class AccumuloQueryRunner
                         .put(USERNAME, MAC_USER)
                         .put(PASSWORD, MAC_PASSWORD)
                         .put(ZOOKEEPER_METADATA_ROOT, "/presto-accumulo-test")
+                        .put(SUPPORT_METADATA_DELETES, "true")
                         .build();
 
         queryRunner.createCatalog("accumulo", "accumulo", accumuloProperties);

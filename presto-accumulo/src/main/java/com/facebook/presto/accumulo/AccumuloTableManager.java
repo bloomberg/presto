@@ -176,6 +176,19 @@ public class AccumuloTableManager
         }
     }
 
+    public void truncateAccumuloTable(String tableName)
+    {
+        try {
+            connector.tableOperations().deleteRows(tableName, null, null);
+        }
+        catch (AccumuloException | AccumuloSecurityException e) {
+            throw new PrestoException(UNEXPECTED_ACCUMULO_ERROR, "Failed to delete Accumulo table", e);
+        }
+        catch (TableNotFoundException e) {
+            throw new PrestoException(ACCUMULO_TABLE_DNE, "Failed to delete Accumulo table, does not exist", e);
+        }
+    }
+
     public void deleteAccumuloTable(String tableName)
     {
         try {

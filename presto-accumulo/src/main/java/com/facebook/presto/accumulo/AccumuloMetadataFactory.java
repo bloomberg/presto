@@ -13,6 +13,8 @@
  */
 package com.facebook.presto.accumulo;
 
+import com.facebook.presto.accumulo.conf.AccumuloConfig;
+
 import javax.inject.Inject;
 
 import static java.util.Objects.requireNonNull;
@@ -21,18 +23,21 @@ public class AccumuloMetadataFactory
 {
     private final AccumuloConnectorId connectorId;
     private final AccumuloClient client;
+    private final boolean supportMetadataDeletes;
 
     @Inject
     public AccumuloMetadataFactory(
             AccumuloConnectorId connectorId,
-            AccumuloClient client)
+            AccumuloClient client,
+            AccumuloConfig config)
     {
         this.connectorId = requireNonNull(connectorId, "connectorId is null");
         this.client = requireNonNull(client, "client is null");
+        this.supportMetadataDeletes = requireNonNull(config).isSupportMetadataDeletes();
     }
 
     public AccumuloMetadata create()
     {
-        return new AccumuloMetadata(connectorId, client);
+        return new AccumuloMetadata(connectorId, client, supportMetadataDeletes);
     }
 }

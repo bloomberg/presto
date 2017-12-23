@@ -39,6 +39,7 @@ public class AccumuloConfig
     public static final String SECURITY = "accumulo.security";
     public static final String SECURITY_NONE = "none";
     public static final String SECURITY_FILE = "file";
+    public static final String SUPPORT_METADATA_DELETES = "accumulo.support.metadata.deletes";
 
     private String instance;
     private String zooKeepers;
@@ -49,6 +50,7 @@ public class AccumuloConfig
     private Duration cardinalityCacheExpiration = new Duration(5, TimeUnit.MINUTES);
     private int maxIndexLookupCardinality = 20_000_000;
     private String security = SECURITY_NONE;
+    private boolean supportMetadataDeletes = false;
 
     @NotNull
     public String getInstance()
@@ -171,5 +173,17 @@ public class AccumuloConfig
     public void setSecurity(String security)
     {
         this.security = security;
+    }
+
+    public boolean isSupportMetadataDeletes()
+    {
+        return supportMetadataDeletes;
+    }
+
+    @Config(SUPPORT_METADATA_DELETES)
+    @ConfigDescription("True to support metadata deletes, false otherwise.  Default value is 'false'")
+    public void setSupportMetadataDeletes(boolean supportMetadataDeletes)
+    {
+        this.supportMetadataDeletes = supportMetadataDeletes;
     }
 }
