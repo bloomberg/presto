@@ -72,6 +72,7 @@ public class AccumuloPageSourceProvider
     {
         try {
             AccumuloSplit accumuloSplit = (AccumuloSplit) split;
+            Authorizations auths = getScanAuthorizations(session, accumuloSplit, connector, username);
 
             List<Range> ranges;
             if (accumuloSplit.getIndexQueryParameters().isPresent()) {
@@ -80,7 +81,7 @@ public class AccumuloPageSourceProvider
                         session,
                         ImmutableList.of(accumuloSplit.getIndexQueryParameters().get()),
                         accumuloSplit.getRowIdRanges(),
-                        getScanAuthorizations(session, accumuloSplit, connector, username));
+                        auths);
 
                 // No data to retrieve from Accumulo, return a null page
                 if (ranges.isEmpty()) {
@@ -93,7 +94,7 @@ public class AccumuloPageSourceProvider
 
             return new AccumuloPageSource(
                     connector,
-                    connector.securityOperations().getUserAuthorizations(username),
+                    auths,
                     metadataManager.getTable(new SchemaTableName(accumuloSplit.getSchema(), accumuloSplit.getTable())),
                     ranges,
                     columns.stream().map(AccumuloColumnHandle.class::cast).collect(Collectors.toList()));
