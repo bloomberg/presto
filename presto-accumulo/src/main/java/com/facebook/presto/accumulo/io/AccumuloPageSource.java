@@ -37,6 +37,7 @@ import org.apache.accumulo.core.client.TableNotFoundException;
 import org.apache.accumulo.core.data.Key;
 import org.apache.accumulo.core.data.Range;
 import org.apache.accumulo.core.data.Value;
+import org.apache.accumulo.core.iterators.FirstEntryInRowIterator;
 import org.apache.accumulo.core.iterators.user.WholeRowIterator;
 import org.apache.accumulo.core.security.Authorizations;
 import org.apache.commons.lang3.tuple.Pair;
@@ -113,7 +114,13 @@ public class AccumuloPageSource
 
         scanner.setRanges(ranges.isEmpty() ? ImmutableList.of(new Range()) : ranges);
         scanner.addScanIterator(new IteratorSetting(Integer.MAX_VALUE, WholeRowIterator.class));
-        scanner.fetchColumn(ROW_COLUMN.getLeft(), ROW_COLUMN.getRight());
+
+        if (columns.size() > 0) {
+            scanner.fetchColumn(ROW_COLUMN.getLeft(), ROW_COLUMN.getRight());
+        }
+        else {
+            scanner.addScanIterator(new IteratorSetting(Integer.MAX_VALUE - 1, FirstEntryInRowIterator.class));
+        }
 
         for (int i = 0; i < columns.size(); ++i) {
             AccumuloColumnHandle column = columns.get(i);
