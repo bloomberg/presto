@@ -68,14 +68,8 @@ public class AccumuloRange
 
         if (start != null) {
             if (end != null) {
-                if (start.length == end.length) {
+                if (start.length <= end.length) {
                     this.start = start;
-                    this.end = end;
-                }
-                else if (start.length < end.length) {
-                    byte[] zeroes = new byte[end.length - start.length];
-                    Arrays.fill(zeroes, (byte) 0);
-                    this.start = Bytes.concat(start, zeroes);
                     this.end = end;
                 }
                 else {
@@ -89,6 +83,7 @@ public class AccumuloRange
                 this.start = start;
                 this.end = new byte[start.length];
                 Arrays.fill(this.end, (byte) 255);
+                this.end[0] = 0x7f;
             }
         }
         else {
@@ -107,7 +102,7 @@ public class AccumuloRange
         this.isStartKeyInclusive = isStartKeyInclusive;
         this.isEndKeyInclusive = isEndKeyInclusive;
 
-        this.range = new Range(start != null ? new Text(start) : null, isStartKeyInclusive, end != null ? new Text(end) : null, isEndKeyInclusive);
+        this.range = new Range(this.start != null ? new Text(this.start) : null, isStartKeyInclusive, this.end != null ? new Text(this.end) : null, isEndKeyInclusive);
     }
 
     public AccumuloRange(Range range)
@@ -194,6 +189,7 @@ public class AccumuloRange
                 paddedStart = start;
                 paddedEnd = new byte[start.length];
                 Arrays.fill(paddedEnd, (byte) 255);
+                paddedEnd[0] = 0x7f;
             }
         }
         else {
