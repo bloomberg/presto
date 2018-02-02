@@ -354,11 +354,15 @@ public class TabletSplitGenerationMachine
                 return false;
             }
             else if (queryParameter.getCardinality() < threshold) {
-                LOG.debug("Distribution of index is disabled, cardinality of query column is too large.  Needs to be greater than or equal to " + threshold);
+                LOG.debug("Distribution of index is disabled; cardinality of query column is too large.  Needs to be greater than or equal to " + threshold);
                 return false;
             }
             else if (queryParameter.getRanges().stream().anyMatch(Indexer::isExact)) {
-                LOG.debug("Distribution of index is disabled, query contains an exact key lookup.  Distribution is only supported for range scans");
+                LOG.debug("Distribution of index is disabled; query contains an exact key lookup.  Distribution is only supported for range scans");
+                return false;
+            }
+            else if (queryParameter.getRanges().stream().anyMatch(range -> range.isInfiniteStartKey() || range.isInfiniteStopKey())) {
+                LOG.debug("Distribution of index is disabled; query contains a range with an infinite start and/or end.  Distribution is only supported for 'between' ranges");
                 return false;
             }
 
