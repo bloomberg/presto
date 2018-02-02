@@ -325,8 +325,8 @@ public class IndexQueryParameters
     {
         List<AccumuloRange> newRanges = new ArrayList<>();
         for (AccumuloRange range : ranges) {
-            Iterator<byte[]> shardedStartSplits = shardedIndexStorage.encodeAllShards(range.getStart()).iterator();
-            Iterator<byte[]> shardedEndSplits = shardedIndexStorage.encodeAllShards(range.getEnd()).iterator();
+            Iterator<byte[]> shardedStartSplits = shardedIndexStorage.encodeAllShards(range.getPaddedRange().getStart()).iterator();
+            Iterator<byte[]> shardedEndSplits = shardedIndexStorage.encodeAllShards(range.getPaddedRange().getEnd()).iterator();
             while (shardedStartSplits.hasNext()) {
                 newRanges.add(new AccumuloRange(shardedStartSplits.next(), range.isStartKeyInclusive(), shardedEndSplits.next(), range.isEndKeyInclusive()));
             }

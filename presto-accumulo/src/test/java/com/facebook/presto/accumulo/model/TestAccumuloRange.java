@@ -20,6 +20,7 @@ import io.airlift.json.JsonCodec;
 import org.testng.annotations.Test;
 
 import static com.facebook.presto.spi.type.VarcharType.VARCHAR;
+import static java.lang.String.format;
 import static org.testng.Assert.assertEquals;
 
 public class TestAccumuloRange
@@ -68,7 +69,7 @@ public class TestAccumuloRange
         byte[] b = null;
         AccumuloRange range = new AccumuloRange(a, b).getPaddedRange();
         assertEquals(range.getStart(), a);
-        assertEquals(range.getEnd(), new byte[] {(byte) 255, (byte) 255, (byte) 255});
+        assertEquals(range.getEnd(), new byte[] {(byte) 0x7f, (byte) 255, (byte) 255});
         assertEquals(range.isStartKeyInclusive(), true);
         assertEquals(range.isEndKeyInclusive(), true);
         assertEquals(range.isInfiniteStartKey(), false);
@@ -76,7 +77,7 @@ public class TestAccumuloRange
 
         range = new AccumuloRange(a, false, b, false).getPaddedRange();
         assertEquals(range.getStart(), a);
-        assertEquals(range.getEnd(), new byte[] {(byte) 255, (byte) 255, (byte) 255});
+        assertEquals(range.getEnd(), new byte[] {(byte) 0x7f, (byte) 255, (byte) 255});
         assertEquals(range.isStartKeyInclusive(), false);
         assertEquals(range.isEndKeyInclusive(), false);
         assertEquals(range.isInfiniteStartKey(), false);
@@ -91,7 +92,7 @@ public class TestAccumuloRange
         byte[] b = null;
         AccumuloRange range = new AccumuloRange(a, b).getPaddedRange();
         assertEquals(range.getStart(), a);
-        assertEquals(range.getEnd(), new byte[] {(byte) 255, (byte) 255, (byte) 255});
+        assertEquals(range.getEnd(), new byte[] {(byte) 0x7f, (byte) 255, (byte) 255});
         assertEquals(range.isStartKeyInclusive(), true);
         assertEquals(range.isEndKeyInclusive(), true);
         assertEquals(range.isInfiniteStartKey(), false);
@@ -99,7 +100,7 @@ public class TestAccumuloRange
 
         range = new AccumuloRange(a, false, b, false).getPaddedRange();
         assertEquals(range.getStart(), a);
-        assertEquals(range.getEnd(), new byte[] {(byte) 255, (byte) 255, (byte) 255});
+        assertEquals(range.getEnd(), new byte[] {(byte) 0x7f, (byte) 255, (byte) 255});
         assertEquals(range.isStartKeyInclusive(), false);
         assertEquals(range.isEndKeyInclusive(), false);
         assertEquals(range.isInfiniteStartKey(), false);

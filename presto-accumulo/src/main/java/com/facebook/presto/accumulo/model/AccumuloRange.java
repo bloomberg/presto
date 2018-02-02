@@ -65,40 +65,8 @@ public class AccumuloRange
     {
         this.isStartKeyInfinite = start == null;
         this.isEndKeyInfinite = end == null;
-
-        if (start != null) {
-            if (end != null) {
-                if (start.length <= end.length) {
-                    this.start = start;
-                    this.end = end;
-                }
-                else {
-                    byte[] ffs = new byte[start.length - end.length];
-                    Arrays.fill(ffs, (byte) 255);
-                    this.start = start;
-                    this.end = Bytes.concat(end, ffs);
-                }
-            }
-            else {
-                this.start = start;
-                this.end = new byte[start.length];
-                Arrays.fill(this.end, (byte) 255);
-                this.end[0] = 0x7f;
-            }
-        }
-        else {
-            if (end != null) {
-                this.start = new byte[end.length];
-                Arrays.fill(this.start, (byte) 0);
-                this.end = end;
-            }
-            else {
-                // both null
-                this.start = null;
-                this.end = null;
-            }
-        }
-
+        this.start = start;
+        this.end = end;
         this.isStartKeyInclusive = isStartKeyInclusive;
         this.isEndKeyInclusive = isEndKeyInclusive;
 
