@@ -141,17 +141,10 @@ public class TestIndexQueryParameters
         List<List<Range>> splitParams = parameters.split(4).stream().map(IndexQueryParameters::getRanges).collect(Collectors.toList());
         System.out.println(splitParams);
 
-        for (List<Range> ranges : splitParams) {
-            System.out.println("foo");
-            for (Range r : ranges) {
-                System.out.println(String.format("%s %s", SERIALIZER.decode(TIMESTAMP, r.getStartKey().getRow().copyBytes()), SERIALIZER.decode(TIMESTAMP, Arrays.copyOfRange(r.getEndKey().getRow().copyBytes(), 0, 9))));
-            }
-        }
-
         assertEquals(splitParams, ImmutableList.of(
-                ImmutableList.of(new Range(new Text(SERIALIZER.encode(TIMESTAMP, 998449445321L)), true, new Text(SERIALIZER.encode(TIMESTAMP, 999119045321L)), true)),
-                ImmutableList.of(new Range(new Text(SERIALIZER.encode(TIMESTAMP, 999119045321L)), true, new Text(SERIALIZER.encode(TIMESTAMP, 999788645321L)), true)),
-                ImmutableList.of(new Range(new Text(SERIALIZER.encode(TIMESTAMP, 999788645321L)), true, new Text(SERIALIZER.encode(TIMESTAMP, 1000458245321L)), true)),
+                ImmutableList.of(new Range(new Text(SERIALIZER.encode(TIMESTAMP, 998449445321L)), true, new Text(SERIALIZER.encode(TIMESTAMP, 999119045321L)), false)),
+                ImmutableList.of(new Range(new Text(SERIALIZER.encode(TIMESTAMP, 999119045321L)), true, new Text(SERIALIZER.encode(TIMESTAMP, 999788645321L)), false)),
+                ImmutableList.of(new Range(new Text(SERIALIZER.encode(TIMESTAMP, 999788645321L)), true, new Text(SERIALIZER.encode(TIMESTAMP, 1000458245321L)), false)),
                 ImmutableList.of(new Range(new Text(SERIALIZER.encode(TIMESTAMP, 1000458245321L)), true, new Text(SERIALIZER.encode(TIMESTAMP, 1001127845321L)), true))));
     }
 
@@ -175,15 +168,18 @@ public class TestIndexQueryParameters
                 Pair.of(999788645321L, 1000458245321L),
                 Pair.of(1000458245321L, 1001127845321L));
 
-        for (Pair<Long, Long> startEnd : values) {
+        for (int i = 0; i < values.size(); ++i) {
+            Pair<Long, Long> startEnd = values.get(i);
             ImmutableList.Builder<Range> rangeBuilder = ImmutableList.builder();
             List<byte[]> startShards = shardedIndexStorage.encodeAllShards(SERIALIZER.encode(TIMESTAMP, startEnd.getLeft()));
             List<byte[]> endShards = shardedIndexStorage.encodeAllShards(SERIALIZER.encode(TIMESTAMP, startEnd.getRight()));
-            for (int i = 0; i < startShards.size(); ++i) {
-                rangeBuilder.add(new Range(new Text(startShards.get(i)), true, new Text(endShards.get(i)), true));
+            for (int j = 0; j < startShards.size(); ++j) {
+                rangeBuilder.add(new Range(new Text(startShards.get(j)), true, new Text(endShards.get(j)), i == values.size() - 1));
             }
             expectedBuilder.add(rangeBuilder.build());
         }
+
+        List<List<Range>> expected = expectedBuilder.build();
 
         assertEquals(splitParams, expectedBuilder.build());
     }
@@ -222,5 +218,51 @@ public class TestIndexQueryParameters
 
         parameters.appendColumn("cf_born".getBytes(UTF_8), ImmutableList.of(new AccumuloRange(MIN_TIMESTAMP_VALUE, MAX_TIMESTAMP_VALUE)), true);
         parameters.appendColumn("cf_born".getBytes(UTF_8), ImmutableList.of(new AccumuloRange(MIN_TIMESTAMP_VALUE, MAX_TIMESTAMP_VALUE)), true);
+    }
+
+    @Test
+    public void testSplitRangesHaveProperInclusivity()
+    {
+        IndexQueryParameters parameters = new IndexQueryParameters(new IndexColumn("foo", ImmutableList.of(), ImmutableList.of("eventtime")));
+        byte[] start = SERIALIZER.encode(TIMESTAMP, PARSER.parseDateTime("2017-12-11T09:55:11.682+0000").getMillis());
+        byte[] mid1 = SERIALIZER.encode(TIMESTAMP, PARSER.parseDateTime("2017-12-11T10:10:11.682+0000").getMillis());
+        byte[] mid2 = SERIALIZER.encode(TIMESTAMP, PARSER.parseDateTime("2017-12-11T10:25:11.682+0000").getMillis());
+        byte[] mid3 = SERIALIZER.encode(TIMESTAMP, PARSER.parseDateTime("2017-12-11T10:40:11.682+0000").getMillis());
+        byte[] end = SERIALIZER.encode(TIMESTAMP, PARSER.parseDateTime("2017-12-11T10:55:11.682+0000").getMillis());
+        parameters.appendColumn("cf_eventtime".getBytes(UTF_8), ImmutableList.of(new AccumuloRange(start, end)), true);
+
+        List<IndexQueryParameters> splitParameters = parameters.split(4);
+
+        assertEquals(splitParameters.size(), 4);
+        for (int i = 0; i < 4; ++i) {
+            assertEquals(splitParameters.get(i).getAccumuloRanges().size(), 1);
+        }
+        assertEquals(splitParameters.get(0).getAccumuloRanges().get(0), new AccumuloRange(start, true, mid1, false));
+        assertEquals(splitParameters.get(1).getAccumuloRanges().get(0), new AccumuloRange(mid1, true, mid2, false));
+        assertEquals(splitParameters.get(2).getAccumuloRanges().get(0), new AccumuloRange(mid2, true, mid3, false));
+        assertEquals(splitParameters.get(3).getAccumuloRanges().get(0), new AccumuloRange(mid3, true, end, true));
+    }
+
+    @Test
+    public void testSplitRangesHaveProperInclusivityExludedEnds()
+    {
+        IndexQueryParameters parameters = new IndexQueryParameters(new IndexColumn("foo", ImmutableList.of(), ImmutableList.of("eventtime")));
+        byte[] start = SERIALIZER.encode(TIMESTAMP, PARSER.parseDateTime("2017-12-11T09:55:11.682+0000").getMillis());
+        byte[] mid1 = SERIALIZER.encode(TIMESTAMP, PARSER.parseDateTime("2017-12-11T10:10:11.682+0000").getMillis());
+        byte[] mid2 = SERIALIZER.encode(TIMESTAMP, PARSER.parseDateTime("2017-12-11T10:25:11.682+0000").getMillis());
+        byte[] mid3 = SERIALIZER.encode(TIMESTAMP, PARSER.parseDateTime("2017-12-11T10:40:11.682+0000").getMillis());
+        byte[] end = SERIALIZER.encode(TIMESTAMP, PARSER.parseDateTime("2017-12-11T10:55:11.682+0000").getMillis());
+        parameters.appendColumn("cf_eventtime".getBytes(UTF_8), ImmutableList.of(new AccumuloRange(start, false, end, false)), true);
+
+        List<IndexQueryParameters> splitParameters = parameters.split(4);
+
+        assertEquals(splitParameters.size(), 4);
+        for (int i = 0; i < 4; ++i) {
+            assertEquals(splitParameters.get(i).getAccumuloRanges().size(), 1);
+        }
+        assertEquals(splitParameters.get(0).getAccumuloRanges().get(0), new AccumuloRange(start, false, mid1, false));
+        assertEquals(splitParameters.get(1).getAccumuloRanges().get(0), new AccumuloRange(mid1, true, mid2, false));
+        assertEquals(splitParameters.get(2).getAccumuloRanges().get(0), new AccumuloRange(mid2, true, mid3, false));
+        assertEquals(splitParameters.get(3).getAccumuloRanges().get(0), new AccumuloRange(mid3, true, end, false));
     }
 }

@@ -20,7 +20,6 @@ import io.airlift.json.JsonCodec;
 import org.testng.annotations.Test;
 
 import static com.facebook.presto.spi.type.VarcharType.VARCHAR;
-import static java.lang.String.format;
 import static org.testng.Assert.assertEquals;
 
 public class TestAccumuloRange

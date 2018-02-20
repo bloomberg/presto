@@ -211,7 +211,7 @@ public class IndexQueryParameters
         Iterator<AccumuloRange> rangeIterator = shardedIndexStorage.map(indexStorage -> decodeRanges(indexStorage, ranges).iterator()).orElseGet(() -> ranges.iterator());
 
         for (AccumuloRange paddedRange : paddedRanges) {
-            List<AccumuloRange> splitRanges = splitRanges(rangeIterator.next(), paddedRange.getStart(), paddedRange.getEnd(), n);
+            List<AccumuloRange> splitRanges = splitRanges(rangeIterator.next(), paddedRange.getStart(), paddedRange.isStartKeyInclusive(), paddedRange.getEnd(), paddedRange.isEndKeyInclusive(), n);
             for (int i = 0; i < splitRanges.size(); ++i) {
                 distributeRanges.get(i).add(splitRanges.get(i));
             }
@@ -360,7 +360,7 @@ public class IndexQueryParameters
         return ranges;
     }
 
-    private List<AccumuloRange> splitRanges(AccumuloRange range, byte[] a, byte[] b, int n)
+    private List<AccumuloRange> splitRanges(AccumuloRange range, byte[] a, boolean isStartKeyInclusive, byte[] b, boolean isEndKeyInclusive, int n)
     {
         checkArgument(n > 0, "Number of splits must be greater than zero");
 
@@ -373,10 +373,10 @@ public class IndexQueryParameters
         byte[] previous = range.getStart();
         for (int i = 1; i < n; ++i) {
             byte[] split = start.add(slice.multiply(BigInteger.valueOf(i))).toByteArray();
-            splits.add(new AccumuloRange(previous, split));
+            splits.add(new AccumuloRange(previous, i != 1 || isStartKeyInclusive, split, false));
             previous = split;
         }
-        splits.add(new AccumuloRange(previous, range.getEnd()));
+        splits.add(new AccumuloRange(previous, true, range.getEnd(), isEndKeyInclusive));
 
         return splits;
     }
