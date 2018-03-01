@@ -438,10 +438,11 @@ public class TabletSplitGenerationMachine
             checkState(state == State.FULL, "State machine is not set to FULL");
 
             long threshold = getIndexMaximumThreshold(session);
-            if (numRows > threshold) {
+            if (numRows > threshold && rowIdRangesHaveFiniteStartOrEnd()) {
+                LOG.debug("Row Id RANGES: %s", rowIdRanges);
                 throw new PrestoException(EXCEEDED_INDEX_THRESHOLD, format("Refusing to execute this query: Index lookup cannot be distributed to workers and the number of rows in the table (%s) is greater than index_maximum_threshold (%s)", numRows, threshold));
             }
-            else if (numRows < 0) {
+            else if (numRows < 0 && rowIdRangesHaveFiniteStartOrEnd()) {
                 LOG.debug("Executing full table scan against a non-indexed table.  Unable to determine if this is a bad idea");
             }
 
@@ -459,6 +460,11 @@ public class TabletSplitGenerationMachine
             // Log some fun stuff and return the tablet splits
             LOG.debug("Number of splits for table %s is %d with %d ranges", tableName, tabletSplits.size(), splitRanges.size());
             state = State.DONE;
+        }
+
+        private boolean rowIdRangesHaveFiniteStartOrEnd()
+        {
+            return rowIdRanges.stream().noneMatch(range -> !range.isInfiniteStartKey() || !range.isInfiniteStopKey());
         }
 
         /**
