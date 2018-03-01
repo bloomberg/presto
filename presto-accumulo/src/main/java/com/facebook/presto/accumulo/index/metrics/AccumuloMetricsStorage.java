@@ -92,6 +92,7 @@ public class AccumuloMetricsStorage
             IteratorSetting setting1 = new IteratorSetting(1, SummingCombiner.class);
             SummingCombiner.setEncodingType(setting1, ENCODER_TYPE);
             SummingCombiner.setColumns(setting1, ImmutableList.of(new IteratorSetting.Column(new String(Bytes.concat(METRICS_TABLE_ROWS_COLUMN.array(), CARDINALITY_CF), UTF_8), new String(CARDINALITY_CQ, UTF_8))));
+            SummingCombiner.setReduceOnFullCompactionOnly(setting1, true);
             tableManager.setIterator(getMetricsTableName(table), setting1);
 
             // Filter out all entries with a value of zero
@@ -229,6 +230,7 @@ public class AccumuloMetricsStorage
         IteratorSetting setting1 = new IteratorSetting(1, SummingCombiner.class);
         SummingCombiner.setEncodingType(setting1, ENCODER_TYPE);
         SummingCombiner.setColumns(setting1, columnBuilder.build());
+        SummingCombiner.setReduceOnFullCompactionOnly(setting1, true);
 
         // Filter out all entries with a value of zero
         IteratorSetting setting2 = new IteratorSetting(2, RegExFilter.class);
