@@ -673,6 +673,7 @@ public class AccumuloClient
             AccumuloTable table,
             Optional<Domain> rowIdDomain,
             List<AccumuloColumnConstraint> constraints)
+            throws AccumuloSecurityException, AccumuloException
     {
         return tabletSplitMachine.getTabletSplits(session, auths, table, rowIdDomain, constraints, nodeManager.getWorkerNodes().size());
     }

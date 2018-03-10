@@ -78,7 +78,7 @@ public class TestAccumuloSplit
                                 "qual2",
                                 VARCHAR,
                                 Optional.empty())),
-                Optional.of("foo,bar"));
+                "foo,bar");
 
         String json = codec.toJson(expected);
         AccumuloSplit actual = codec.fromJson(json);
@@ -98,7 +98,7 @@ public class TestAccumuloSplit
                 ImmutableList.of(),
                 Optional.empty(),
                 ImmutableList.of(),
-                Optional.empty());
+                "");
 
         String json = codec.toJson(expected);
         AccumuloSplit actual = codec.fromJson(json);

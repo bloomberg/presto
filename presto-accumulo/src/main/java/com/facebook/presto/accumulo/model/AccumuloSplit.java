@@ -41,7 +41,7 @@ public class AccumuloSplit
     private final String schema;
     private final String table;
     private final String serializerClassName;
-    private final Optional<String> scanAuthorizations;
+    private final String scanAuthorizations;
     private final List<AccumuloColumnConstraint> constraints;
     private final List<AccumuloRange> ranges;
     private final Collection<AccumuloRange> rowIdRanges;
@@ -58,7 +58,7 @@ public class AccumuloSplit
             @JsonProperty("rowIdRanges") Collection<AccumuloRange> rowIdRanges,
             @JsonProperty("indexQueryParameters") Optional<IndexQueryParameters> indexQueryParameters,
             @JsonProperty("constraints") List<AccumuloColumnConstraint> constraints,
-            @JsonProperty("scanAuthorizations") Optional<String> scanAuthorizations)
+            @JsonProperty("scanAuthorizations") String scanAuthorizations)
     {
         this.connectorId = requireNonNull(connectorId, "connectorId is null");
         this.rowId = requireNonNull(rowId, "rowId is null");
@@ -157,7 +157,7 @@ public class AccumuloSplit
     }
 
     @JsonProperty
-    public Optional<String> getScanAuthorizations()
+    public String getScanAuthorizations()
     {
         return scanAuthorizations;
     }

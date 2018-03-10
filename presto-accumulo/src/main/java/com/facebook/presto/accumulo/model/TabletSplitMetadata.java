@@ -32,13 +32,19 @@ public class TabletSplitMetadata
     private final List<Range> ranges;
     private final Collection<AccumuloRange> rowIdRanges;
     private final Optional<IndexQueryParameters> indexQueryParameters;
+    private final String auths;
 
     @JsonCreator
-    public TabletSplitMetadata(List<Range> ranges, Collection<AccumuloRange> rowIdRanges, Optional<IndexQueryParameters> indexQueryParameters)
+    public TabletSplitMetadata(
+            List<Range> ranges,
+            Collection<AccumuloRange> rowIdRanges,
+            Optional<IndexQueryParameters> indexQueryParameters,
+            String auths)
     {
         this.ranges = ImmutableList.copyOf(requireNonNull(ranges, "ranges is null"));
         this.rowIdRanges = ImmutableList.copyOf(requireNonNull(rowIdRanges, "rowIdRanges is null"));
         this.indexQueryParameters = requireNonNull(indexQueryParameters, "indexQueryParameters is null");
+        this.auths = requireNonNull(auths, "auths is null");
         checkArgument(ranges.size() > 0 ^ indexQueryParameters.isPresent(), "Both ranges and index query parameters must not be set/empty");
     }
 
@@ -57,10 +63,15 @@ public class TabletSplitMetadata
         return indexQueryParameters;
     }
 
+    public String getAuths()
+    {
+        return auths;
+    }
+
     @Override
     public int hashCode()
     {
-        return Objects.hash(ranges, rowIdRanges, indexQueryParameters);
+        return Objects.hash(ranges, rowIdRanges, indexQueryParameters, auths);
     }
 
     @Override
@@ -77,7 +88,8 @@ public class TabletSplitMetadata
         TabletSplitMetadata other = (TabletSplitMetadata) obj;
         return Objects.equals(this.ranges, other.ranges) &&
                 Objects.equals(this.rowIdRanges, other.rowIdRanges) &&
-                Objects.equals(this.indexQueryParameters, other.indexQueryParameters);
+                Objects.equals(this.indexQueryParameters, other.indexQueryParameters) &&
+                Objects.equals(this.auths, other.auths);
     }
 
     @Override
@@ -87,6 +99,7 @@ public class TabletSplitMetadata
                 .add("numRanges", ranges.size())
                 .add("numRowIdRanges", rowIdRanges.size())
                 .add("indexQueryParameters", indexQueryParameters)
+                .add("auths", auths)
                 .toString();
     }
 }

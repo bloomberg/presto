@@ -117,6 +117,7 @@ public class TabletSplitGenerationMachine
             Optional<Domain> rowIdDomain,
             List<AccumuloColumnConstraint> constraints,
             int numWorkers)
+            throws AccumuloSecurityException, AccumuloException
     {
         return new TabletSplitGenerationTask(session, auths, table, rowIdDomain, constraints, maxIndexLookup, numWorkers).run();
     }
@@ -141,10 +142,11 @@ public class TabletSplitGenerationMachine
         private double threshold;
         private Long numRows = null;
 
-        public TabletSplitGenerationTask(ConnectorSession session, Authorizations auths, AccumuloTable table, Optional<Domain> rowIdDomain, List<AccumuloColumnConstraint> constraints, int maxIndexLookup, int numWorkers)
+        public TabletSplitGenerationTask(ConnectorSession session, Authorizations connectorAuths, AccumuloTable table, Optional<Domain> rowIdDomain, List<AccumuloColumnConstraint> constraints, int maxIndexLookup, int numWorkers)
+                throws AccumuloSecurityException, AccumuloException
         {
             this.session = requireNonNull(session, "session is null");
-            this.auths = requireNonNull(auths, "auths is null");
+            this.auths = getScanAuthorizations(session, table, requireNonNull(connectorAuths, "auths is null"));
             this.table = requireNonNull(table, "table is null");
             this.rowIdDomain = requireNonNull(rowIdDomain, "rowIdDomain is null");
             this.constraints = requireNonNull(constraints, "constraints is null");
@@ -243,7 +245,6 @@ public class TabletSplitGenerationMachine
          * @return true if the state changed, false otherwise
          */
         private boolean ensureQueryParameters()
-                throws Exception
         {
             if (indexQueryParameters != null) {
                 return false;
@@ -274,7 +275,7 @@ public class TabletSplitGenerationMachine
                     session,
                     table.getSchema(),
                     table.getTable(),
-                    getScanAuthorizations(session, table),
+                    auths,
                     indexQueryParameters,
                     getSmallestCardinalityThreshold(session, numRows),
                     metricsStorage);
@@ -371,7 +372,6 @@ public class TabletSplitGenerationMachine
         }
 
         private void handleDistributeState()
-                throws Exception
         {
             checkState(state == State.DISTRIBUTE, "State machine is not set to DISTRIBUTE");
             requireNonNull(indexQueryParameters, "Index query parameters are null");
@@ -385,13 +385,13 @@ public class TabletSplitGenerationMachine
             if (numSplits > 0) {
                 ImmutableList.Builder<TabletSplitMetadata> builder = ImmutableList.builder();
                 for (IndexQueryParameters splitParams : params.split(numSplits)) {
-                    builder.add(new TabletSplitMetadata(ImmutableList.of(), rowIdRanges, Optional.of(splitParams)));
+                    builder.add(new TabletSplitMetadata(ImmutableList.of(), rowIdRanges, Optional.of(splitParams), auths.toString()));
                 }
                 tabletSplits = builder.build();
             }
             else {
                 tabletSplits = new ArrayList<>();
-                tabletSplits.add(new TabletSplitMetadata(ImmutableList.of(), rowIdRanges, Optional.of(params)));
+                tabletSplits.add(new TabletSplitMetadata(ImmutableList.of(), rowIdRanges, Optional.of(params), auths.toString()));
             }
 
             LOG.info("Distributing %s tablet splits to worker nodes for index retrieval", tabletSplits.size());
@@ -399,14 +399,13 @@ public class TabletSplitGenerationMachine
         }
 
         private void handleIndexState()
-                throws Exception
         {
             checkState(state == State.INDEX, "State machine is not set to INDEX");
             requireNonNull(indexQueryParameters, "Index query parameters are null");
             requireNonNull(numRows, "Number of rows is null");
 
             // Get the ranges via the index table
-            List<Range> indexRanges = new IndexLookup().getIndexRanges(connector, session, indexQueryParameters, rowIdRanges, getScanAuthorizations(session, table));
+            List<Range> indexRanges = new IndexLookup().getIndexRanges(connector, session, indexQueryParameters, rowIdRanges, auths);
             if (!indexRanges.isEmpty()) {
                 // Okay, we now check how many rows we would scan by using the index vs. the overall number of rows
                 long numEntries = indexRanges.size();
@@ -417,7 +416,7 @@ public class TabletSplitGenerationMachine
                 if (ratio < threshold) {
                     // Bin the ranges into TabletMetadataSplits and return true to use the tablet splits
                     tabletSplits = new ArrayList<>();
-                    binRanges(optimizeNumRowsPerSplit(session, indexRanges.size(), numWorkers), indexRanges, rowIdRanges, tabletSplits);
+                    binRanges(optimizeNumRowsPerSplit(session, indexRanges.size(), numWorkers), indexRanges, rowIdRanges, tabletSplits, auths);
                     LOG.debug("Number of splits for %s is %d with %d ranges", table.getFullTableName(), tabletSplits.size(), indexRanges.size());
                     state = State.DONE;
                 }
@@ -454,7 +453,7 @@ public class TabletSplitGenerationMachine
             // Create TabletSplitMetadata objects for each range
             for (Range range : splitRanges) {
                 // else, just use the default location
-                tabletSplits.add(new TabletSplitMetadata(ImmutableList.of(range), rowIdRanges, Optional.empty()));
+                tabletSplits.add(new TabletSplitMetadata(ImmutableList.of(range), rowIdRanges, Optional.empty(), auths.toString()));
             }
 
             // Log some fun stuff and return the tablet splits
@@ -474,11 +473,12 @@ public class TabletSplitGenerationMachine
          *
          * @param session Current session
          * @param table Table metadata
+         * @param connectorAuths Connector authorizations
          * @return Scan authorizations
          * @throws AccumuloException If a generic Accumulo error occurs
          * @throws AccumuloSecurityException If a security exception occurs
          */
-        private Authorizations getScanAuthorizations(ConnectorSession session, AccumuloTable table)
+        private Authorizations getScanAuthorizations(ConnectorSession session, AccumuloTable table, Authorizations connectorAuths)
                 throws AccumuloException, AccumuloSecurityException
         {
             String sessionScanUser = getScanUsername(session);
@@ -510,8 +510,8 @@ public class TabletSplitGenerationMachine
                 return scanAuths;
             }
 
-            LOG.debug("scan_auths table property not set, using connector auths: %s", this.auths);
-            return this.auths;
+            LOG.debug("scan_auths table property not set, using connector auths: %s", connectorAuths);
+            return connectorAuths;
         }
 
         private Collection<Range> splitByTabletBoundaries(String tableName, Collection<Range> ranges)
@@ -613,7 +613,6 @@ public class TabletSplitGenerationMachine
     }
 
     private static List<IndexQueryParameters> getIndexQueryParameters(AccumuloTable table, Collection<AccumuloColumnConstraint> constraints)
-            throws AccumuloSecurityException, AccumuloException
     {
         if (table.getParsedIndexColumns().size() == 0) {
             return ImmutableList.of();
@@ -673,7 +672,7 @@ public class TabletSplitGenerationMachine
         return prunedQueryParameters.build();
     }
 
-    private static void binRanges(int numRangesPerBin, List<Range> splitRanges, Collection<AccumuloRange> rowIdRanges, List<TabletSplitMetadata> prestoSplits)
+    private static void binRanges(int numRangesPerBin, List<Range> splitRanges, Collection<AccumuloRange> rowIdRanges, List<TabletSplitMetadata> prestoSplits, Authorizations auths)
     {
         checkArgument(numRangesPerBin > 0, "number of ranges per bin must be greater than zero");
         int toAdd = splitRanges.size();
@@ -682,7 +681,7 @@ public class TabletSplitGenerationMachine
         do {
             // Add the sublist of range handles
             // Use an empty location because we are binning multiple Ranges spread across many tablet servers
-            prestoSplits.add(new TabletSplitMetadata(splitRanges.subList(fromIndex, toIndex), rowIdRanges, Optional.empty()));
+            prestoSplits.add(new TabletSplitMetadata(splitRanges.subList(fromIndex, toIndex), rowIdRanges, Optional.empty(), auths.toString()));
             toAdd -= toIndex - fromIndex;
             fromIndex = toIndex;
             toIndex += Math.min(toAdd, numRangesPerBin);
