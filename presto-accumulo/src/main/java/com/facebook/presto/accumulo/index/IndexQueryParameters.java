@@ -14,6 +14,7 @@
 package com.facebook.presto.accumulo.index;
 
 import com.facebook.presto.accumulo.index.metrics.MetricsStorage.TimestampPrecision;
+import com.facebook.presto.accumulo.index.storage.PostfixedIndexStorage;
 import com.facebook.presto.accumulo.index.storage.ShardedIndexStorage;
 import com.facebook.presto.accumulo.model.AccumuloRange;
 import com.facebook.presto.accumulo.model.IndexColumn;
@@ -302,6 +303,15 @@ public class IndexQueryParameters
         }
 
         shardedIndexStorage.ifPresent(shardedIndexStorage1 -> ranges = encodeRanges(shardedIndexStorage1, ranges));
+
+        Optional<PostfixedIndexStorage> postfixIndexStorage = column.getIndexStorageMethods().stream().filter(storage -> storage instanceof PostfixedIndexStorage).map(storage -> (PostfixedIndexStorage) storage).findAny();
+        postfixIndexStorage.ifPresent(postfixedIndexStorage1 -> {
+            ranges = ranges.stream().map(range -> new AccumuloRange(
+                    range.getStart(),
+                    range.isInfiniteStartKey(),
+                    range.getEnd() != null ? Bytes.concat(range.getEnd(), new byte[] {(byte) 0xFF}) : range.getEnd(),
+                    range.isInfiniteStopKey())).collect(Collectors.toList());
+        });
     }
 
     private List<AccumuloRange> decodeRanges(ShardedIndexStorage shardedIndexStorage, List<AccumuloRange> ranges)
