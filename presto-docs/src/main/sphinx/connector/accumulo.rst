@@ -309,6 +309,64 @@ scans the data table.
      row1      | Grace Hopper | 109 | 1906-12-09
     (1 row)
 
+
+Indexing Strategies
+-------------------
+
+In previous versions of the connector, all indexes were in the same table with the
+metrics in a separate table.  The entire indexing system was overhauled for two reasons
+(breaking backwards compatability).  First, the keyspace distribution was not
+uniform due to different data types being stored in the same table.  Second, the index
+was a simple reverse index where the value of the cell became the row ID in the new
+table.  This causes hotspotting issues on ingest as well as wide rows for indexed
+columns with low-cardinality.
+
+Refactoring the index system allowed us to overcome these short comings.
+While a reverse index is still used, the connector will modify the row IDs on ingest
+and un-modify them on scans.  The data modification is seamless to the user.  Indexes
+and metrics are now stored in the same table, and each index column has their own
+corresponding Accumulo table.  This is handled for you by the connector.
+
+There are two indexing strategies the Accumulo connector supports.
+
+The first indexing strategy is called **shard**, where rows are randomly
+partitioned into a user-defined number of shards or buckets.  This distributes ingest across
+more tablets, reducing hotspotting.  The downside of this being that all shards must
+be scanned when searching the index to find the data. Due to the parallel nature of
+Accumulo, the benefits outweigh the additional scans.  When using this strategy, you
+need to provide the number of shards.  A prime number is generally best, and the default
+is eleven.
+
+The second strategy is called **postfix**, where random data is post-fixed to the end
+of the row ID.  This artificially increases the cardinality of the column, preventing
+wide, unsplittable tablets.  When using this strategy, you need to provide the number
+of bytes to postfix to the end.  The default is eight bytes.
+
+Note that both strategies can be used together.
+
+For most data types, the connector is unable to make a decision because it does not know
+your data as well as you do.  It does, however, have default storage strategies for:
+
+Boolean: Postfixed
+Date, Time, Time with TimeZone: Sharded, Postfixed
+Timestamp, Timestamp with TimeZone: Sharded
+
+For other types, declare the index strategy and the number of shards/bytes using
+the ``index_columns`` table property like so:
+
+.. code-block:: none
+
+    index_columns = 'foo-postfix:8,bar-shard:11,baz-shard:13-postfix:6,foo:bar-shard:11-postfix:8'
+
+The above defines four index columns:
+
+1. ``foo`` has a postfixed index strategy with 8 bytes
+2. ``bar`` has a sharded index strategy with 11 shards
+3. ``baz`` has a sharded and postfixed index strategy, with 13 shards and 6 bytes
+4. ``foo:bar`` is a composite index column, sharded and postfixed with 11 shards and 8 bytes.
+
+Note that if using a sharded and postfixed strategy, ``shard`` should be declared **before** ``postfix``.
+
 Loading Data
 ------------
 
@@ -484,9 +542,9 @@ Note that session properties are prefixed with the catalog name::
 
     SET SESSION accumulo.column_filter_optimizations_enabled = false;
 
-============================================= ============================= ==============================================================================================================================
+============================================= ============================= ===================================================================================================================================================
 Property Name                                 Default Value                 Description
-============================================= ============================= ==============================================================================================================================
+============================================= ============================= ===================================================================================================================================================
 ``optimize_split_ranges_enabled``             ``true``                      Set to true to split non-indexed queries by tablet splits. Should generally be true.
 ``optimize_index_enabled``                    ``true``                      Set to true to enable usage of the secondary index on query
 ``index_rows_per_split``                      ``10000``                     The number of Accumulo row IDs that are packed into a single Presto split
@@ -506,7 +564,11 @@ Property Name                                 Default Value                 Desc
 ``min_rows_per_split``                        ``100``                       The minimum number of row IDs that are packed into a single Presto split. Requires optimize.num.rows.per.split to be ``true``
 ``max_rows_per_split``                        ``50000``                     The maximum number of row IDs that are packed into a single Presto split. Requires optimize.num.rows.per.split to be ``true``
 ``splits_per_worker``                         ``max(1, numCPUs * 2 / 25)``  The desired number of splits to generate per worker node. Requires optimize.num.rows.per.split to be 'true``
-============================================= ============================= ==============================================================================================================================
+``tracing_enabled``                           ``false``                     True to enable Accumulo tracing on scan
+``index_distribution_threshold``              ``1000``                      Minimum number of rows that would cause the index lookup to be distributed to the workers, if applicable.  Set to zero to disable
+``index_maximum_threshold``                   ``50000000``                  Maximum number of rows that where non-distributed index lookups will be rejected by the SQL connector
+``scan_auths``                                ``null``                      Space-delimited list of scan auths to set for the batch scanner.  If scan_username is also set, the intersection of those auths with these are used
+============================================= ============================= ===================================================================================================================================================
 
 Adding Columns
 --------------
