@@ -20,6 +20,7 @@ import com.facebook.presto.accumulo.index.metrics.MetricsWriter;
 import com.facebook.presto.accumulo.index.storage.IndexStorage;
 import com.facebook.presto.accumulo.index.storage.PostfixedIndexStorage;
 import com.facebook.presto.accumulo.index.storage.ShardedIndexStorage;
+import com.facebook.presto.accumulo.io.PrestoBatchWriter.PrestoColumnUpdate;
 import com.facebook.presto.accumulo.metadata.AccumuloTable;
 import com.facebook.presto.accumulo.model.AccumuloColumnHandle;
 import com.facebook.presto.accumulo.model.AccumuloRange;
@@ -343,15 +344,14 @@ public class Indexer
     /**
      * Update the index value and metrics for the given row ID using the provided column updates.
      * <p>
-     * This method uses a Scanner to fetch the existing values of row, applying delete Mutations to
-     * the given columns with the visibility they were written with (using the Authorizations to scan
-     * the table), and then applying the new updates.
+     * This method uses the given previous values to skip scanning the index and is generally faster than {@link Indexer#update}.
+     * Failure to provide the correct previous values will result in data inconsistencies.
      *
      * @param rowBytes Serialized bytes of the row ID to update
-     * @param columnUpdates Multimap of a Pair of the column family/qualifier to all updates for this column containing the visibility and Java Object for this column type, along with the previous value of this column
+     * @param columnUpdates Multimap of a Pair of the column family/qualifier to all updates for this column
      * @param auths Authorizations to scan the table for deleting the entries.  For proper deletes, these authorizations must encapsulate whatever the visibility of the existing row is, otherwise you'll have duplicate values
      */
-    public void updateWithPrevious(byte[] rowBytes, Multimap<Pair<ByteBuffer, ByteBuffer>, Triple<ColumnVisibility, Object, Object>> columnUpdates, Authorizations auths)
+    public void updateWithPrevious(byte[] rowBytes, Multimap<Pair<ByteBuffer, ByteBuffer>, PrestoColumnUpdate> columnUpdates, Authorizations auths)
             throws AccumuloException, TableNotFoundException, AccumuloSecurityException
     {
         // Delete the column updates
@@ -368,11 +368,11 @@ public class Indexer
             deleteEntries.put(column, new ColumnUpdate(
                     column.getLeft().array(),
                     column.getRight().array(),
-                    update.getLeft().getExpression(),
+                    update.getPreviousVisibility().getExpression(),
                     true,
                     deleteTimestamp,
                     true,
-                    serializer.encode(handle.getType(), update.getRight())));
+                    serializer.encode(handle.getType(), update.getPreviousValue())));
         });
 
         applyUpdate(rowBytes, deleteEntries, true, auths);
@@ -381,7 +381,7 @@ public class Indexer
         long updateTimestamp = deleteTimestamp + 1;
         Multimap<Pair<ByteBuffer, ByteBuffer>, ColumnUpdate> updateEntries = MultimapBuilder.hashKeys().arrayListValues().build();
 
-        for (Entry<Pair<ByteBuffer, ByteBuffer>, Triple<ColumnVisibility, Object, Object>> update : columnUpdates.entries()) {
+        for (Entry<Pair<ByteBuffer, ByteBuffer>, PrestoColumnUpdate> update : columnUpdates.entries()) {
             AccumuloColumnHandle handle = table.getColumn(new String(update.getKey().getLeft().array(), UTF_8), new String(update.getKey().getRight().array(), UTF_8));
 
             if (!handle.getFamily().isPresent() || !handle.getQualifier().isPresent()) {
@@ -390,16 +390,16 @@ public class Indexer
 
             byte[] value;
             if (Types.isArrayType(handle.getType())) {
-                value = serializer.encode(handle.getType(), getBlockFromArray(Types.getElementType(handle.getType()), (List<?>) update.getValue().getMiddle()));
+                value = serializer.encode(handle.getType(), getBlockFromArray(Types.getElementType(handle.getType()), (List<?>) update.getValue().getValue()));
             }
             else if (Types.isMapType(handle.getType())) {
-                value = serializer.encode(handle.getType(), getBlockFromMap(Types.getElementType(handle.getType()), (Map<?, ?>) update.getValue().getMiddle()));
+                value = serializer.encode(handle.getType(), getBlockFromMap(Types.getElementType(handle.getType()), (Map<?, ?>) update.getValue().getValue()));
             }
             else {
-                value = serializer.encode(handle.getType(), update.getValue().getMiddle());
+                value = serializer.encode(handle.getType(), update.getValue().getValue());
             }
 
-            updateEntries.put(update.getKey(), new ColumnUpdate(update.getKey().getLeft().array(), update.getKey().getRight().array(), update.getValue().getLeft().getExpression(), true, updateTimestamp, false, value));
+            updateEntries.put(update.getKey(), new ColumnUpdate(update.getKey().getLeft().array(), update.getKey().getRight().array(), update.getValue().getVisibility().getExpression(), true, updateTimestamp, false, value));
         }
 
         // Apply the update mutations

@@ -48,7 +48,6 @@ import org.apache.accumulo.core.iterators.user.WholeRowIterator;
 import org.apache.accumulo.core.security.Authorizations;
 import org.apache.accumulo.core.security.ColumnVisibility;
 import org.apache.commons.lang3.tuple.Pair;
-import org.apache.commons.lang3.tuple.Triple;
 import org.apache.hadoop.io.Text;
 
 import java.io.IOException;
@@ -290,7 +289,13 @@ public class PrestoBatchWriter
     public void updateColumnByNameWithPrevious(Object rowId, String columnName, Object value, Object prevValue)
             throws AccumuloException, TableNotFoundException, AccumuloSecurityException
     {
-        updateColumnByNameWithPrevious(rowId, columnName, new ColumnVisibility(), value, prevValue);
+        updateColumnByNameWithPrevious(
+                rowId,
+                columnName, PrestoColumnUpdate.builder()
+                        .withVisibility(new ColumnVisibility())
+                        .withValue(value)
+                        .withPreviousValue(prevValue)
+                        .create());
     }
 
     /**
@@ -320,12 +325,39 @@ public class PrestoBatchWriter
      * @param columnName Presto column name to update
      * @param value New value of the cell
      * @param prevValue Previous value of the cell
+     * @deprecated Use {@link PrestoBatchWriter#updateColumnByNameWithPrevious(Object, String, PrestoColumnUpdate)}
      */
+    @Deprecated
     public void updateColumnByNameWithPrevious(Object rowId, String columnName, ColumnVisibility visibility, Object value, Object prevValue)
             throws AccumuloException, TableNotFoundException, AccumuloSecurityException
     {
         Pair<String, String> column = findColumnFamilyQualifier(columnName);
-        updateColumnWithPrevious(rowId, column.getLeft(), column.getRight(), visibility, value, prevValue);
+        updateColumnWithPrevious(
+                rowId,
+                column.getLeft(),
+                column.getRight(),
+                PrestoColumnUpdate.builder()
+                        .withValue(value)
+                        .withVisibility(visibility)
+                        .withPreviousValue(prevValue)
+                        .create());
+    }
+
+    /**
+     * Update the column of the row to the given value, identified by the Presto column name.
+     * <br>
+     * The previous value is used for faster updates by creating the proper delete mutations instead of querying Accumulo.
+     * Failure to provide the correct previous value will result in data inconsistencies.
+     *
+     * @param rowId Row ID, a Java object of the row value
+     * @param columnName Presto column name to update
+     * @param columnUpdate An instance of {@link PrestoColumnUpdate} containing the updated value and visibilities
+     */
+    public void updateColumnByNameWithPrevious(Object rowId, String columnName, PrestoColumnUpdate columnUpdate)
+            throws AccumuloException, TableNotFoundException, AccumuloSecurityException
+    {
+        Pair<String, String> column = findColumnFamilyQualifier(columnName);
+        updateColumnWithPrevious(rowId, column.getLeft(), column.getRight(), columnUpdate);
     }
 
     /**
@@ -378,17 +410,44 @@ public class PrestoBatchWriter
      * @param visibility Accumulo column visibility
      * @param value New value of the row
      * @param prevValue Previous value of the row
+     * @deprecated Use {@link PrestoBatchWriter#updateColumnWithPrevious(Object, String, String, PrestoColumnUpdate)}
      */
+    @Deprecated
     public void updateColumnWithPrevious(Object rowId, String family, String qualifier, ColumnVisibility visibility, Object value, Object prevValue)
             throws AccumuloException, TableNotFoundException, AccumuloSecurityException
     {
-        Multimap<Pair<ByteBuffer, ByteBuffer>, Triple<ColumnVisibility, Object, Object>> updates = MultimapBuilder.hashKeys().arrayListValues().build();
-        updates.put(Pair.of(wrap(family.getBytes(UTF_8)), wrap(qualifier.getBytes(UTF_8))), Triple.of(visibility, value, prevValue));
+        updateColumnWithPrevious(
+                rowId,
+                family,
+                qualifier,
+                PrestoColumnUpdate.builder()
+                        .withValue(value)
+                        .withVisibility(visibility)
+                        .withPreviousValue(prevValue)
+                        .create());
+    }
+
+    /**
+     * Update the given column of the row to the given value, identified by the Accumulo column family/qualifier and the provided column update
+     * <br>
+     * The previous value is used for faster updates by creating the proper delete mutations instead of querying Accumulo.
+     * Failure to provide the correct previous value will result in data inconsistencies.
+     *
+     * @param rowId Row ID, a Java object of the row value
+     * @param family Accumulo column family
+     * @param qualifier Accumulo column qualifier
+     * @param columnUpdate An instance of {@link PrestoColumnUpdate} containing the updated value and visibilities
+     */
+    public void updateColumnWithPrevious(Object rowId, String family, String qualifier, PrestoColumnUpdate columnUpdate)
+            throws AccumuloException, TableNotFoundException, AccumuloSecurityException
+    {
+        Multimap<Pair<ByteBuffer, ByteBuffer>, PrestoColumnUpdate> updates = MultimapBuilder.hashKeys().arrayListValues().build();
+        updates.put(Pair.of(wrap(family.getBytes(UTF_8)), wrap(qualifier.getBytes(UTF_8))), columnUpdate);
         updateColumnsWithPrevious(rowId, updates);
     }
 
     /**
-     * Update all the given columns of the row to their mapped value, identified by the Accumulo column family/qualifier/visibility.
+     * Update all the given columns of the row to their mapped value, identified by the Accumulo column family/qualifier and provided column updates
      * <p>
      * This method will remove the existing entry, regardless of the new visibility (assuming the given authorizations are able to scan the entry)
      *
@@ -461,7 +520,17 @@ public class PrestoBatchWriter
         dataWriter.addMutation(updateMutation);
     }
 
-    public void updateColumnsWithPrevious(Object rowId, Multimap<Pair<ByteBuffer, ByteBuffer>, Triple<ColumnVisibility, Object, Object>> columnUpdates)
+    /**
+     * Update the given column of the row to the given value, identified by the collection of Accumulo column family/qualifier
+     * pairs and their associated provided column updates
+     * <br>
+     * The previous value is used for faster updates by creating the proper delete mutations instead of querying Accumulo.
+     * Failure to provide the correct previous value will result in data inconsistencies.
+     *
+     * @param rowId Row ID, a Java object of the row value
+     * @param columnUpdates An MultiMap of column family/qualifier pairs to collection of {@link PrestoColumnUpdate} containing the updated value and visibilities
+     */
+    public void updateColumnsWithPrevious(Object rowId, Multimap<Pair<ByteBuffer, ByteBuffer>, PrestoColumnUpdate> columnUpdates)
             throws AccumuloException, TableNotFoundException, AccumuloSecurityException
     {
         // Get Row ID
@@ -475,36 +544,36 @@ public class PrestoBatchWriter
 
         // Create delete mutation for data store
         long deleteTimestamp = System.currentTimeMillis();
-        for (Entry<Pair<ByteBuffer, ByteBuffer>, Triple<ColumnVisibility, Object, Object>> entry : columnUpdates.entries()) {
+        for (Entry<Pair<ByteBuffer, ByteBuffer>, PrestoColumnUpdate> entry : columnUpdates.entries()) {
             Mutation deleteMutation = new Mutation(rowBytes);
-            deleteMutation.putDelete(entry.getKey().getLeft().array(), entry.getKey().getRight().array(), entry.getValue().getLeft(), deleteTimestamp);
+            deleteMutation.putDelete(entry.getKey().getLeft().array(), entry.getKey().getRight().array(), entry.getValue().getPreviousVisibility(), deleteTimestamp);
             dataWriter.addMutation(deleteMutation);
         }
 
         // Create update mutation
         long updateTimestamp = deleteTimestamp + 1;
         Mutation updateMutation = new Mutation(rowBytes);
-        for (Entry<Pair<ByteBuffer, ByteBuffer>, Triple<ColumnVisibility, Object, Object>> entry : columnUpdates.entries()) {
+        for (Entry<Pair<ByteBuffer, ByteBuffer>, PrestoColumnUpdate> entry : columnUpdates.entries()) {
             Type type = findColumnHandle(Pair.of(entry.getKey().getLeft(), entry.getKey().getRight())).getType();
 
             Value value;
             if (Types.isArrayType(type)) {
                 // Encode list as a Block
-                value = new Value(setText(type, getBlockFromArray(Types.getElementType(type), (List<?>) entry.getValue().getMiddle()), text, serializer).copyBytes());
+                value = new Value(setText(type, getBlockFromArray(Types.getElementType(type), (List<?>) entry.getValue().getValue()), text, serializer).copyBytes());
             }
             else if (Types.isMapType(type)) {
                 // Encode map as a Block
-                value = new Value(setText(type, getBlockFromMap(type, (Map<?, ?>) entry.getValue().getMiddle()), text, serializer).copyBytes());
+                value = new Value(setText(type, getBlockFromMap(type, (Map<?, ?>) entry.getValue().getValue()), text, serializer).copyBytes());
             }
             else {
                 // Encode POJO
-                value = new Value(setText(type, entry.getValue().getMiddle(), text, serializer).copyBytes());
+                value = new Value(setText(type, entry.getValue().getValue(), text, serializer).copyBytes());
             }
 
             updateMutation.put(
                     new Text(entry.getKey().getLeft().array()),
                     new Text(entry.getKey().getRight().array()),
-                    entry.getValue().getLeft(),
+                    entry.getValue().getVisibility(),
                     updateTimestamp,
                     value);
         }
@@ -653,6 +722,140 @@ public class PrestoBatchWriter
         }
 
         return mutation;
+    }
+
+    /**
+     * A column update for Presto, containing the new column value and visibility, and the previous column value and visibility
+     * Both values must be provided.  The visibilities are empty by default, and if no previous visibility is given, the given visibility
+     * is used (or it'll be the default empty visibility if no visibility was given at all).
+     * <p>
+     * See {@link PrestoBatchWriter.PrestoColumnUpdate.Builder} to build a PrestoColumnUpdate.
+     */
+    public static class PrestoColumnUpdate
+    {
+        private final ColumnVisibility visibility;
+        private final ColumnVisibility previousVisibility;
+
+        private final Object value;
+        private final Object previousValue;
+
+        private PrestoColumnUpdate(
+                ColumnVisibility visibility,
+                Object value,
+                ColumnVisibility previousVisibility,
+                Object previousValue)
+        {
+            this.visibility = requireNonNull(visibility, "visibility is null");
+            this.value = requireNonNull(value, "value is null");
+            this.previousVisibility = requireNonNull(previousVisibility, "previousVisibility is null");
+            this.previousValue = requireNonNull(previousValue, "previousValue is null");
+        }
+
+        public ColumnVisibility getVisibility()
+        {
+            return visibility;
+        }
+
+        public Object getValue()
+        {
+            return value;
+        }
+
+        public ColumnVisibility getPreviousVisibility()
+        {
+            return previousVisibility;
+        }
+
+        public Object getPreviousValue()
+        {
+            return previousValue;
+        }
+
+        public static Builder builder()
+        {
+            return new Builder();
+        }
+
+        public static class Builder
+        {
+            private ColumnVisibility visibility = null;
+            private ColumnVisibility previousVisibility = null;
+
+            private Object value = null;
+            private Object previousValue = null;
+
+            /**
+             * Set the new visibility for the update.
+             * If none is provided, the default ColumnVisibility is used.
+             *
+             * @param visibility The new visibility
+             * @return this
+             */
+            public Builder withVisibility(ColumnVisibility visibility)
+            {
+                this.visibility = visibility;
+                return this;
+            }
+
+            /**
+             * Set the new value for the update
+             *
+             * @param value The new value
+             * @return this
+             */
+            public Builder withValue(Object value)
+            {
+                this.value = value;
+                return this;
+            }
+
+            /**
+             * Set the previous visibility for the update, if any.
+             * If none is provided the value of <code>visibility</code> is used.
+             *
+             * @param previousVisibility The previous visibility
+             * @return this
+             */
+            public Builder withPreviousVisibility(ColumnVisibility previousVisibility)
+            {
+                this.previousVisibility = previousVisibility;
+                return this;
+            }
+
+            /**
+             * Set the previous value for the update
+             *
+             * @param previousValue The previous value
+             * @return this
+             */
+            public Builder withPreviousValue(Object previousValue)
+            {
+                this.previousValue = previousValue;
+                return this;
+            }
+
+            /**
+             * Creates and returns the column update
+             *
+             * @return PrestoColumnUpdate
+             * @throws NullPointerException If value and previousValue are null
+             */
+            public PrestoColumnUpdate create()
+            {
+                requireNonNull(value, "value is null");
+                requireNonNull(previousValue, "previousValue is null");
+
+                if (visibility == null) {
+                    visibility = new ColumnVisibility();
+                }
+
+                return new PrestoColumnUpdate(
+                        visibility,
+                        value,
+                        previousVisibility == null ? visibility : previousVisibility,
+                        previousValue);
+            }
+        }
     }
 
     private static Text setText(Type type, Object fieldValue, Text destination, AccumuloRowSerializer serializer)
